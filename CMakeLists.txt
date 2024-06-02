@@ -47,7 +47,7 @@ ExternalProject_Add(
 	CMAKE_TLS_VERIFY TRUE # TODO enable if using remote git
 	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
 	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
-	GIT_TAG dev
+	GIT_TAG main
 	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS}
 	INSTALL_COMMAND "" ## TODO should install the .so/.a and place the torx.h
 	BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
