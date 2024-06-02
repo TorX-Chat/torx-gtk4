@@ -27,7 +27,16 @@ See Linux instructions, then modify as appropriate. CMakeLists.txt may need modi
 #### Contribution Agreement:
 All ideas, suggestions, issues, pull requests, etc, are gifted to the primary developer for the purpose of improving the software, for the benefit of all users. Ownership of the contribution is not maintained by the contributor.
 
-#### TODO List
+#### Screenshots:
+<a href="https://torx-chat.github.io/images/desktop_auth_screen.png"><img src="https://torx-chat.github.io/images/desktop_auth_screen.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_add.png"><img src="https://torx-chat.github.io/images/desktop_add.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_home.png"><img src="https://torx-chat.github.io/images/desktop_home.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_grandma.png"><img src="https://torx-chat.github.io/images/desktop_grandma.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_add_group.png"><img src="https://torx-chat.github.io/images/desktop_add_group.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_group.png"><img src="https://torx-chat.github.io/images/desktop_group.png" alt="Screenshot" style="max-height:400px;"></a>
+<a href="https://torx-chat.github.io/images/desktop_settings.png"><img src="https://torx-chat.github.io/images/desktop_settings.png" alt="Screenshot" style="max-height:400px;"></a>
+
+#### Legacy TODO List (needs review / cleanup)
 ###### Tasks common with flutter
 2024/02/25 we should probably have a tooltip that shows TorX-IDs, at least on the group's peerlist
 <br>2023/??/?? Flash entry box red when no nick is entered for generating (generate_onion) or adding onion (save_peer), or when an invalid onion is passed (bad checksum)
