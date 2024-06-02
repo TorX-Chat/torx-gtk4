@@ -1,0 +1,81 @@
+cmake_minimum_required(VERSION 3.14)
+project(torx-gtk4 LANGUAGES C)
+#[[ # Works but unsure how to pass args. Can we just declare and have them used?
+include(FetchContent)
+FetchContent_Declare(
+	torx
+	CMAKE_TLS_VERIFY TRUE
+	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
+	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
+	OVERRIDE_FIND_PACKAGE
+)
+FetchContent_MakeAvailable(torx)
+]]
+include(ExternalProject)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED True)
+
+set(BUILD_SHARED_LIBS 0) ## 2024: static works, shared works other than libcrypto.a (which we statically compile on android/linux)
+set(BUILD_TORX_DEPS 0) ## WORKS !!!
+
+add_subdirectory(appindicator)
+			#### C90 crap: -Wvla -Wdeclaration-after-statement
+			#### Unimportant: -Waggregate-return
+			#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
+			#### other static analyzer binaries: cppcheck clang-tidy
+			## XXX For dev builds: -D_FORTIFY_SOURCE=0 -fsanitize=thread -fsanitize=address -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero
+			## XXX For release: -D_FORTIFY_SOURCE=2 -O2 and REMOVE ALL -fsanitize
+set(CMAKE_C_COMPILER "gcc") ## gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero -fwrapv -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
+
+if(${CMAKE_C_COMPILER} STREQUAL "clang") # TODO To reveal 1300+ thread-unsafe reads, remove -Wno-unsafe-buffer-usage
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-duplicate-enum -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage")
+else() # GCC
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwhole-program -Wcast-align=strict -Wformat-signedness")
+endif()
+
+if(BUILD_SHARED_LIBS)
+	add_library(torx SHARED IMPORTED)
+	set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.so)
+else()
+	add_library(torx STATIC IMPORTED)
+	set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.a)
+endif()
+
+ExternalProject_Add(
+	torx-download
+	CMAKE_TLS_VERIFY TRUE # TODO enable if using remote git
+	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
+	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
+	GIT_TAG dev
+	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS}
+	INSTALL_COMMAND "" ## TODO should install the .so/.a and place the torx.h
+	BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
+)
+
+execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml)
+
+find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
+#find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
+pkg_check_modules(GTK4 REQUIRED gtk4)
+
+add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
+
+include_directories(${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
+#include_directories(${PNG_INCLUDE_DIRS} ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
+link_directories(${GTK4_LIBRARY_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+add_definitions(${GTK4_CFLAGS_OTHER})
+
+add_executable( ${PROJECT_NAME} main_gtk4.c )
+add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
+target_link_libraries(
+	${PROJECT_NAME}
+		gif_animation
+		${GTK4_LIBRARIES}
+		sodium
+	#	event
+		event_core
+		event_pthreads
+		png
+		sqlcipher
+)

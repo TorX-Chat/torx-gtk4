@@ -1,0 +1,304 @@
+/*
+Alternative to .css file:	gtk_css_provider_load_from_string (new) or gtk_css_provider_load_from_data (old, essentially same with len arg)
+
+Summary of Colors used:
+
+rgb(22,33,44);
+rgb(33,45,56);
+rgb(236,179,101);
+rgb(237,168,74);
+rgb(190,190,190);
+rgb(45,45,45);
+rgb(213,155,73);
+rgb(35,54,73);
+rgb(255,255,255);
+rgb(222,49,49);
+rgb(165,165,165);
+rgb(48,48,48);
+transparent
+
+for errors:
+rgb(200,70,70)
+*/
+
+.invert-vertical {
+	transform: scaleY(-1);
+}
+
+.headerbar{
+	min-height: 26px;
+	padding-left: 8px;
+	background: transparent;
+	border-color: transparent;
+	color: transparent;
+	font-size: 13px;
+}
+
+/*button{
+	border: 2px #fff;
+}
+
+scrolledwindow{
+	background: transparent;
+}*/
+
+.close{
+	-gtk-icon-size: 12px;
+}
+.minimize{
+	-gtk-icon-size: 12px;
+}
+.maximize{
+	-gtk-icon-size: 12px;
+}
+
+/* Below from Auth Window */
+
+.popover_inner{
+	background: rgb(33,45,56);
+}
+
+.node{
+	background: rgb(33,45,56);
+	background-color: rgb(33,45,56);
+	border-color: rgb(33,45,56);
+}
+
+.bad_input{
+	background-color: rgb(200,70,70);
+}
+
+.window_auth{
+	background-color: rgb(22,33,44);
+	border-radius: 10px;
+}
+
+.main_box{
+	background-color: rgb(33,45,56);
+	background-size: 50px 50px;
+	border-radius: 15px;
+	padding: 80px 85px 85px 80px;
+}
+
+.login_label{
+	margin-left: 5px;
+	color: rgb(255,255,255);
+	font-weight:700;
+	font-size: 40px;
+}
+
+.auth_error{
+	color: rgb(222,49,49);
+}
+
+.login_label_subtext{
+	color: rgb(165,165,165);
+	padding-top: 5px;
+}
+
+.unsaved_sticker{
+	background: rgb(0,200,10);
+	border: 10px;
+}
+
+.auth_button{
+	background: rgb(236,179,101);
+	font-size: 22px;
+	font-weight: 700;
+	color: rgb(255,255,255);
+	border: 10px;
+}
+
+.auth_button:hover{
+	background: rgb(237,168,74);
+}
+
+/* Below from Main Window */
+
+.window_main{
+	background-color: rgb(33,45,56);
+	border-radius: 10px;
+}
+
+.frame{
+	border-radius: 0px;
+	border-color: transparent;
+}
+
+.search_field{
+	background: rgb(190,190,190);
+	color: rgb(48,48,48);
+	border:none;
+	border-radius: 20px;
+	min-height: 28px;
+}
+
+.textview_qr{
+	font-size: 12px;
+	background: rgb(45,45,45);
+}
+
+/*.panel_left{
+	border-color: transparent;
+	background-color: rgb(33,45,56);
+	box-shadow: none;
+}*/
+
+.panel_right{
+	border-color: transparent;
+	background-color: rgb(22,33,44);
+	box-shadow: none;
+	color: rgb(255,255,255); /*font color, should set */
+}
+
+.chat_headerbar{
+	background:  rgb(33,45,56);
+}
+
+.page_title{
+	font-size: 24px;
+	font-weight: 800;
+	color: rgb(255,255,255);
+}
+
+.page_sub_title{
+	font-size: 20px;
+	font-weight: 800;
+	color: rgb(255,255,255);
+}
+
+.invisible{
+	background: transparent;
+	outline-color: transparent;
+	border-color: transparent;
+	color: transparent;
+	box-shadow: none;
+	border-radius: 0px 0px 0px 0px;
+}
+
+.unread_count{ /* Peer List */
+	color: rgb(255,255,255);
+	/*padding-left: 8px;*/
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.chat_name{ /* Peer List */
+	color: rgb(255,255,255);
+	padding-left: 8px;
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.last_message{ /* Peer List */
+	color: rgb(255,255,255);
+	font-size: 12px;
+	font-weight: 300;
+}
+
+.write_message{
+	border-radius: 13px;
+	color: rgb(255,255,255);
+	font-weight: 400;
+	padding-top: 12px;
+	padding-left: 12px;
+	padding-bottom: 9px;
+	line-height:  20px;
+	background-color: rgb(33,45,56);
+}
+
+.message_sent_private{
+	border-radius: 10px 0px 10px 10px;
+	background: rgb(144,0,128); 
+	color: rgb(255,255,255);
+	font-weight: 400;
+
+	padding-left: 10px;
+	padding-right: 10px;
+	padding-bottom: 10px;
+	padding-top: 10px;
+
+	margin-left: 10px;
+	margin-right: 10px;
+	margin-bottom: 0px;
+	margin-top: 0px;
+}
+
+.message_recv_private{
+	border-radius: 0px 10px 10px 10px;
+	background: rgb(144,0,128); 
+	color: rgb(255,255,255);
+	font-weight: 400;
+
+	padding-left: 10px;
+	padding-right: 10px;
+	padding-bottom: 10px;
+	padding-top: 10px;
+
+	margin-left: 10px;
+	margin-right: 10px;
+	margin-bottom: 0px;
+	margin-top: 0px;
+}
+
+.message_sent{
+	border-radius: 10px 0px 10px 10px;
+	background: rgb(213,155,73);
+	color: rgb(255,255,255);
+	font-weight: 400;
+
+	padding-left: 10px;
+	padding-right: 10px;
+	padding-bottom: 10px;
+	padding-top: 10px;
+
+	margin-left: 10px;
+	margin-right: 10px;
+	margin-bottom: 0px;
+	margin-top: 0px;
+}
+
+.message_recv{
+	border-radius: 0px 10px 10px 10px;
+	background: rgb(35,54,73);
+	color: rgb(255,255,255);
+	font-weight: 400;
+
+	padding-left: 10px;
+	padding-right: 10px;
+	padding-bottom: 10px;
+	padding-top: 10px;
+
+	margin-left: 10px;
+	margin-right: 10px;
+	margin-bottom: 0px;
+	margin-top: 0px;
+}
+
+.message_info_time{
+	font-size: 10px;
+	color: rgb(255,255,255);
+}
+
+.message_info_peernick{
+	font-size: 10px;
+	color: rgb(255,255,255);
+	font-weight: bold;
+}
+
+.group_or_user_name{
+	font-weight: 700;
+	font-size: 18px;
+	color: rgb(255,255,255);
+}
+
+.last_online{
+	font-weight: 400;
+	font-size: 12px;
+	color: rgb(255,255,255);
+	opacity: 0.5;
+}
+
+.text{
+	color: rgb(255,255,255);
+}
