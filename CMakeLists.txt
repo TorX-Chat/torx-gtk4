@@ -4,7 +4,6 @@ project(torx-gtk4 LANGUAGES C)
 include(FetchContent)
 FetchContent_Declare(
 	torx
-	CMAKE_TLS_VERIFY TRUE
 	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
 	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
 	OVERRIDE_FIND_PACKAGE
@@ -14,6 +13,7 @@ FetchContent_MakeAvailable(torx)
 include(ExternalProject)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
+set(CMAKE_TLS_VERIFY TRUE)
 
 set(BUILD_SHARED_LIBS 0) ## 2024: static works, shared works other than libcrypto.a (which we statically compile on android/linux)
 set(BUILD_TORX_DEPS 0) ## WORKS !!!
@@ -44,7 +44,6 @@ endif()
 
 ExternalProject_Add(
 	torx-download
-	CMAKE_TLS_VERIFY TRUE # TODO enable if using remote git
 	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
 	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
 	GIT_TAG main

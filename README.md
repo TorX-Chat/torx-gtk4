@@ -5,8 +5,14 @@ This page is for developers and contributors. If you are simply looking to downl
 
 #### Build Instructions:
 ##### Linux:
+NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). If you are using Debian, you need Trixie (Debian 13) repositories or above. For Ubuntu, this means Ubuntu Mantic (23) repositories or above. The reason is that the GTK project implemented major breaking changes to GTK4 at version 4.10, and we are early adoptors of those changes.
+<br>If you want to try on a LiveCD, <a href="https://get.debian.org/images/weekly-live-builds/amd64/iso-hybrid/">here are some Trixie liveCDs</a>
+
 ###### Install build dependencies:
-`sudo apt install libgtk-4-dev libsodium-dev libevent-dev sqlcipher build-essential`
+`sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential`
+
+###### Clone the repository
+`git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk`
 
 ###### For building TorX normally:
 `cmake -B build && cd build && make && cd ..  && ./build/torx-gtk4`
@@ -21,11 +27,15 @@ This page is for developers and contributors. If you are simply looking to downl
 See Linux instructions, then modify as appropriate. CMakeLists.txt may need modifications. When successful, contact us so that we can add instructions.
 
 ##### Windows:
-2024/03/31 See "build_windows.txt". Currently does NOT build because of pipe() calls that need to be replaced
-<br>2022/??/?? cannot use popen https://docs.microsoft.com/en-us/cpp/c-runtime-library/reference/popen-wpopen?redirectedfrom=MSDN&view=msvc-170 but windows has its own CreatePipe that is availablehttps://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output?redirectedfrom=MSDN
+NOTICE: Currently does NOT build because of pipe() calls that need to be replaced (with CreatePipe?), but you can try anyway.
+<br><a href="https://www.msys2.org/">Install MSYS2</a> then open a terminal by clicking "MSYS2 MINGW64"
+`pacman -Syu && exit`
+`pacman -S git mingw-w64-x86_64-gcc mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsodium mingw-w64-x86_64-libevent mingw-w64-x86_64-sqlcipher mingw-w64-x86_64-cmake mingw-w64-x86_64-toolchain base-devel`
+`git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk`
+`cmake -G "Unix Makefiles" -B build/ && cd build && make clean && make`
 
 #### Contribution Agreement:
-All ideas, suggestions, issues, pull requests, etc, are gifted to the primary developer for the purpose of improving the software, for the benefit of all users. Ownership of the contribution is not maintained by the contributor.
+All ideas, suggestions, issues, pull requests, contributions of any kind, etc, are gifted to the original TorX developer without condition nor consideration, for the purpose of improving the software, for the benefit of all users, current and future.
 
 #### Screenshots:
 <a href="https://torx-chat.github.io/images/desktop_auth_screen.png"><img src="https://torx-chat.github.io/images/desktop_auth_screen.png" alt="Screenshot" style="max-height:400px;"></a>
