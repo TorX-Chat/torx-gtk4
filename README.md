@@ -5,7 +5,9 @@ This page is for developers and contributors. If you are simply looking to downl
 
 #### Build Instructions:
 ##### Linux:
-NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). If you are using Debian, you need Trixie (Debian 13) repositories or above. For Ubuntu, this means Ubuntu Mantic (23) repositories or above. The reason is that the GTK project implemented major breaking changes to GTK4 at version 4.10, and we are early adoptors of those changes.
+NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemented major breaking changes to GTK4 at version 4.10, and we are early adopters of those changes.
+<br>If you are using Debian, you need Trixie (Debian 13) repositories or above.
+<br>If you are using Ubuntu, this means Mantic (Ubuntu 23) repositories or above.
 <br>If you want to try on a LiveCD, <a href="https://get.debian.org/images/weekly-live-builds/amd64/iso-hybrid/">here are some Trixie liveCDs</a>
 
 ###### Install build dependencies:
