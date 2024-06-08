@@ -301,8 +301,8 @@ int main(int argc, char *argv[]) {
 
 	GtkStatusIcon *tray_icon = gtk_status_icon_new();
 
-	gtk_status_icon_set_title(tray_icon,TITLE);
-	gtk_status_icon_set_name(tray_icon,TITLE);
+//	gtk_status_icon_set_title(tray_icon,"test1"); // Serves no purpose
+//	gtk_status_icon_set_name(tray_icon,"test2"); // Serves no purpose // DO NOT SET, causes a critical that was really hard to track down https://github.com/dorkbox/SystemTray/issues/19
 
 	GFile *file_default = g_file_new_for_uri("resource:///org/torx/tray/icon_square.png");
 	GFile *file_transparent = g_file_new_for_uri("resource:///org/torx/tray/logo-torx-symbolic.svg");
