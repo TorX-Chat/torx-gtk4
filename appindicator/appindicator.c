@@ -269,6 +269,7 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 }
 
 int main(int argc, char *argv[]) {
+	signal(SIGCHLD, SIG_IGN); // XXX prevent zombies
 	// Initialize GTK
 	gtk_init(&argc, &argv);
 

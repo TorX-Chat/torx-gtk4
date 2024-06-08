@@ -18,6 +18,19 @@ set(CMAKE_TLS_VERIFY TRUE)
 set(BUILD_SHARED_LIBS 0) ## 2024: static works, shared works other than libcrypto.a (which we statically compile on android/linux)
 set(BUILD_TORX_DEPS 0) ## WORKS !!!
 
+if(TORX_TAG)
+	set(TAG_REPO "${TORX_TAG}")
+else()
+	set(TAG_REPO "main")
+endif()
+if(LAN_REPO)
+	message(STATUS "Using LAN repository: ${LAN_REPO}")
+	set(REPO_TORX "${LAN_REPO}/libtorx.git")
+else()
+	message(STATUS "Using default remote repositories instead of LAN.")
+	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
+endif()
+
 add_subdirectory(appindicator)
 			#### C90 crap: -Wvla -Wdeclaration-after-statement
 			#### Unimportant: -Waggregate-return
@@ -44,10 +57,9 @@ endif()
 
 ExternalProject_Add(
 	torx-download
-	GIT_REPOSITORY https://github.com/TorX-Chat/libtorx/
-	# GIT_REPOSITORY http://10.8.88.11/libtorx.git
-	GIT_TAG main
-	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS}
+	GIT_REPOSITORY ${REPO_TORX}
+	GIT_TAG ${TAG_REPO}
+	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS} -D LAN_REPO=${LAN_REPO}
 	INSTALL_COMMAND "" ## TODO should install the .so/.a and place the torx.h
 	BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
 )
