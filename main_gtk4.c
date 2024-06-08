@@ -109,8 +109,8 @@ static int vertical_mode = 0; // see ui_determine_orientation()
 static int8_t force_sign = 0; // TODO Should be 0. Global value for testing only. This should be per-peer. can add timestamp to message (as a salt to prevent relay attacks in groups), Tor project does this with all signed messages.
 static uint8_t save_all_stickers = 0; // TODO handle saving manually
 static uint8_t send_sticker_data = 1; // not really that useful because if we don't send stickers, people can't request stickers.
-static uint8_t close_to_tray = 1; // do not close when clicking exit ( should work fine but currently not offered as UI option, in favor of minimize_to_tray )
-static uint8_t minimize_to_tray = 1; // do not close when clicking exit // TODO enable this (it works well) once we get libayatana-appindicator3-dev / https://github.com/AyatanaIndicators/libayatana-appindicator/ working
+static uint8_t close_to_tray = 0; // works well but currently not offered as UI option, in favor of minimize_to_tray
+static uint8_t minimize_to_tray = 1;
 static uint8_t display_images = 1; // TODO should be clickable (to show larger), should automatically render after 100%. Gifs are a problem if corrupt (because we don't have sufficient sanity checks). Other corrupt images are fine.
 
 static int size_window_default_width = 480; // 1100 Desktop, TODO mobile should just maximize?
