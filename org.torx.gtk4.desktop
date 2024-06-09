@@ -15,7 +15,7 @@ X-GNOME-UsesNotifications=true
 ## Localization: https://developer-old.gnome.org/integration-guide/stable/desktop-files.html.en
 ## /usr/share/applications/
 ## /usr/local/share/applications/ for applications installed system-wide
-## Test config --> desktop-file-validate org.gnome.torx-gtk4.desktop
+## Test config --> desktop-file-validate org.torx.gtk4.desktop
 ## Place icon in --> /usr/share/pixmaps		&&	/usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png or ~/.icons/
 ## Place in -->  ~/.local/share/applications/
 ## Then run --> update-desktop-database -v ~/.local/share/applications

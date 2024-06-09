@@ -91,3 +91,19 @@ target_link_libraries(
 		png
 		sqlcipher
 )
+
+# Install the executables
+install(TARGETS ${PROJECT_NAME} DESTINATION bin)
+install(TARGETS torx-tray DESTINATION bin)
+
+# Install dynamically linked library files (if they exist)
+install(TARGETS libgif_animation LIBRARY DESTINATION lib)
+install(TARGETS libtorx LIBRARY DESTINATION lib)
+
+# Install the desktop file
+install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
+
+# Install the icon
+install(FILES other/org.torx.gtk4.png DESTINATION share/icons/hicolor/48x48/apps)
+
+## Note: user should probably call sudo update-desktop-database afterwards
