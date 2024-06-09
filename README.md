@@ -30,6 +30,9 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 ###### For installing TorX (after building):
 `cd build && sudo make install`
 
+###### For uninstalling TorX (after installing:
+`sudo xargs rm < install_manifest.txt`
+
 ##### OSX:
 See Linux instructions, then modify as appropriate. CMakeLists.txt may need modifications. When successful, contact us so that we can add instructions.
 
