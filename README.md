@@ -27,6 +27,9 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 ###### For building TorX with debug symbols, for valgrind:
 `cmake -DCMAKE_BUILD_TYPE=Debug -D TORX_TAG=main -B build && cd build && make && cd ..  && valgrind --track-origins=yes --leak-check=full ./build/torx-gtk4`
 
+###### For installing TorX (after building):
+`cd build && sudo make install`
+
 ##### OSX:
 See Linux instructions, then modify as appropriate. CMakeLists.txt may need modifications. When successful, contact us so that we can add instructions.
 
@@ -36,7 +39,7 @@ NOTICE: Currently does NOT build because of fork() calls that need to be replace
 ```
 pacman -Syu && exit
 pacman -S git mingw-w64-x86_64-gcc mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsodium mingw-w64-x86_64-libevent mingw-w64-x86_64-sqlcipher mingw-w64-x86_64-cmake mingw-w64-x86_64-toolchain base-devel
-git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk
+git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4
 cmake -G "Unix Makefiles" -D TORX_TAG=main -B build/ && cd build && make clean && make
 ```
 

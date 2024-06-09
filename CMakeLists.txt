@@ -77,7 +77,7 @@ include_directories(${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-downlo
 #include_directories(${PNG_INCLUDE_DIRS} ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
 link_directories(${GTK4_LIBRARY_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 add_definitions(${GTK4_CFLAGS_OTHER})
-
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
 target_link_libraries(
@@ -98,7 +98,7 @@ install(TARGETS torx-tray DESTINATION bin)
 
 # Install dynamically linked library files (if they exist)
 install(TARGETS gif_animation LIBRARY DESTINATION lib)
-install(TARGETS torx LIBRARY DESTINATION lib)
+# install(TARGETS torx LIBRARY DESTINATION lib) ## TODO if BUILD_SHARED_LIBS, we need to install this
 
 # Install the desktop file
 install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
