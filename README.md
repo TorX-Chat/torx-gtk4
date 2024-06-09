@@ -15,6 +15,9 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 ###### Install build dependencies:
 `sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential`
 
+###### Install runtime dependencies:
+`sudo apt install tor snowflake-client obfs4proxy`
+
 ###### Clone the repository
 `git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4`
 
