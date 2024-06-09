@@ -130,6 +130,8 @@ static int global_group = -1; // TODO dumb but currently fine. add_chat_node onl
 static int generated_n = -1; // -1 is invalid, dont let anything get done with -val
 /* Global Structs */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 
+static pthread_t thread_icon_communicator = {0};
+
 const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".svg"}; // case insensitive
 
 #define MAX_PEERS 4096 // TODO this isnt ideal because library has no such limitation. this is just laziness.
@@ -6944,6 +6946,8 @@ static int icon_communicator_idle(void *arg)
 
 static void *icon_communicator(void* arg)
 { // NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly
+	pusher(zero_pthread,(void*)&thrd_start_tor)
+	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
 	int sockfd;
 	struct sockaddr_in servaddr;
@@ -7139,8 +7143,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 		exit(0);
 	//	}
 	}
-	pthread_t thread = {0};
-	if(pthread_create(&thread,NULL,&icon_communicator,itovp(icon_port)))
+	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
 		error_simple(0,"Failed to create thread");
 	#endif
 }
