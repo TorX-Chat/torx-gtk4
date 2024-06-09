@@ -6881,24 +6881,26 @@ static void ui_show_auth_screen(void)
 	gtk_widget_add_css_class(auth_text_next_logo, "login_label");
 	gtk_widget_add_css_class(t_main.auth_error, "auth_error");
 
-	t_main.switch_censored_region = gtk_switch_new();
-	if(threadsafe_read_uint8(&mutex_global_variable,&censored_region))
-		gtk_switch_set_active(GTK_SWITCH(t_main.switch_censored_region),TRUE);
-	g_signal_connect(t_main.switch_censored_region, "state-set", G_CALLBACK(switch_state_set), NULL);
-	GtkWidget *auth_box_censored_region = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_five);
-	GtkWidget *auth_text_censored_region = gtk_label_new(text_censored_region);
-	gtk_widget_add_css_class(auth_text_censored_region, "login_label_subtext");
-	gtk_widget_set_halign(auth_text_censored_region, GTK_ALIGN_END);
-	gtk_widget_set_hexpand(auth_text_censored_region, TRUE);
-	gtk_box_append (GTK_BOX(auth_box_censored_region), auth_text_censored_region);
-	gtk_box_append (GTK_BOX(auth_box_censored_region), t_main.switch_censored_region);
-
 	gtk_box_append (GTK_BOX(auth_background), auth_logo_box);
 	gtk_box_append (GTK_BOX(auth_background), auth_text_under_logo);
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_error);
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_entry_pass);
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_button);
-	gtk_box_append (GTK_BOX(auth_background), auth_box_censored_region);
+	if(snowflake_location)
+	{
+		t_main.switch_censored_region = gtk_switch_new();
+		if(threadsafe_read_uint8(&mutex_global_variable,&censored_region))
+			gtk_switch_set_active(GTK_SWITCH(t_main.switch_censored_region),TRUE);
+		g_signal_connect(t_main.switch_censored_region, "state-set", G_CALLBACK(switch_state_set), NULL);
+		GtkWidget *auth_box_censored_region = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_five);
+		GtkWidget *auth_text_censored_region = gtk_label_new(text_censored_region);
+		gtk_widget_add_css_class(auth_text_censored_region, "login_label_subtext");
+		gtk_widget_set_halign(auth_text_censored_region, GTK_ALIGN_END);
+		gtk_widget_set_hexpand(auth_text_censored_region, TRUE);
+		gtk_box_append (GTK_BOX(auth_box_censored_region), auth_text_censored_region);
+		gtk_box_append (GTK_BOX(auth_box_censored_region), t_main.switch_censored_region);
+		gtk_box_append (GTK_BOX(auth_background), auth_box_censored_region);
+	}
 	gtk_window_set_child (GTK_WINDOW(t_main.main_window),auth_background);
 }
 
