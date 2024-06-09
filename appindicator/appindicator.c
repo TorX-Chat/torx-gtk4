@@ -58,14 +58,14 @@ struct fresh_data {
 
 static int rebuild(void *arg)
 {
-	printf("Checkpoint rebuilding\n");
+//	printf("Checkpoint rebuilding\n");
 	struct data *data = (struct data*) arg;
 	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 	if(data->transparent)
 	{
 		gtk_status_icon_set_from_gicon(data->tray_icon,data->icon_logo_transparent);
 		data->transparent = FALSE;
-		printf("Checkpoint transparent false\n");
+	//	printf("Checkpoint transparent false\n");
 	}
 	else if(data->unread_peer + data->unread_group + data->incoming)
 		gtk_status_icon_set_from_gicon(data->tray_icon,data->icon_logo_unread);
@@ -186,7 +186,6 @@ static int handle_fresh_data(void *arg)
 
 static void *start_listener(void *arg)
 {
-	fprintf(stderr,"Checkpoint status icon: starting listener1.\n");
 	struct data *data = (struct data*) arg;
 	const int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0)
@@ -199,7 +198,6 @@ static void *start_listener(void *arg)
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(data->port);
-	fprintf(stderr,"Checkpoint status icon: starting listener2.\n");
 	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	{
 		fprintf(stderr,"Checkpoint status icon: failed to bind. Port must be in use..\n");
@@ -207,7 +205,6 @@ static void *start_listener(void *arg)
 	}
 	listen(sockfd, 5);
 	socklen_t clilen = sizeof(cli_addr);
-	fprintf(stderr,"Checkpoint status icon: starting listener3.\n");
 	const int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 	if (newsockfd < 0)
 	{
@@ -217,9 +214,7 @@ static void *start_listener(void *arg)
 	char buffer[256];
 	while (1)
 	{
-		fprintf(stderr,"Checkpoint status icon: starting listener5.\n");
 		const ssize_t bytes_recieved = read(newsockfd, buffer, sizeof(buffer)-1);
-		fprintf(stderr,"Checkpoint status icon: starting listener6.\n");
 		if(bytes_recieved < 1)
 			break; // parent closed
 		buffer[bytes_recieved] = '\0';
@@ -234,7 +229,7 @@ static void *start_listener(void *arg)
 	}
 	close(newsockfd);
 	close(sockfd);
-	fprintf(stderr,"Checkpoint status icon: parent software closed connection.\n");
+//	fprintf(stderr,"Checkpoint status icon: parent software closed connection.\n");
 	exit(EXIT_SUCCESS); // parent closed
 }
 

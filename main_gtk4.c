@@ -96,7 +96,7 @@ static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will b
 
 /* Global Variables */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 static char language[5+1] = {0};
-//static char starting_dir[PATH_MAX] = {0};
+static char starting_dir[PATH_MAX/2] = {0};
 static char *binary_path = NULL; // current binary's full path
 static char *binary_name = NULL; // current binary's full path
 static uint8_t running = 0;
@@ -7131,15 +7131,18 @@ static void ui_activate(GtkApplication *application,void *arg)
 	if(pid == 0)
 	{ // Check in path before attempting to check from directory we run from
 		if(execlp("torx-tray","torx-tray","-p",port_array,"-P",binary_path,NULL))
-		{ // TODO in some circumstances, the following will not be sufficient to find torx-tray
+		{ // after checking PATH, assuming this isn't running in GDB
 			char binary_path_copy[PATH_MAX];
 			snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 			char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 			char appindicator_path[PATH_MAX];
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s/torx-tray",current_binary_directory);
-			printf("Checkpoint trying to start appindicator: %s -p %s -P %s\n",appindicator_path,port_array,binary_path);
-			execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL);
-			printf("Checkpoint execl called FAILED to start appindicator\n");
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s/%s/torx-tray",starting_dir,current_binary_directory);
+			if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+			{ // try for GDB
+				snprintf(appindicator_path,sizeof(appindicator_path),"%s/torx-tray",current_binary_directory);
+				if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+					error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+			}
 		}
 		exit(0);
 	}
@@ -7182,7 +7185,7 @@ int main(int argc,char **argv)
 {
 	binary_path = argv[0];
 	binary_name = argv[1];
-//	getcwd(starting_dir,PATH_MAX);
+	getcwd(starting_dir,sizeof(starting_dir));
 	/* Options configurable by client */
 	debug = 0;
 	reduced_memory = 2; // TODO probably remove before release
