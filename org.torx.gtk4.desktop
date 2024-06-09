@@ -3,22 +3,19 @@ Name=TorX GTK4
 GenericName=Internet Messenger
 Comment=A chat software for those on the Interpol Red List
 # Chat while the world burns / Help the world burn faster
-# Exec=torx
 Exec=torx-gtk4
 Icon=org.torx.gtk4
-#Icon=/home/user/Code/git/chat/other/icon_square.png
 Terminal=false
 Type=Application
 Categories=Network;InstantMessaging;Chat;
 StartupNotify=true
 DBusActivatable=true
 X-GNOME-UsesNotifications=true
-#Path=~/.config/torx/
 ## Overview: https://wiki.archlinux.org/title/Desktop_entries#Basics
 ## Localization: https://developer-old.gnome.org/integration-guide/stable/desktop-files.html.en
 ## /usr/share/applications/
 ## /usr/local/share/applications/ for applications installed system-wide
 ## Test config --> desktop-file-validate org.gnome.torx-gtk4.desktop
-## Place icon in --> /usr/share/pixmaps		&&	/usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
+## Place icon in --> /usr/share/pixmaps		&&	/usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png or ~/.icons/
 ## Place in -->  ~/.local/share/applications/
 ## Then run --> update-desktop-database -v ~/.local/share/applications

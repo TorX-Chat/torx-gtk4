@@ -32,6 +32,7 @@ else()
 endif()
 
 add_subdirectory(appindicator)
+set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 			#### C90 crap: -Wvla -Wdeclaration-after-statement
 			#### Unimportant: -Waggregate-return
 			#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer

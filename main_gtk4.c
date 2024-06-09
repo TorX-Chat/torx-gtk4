@@ -7134,14 +7134,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 		char appindicator_path[1024];
-		snprintf(appindicator_path,sizeof(appindicator_path),"%s/appindicator/torx-tray",current_binary_directory);
-	//	while(1)
-	//	{// TODO have a thread trying to connect to it, for control and to verify its working. if not working, you know what to do.
+		snprintf(appindicator_path,sizeof(appindicator_path),"%s/torx-tray",current_binary_directory);
 		printf("Checkpoint trying to start appindicator: %s -p %s -P %s\n",appindicator_path,port_array,binary_path);
 		execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL);
 		printf("Checkpoint execl called FAILED to start appindicator\n");
 		exit(0);
-	//	}
 	}
 	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
 		error_simple(0,"Failed to create thread");
