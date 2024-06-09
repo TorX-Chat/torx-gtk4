@@ -97,8 +97,8 @@ install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 install(TARGETS torx-tray DESTINATION bin)
 
 # Install dynamically linked library files (if they exist)
-install(TARGETS libgif_animation LIBRARY DESTINATION lib)
-install(TARGETS libtorx LIBRARY DESTINATION lib)
+install(TARGETS gif_animation LIBRARY DESTINATION lib)
+install(TARGETS torx LIBRARY DESTINATION lib)
 
 # Install the desktop file
 install(FILES org.torx.gtk4.desktop DESTINATION share/applications)

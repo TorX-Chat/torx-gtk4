@@ -16,7 +16,7 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 `sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential`
 
 ###### Clone the repository
-`git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk`
+`git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4`
 
 ###### For building TorX normally:
 `cmake -D TORX_TAG=main -B build && cd build && make && cd ..  && ./build/torx-gtk4`
