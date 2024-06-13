@@ -7127,6 +7127,22 @@ static void ui_activate(GtkApplication *application,void *arg)
 	const uint16_t icon_port = randport(0);
 	char port_array[6];
 	snprintf(port_array,sizeof(port_array),"%u",icon_port);
+	#ifdef WIN32
+	if(!CreateProcess(NULL,"torx-tray",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+	{ // after checking PATH, assuming this isn't running in GDB
+		char binary_path_copy[PATH_MAX];
+		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
+		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
+		char appindicator_path[PATH_MAX];
+		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray",starting_dir,current_binary_directory);
+		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+		{ // try for GDB
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray",current_binary_directory);
+			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+		}
+	}
+	#else
 	pid_t pid;
 	if((pid = fork()) == -1)
 		error_simple(-1,"fork");
@@ -7148,6 +7164,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 		}
 		exit(0);
 	}
+	#endif
 	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
 		error_simple(0,"Failed to create thread");
 	#endif

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
+set(CMAKE_C_COMPILER "gcc") ## MUST be BEFORE project, or disabled altogether. gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
 project(torx-gtk4 LANGUAGES C)
 #[[ # Works but unsure how to pass args. Can we just declare and have them used?
 include(FetchContent)
@@ -27,26 +28,27 @@ if(LAN_REPO)
 	message(STATUS "Using LAN repository: ${LAN_REPO}")
 	set(REPO_TORX "${LAN_REPO}/libtorx.git")
 else()
-	message(STATUS "Using default remote repositories instead of LAN.")
+	message(STATUS "Using default remote repositories instead of LAN (GTK).")
 	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
 endif()
-
-add_subdirectory(appindicator)
-set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 			#### C90 crap: -Wvla -Wdeclaration-after-statement
 			#### Unimportant: -Waggregate-return
 			#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
 			#### other static analyzer binaries: cppcheck clang-tidy
 			## XXX For dev builds: -D_FORTIFY_SOURCE=0 -fsanitize=thread -fsanitize=address -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero
 			## XXX For release: -D_FORTIFY_SOURCE=2 -O2 and REMOVE ALL -fsanitize
-set(CMAKE_C_COMPILER "gcc") ## gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero -fwrapv -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
-
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fwrapv -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
+if(NOT WIN32)
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero")
+endif()
 if(${CMAKE_C_COMPILER} STREQUAL "clang") # TODO To reveal 1300+ thread-unsafe reads, remove -Wno-unsafe-buffer-usage
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-duplicate-enum -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage")
 else() # GCC
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwhole-program -Wcast-align=strict -Wformat-signedness")
 endif()
+
+add_subdirectory(appindicator)
+set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 if(BUILD_SHARED_LIBS)
 	add_library(torx SHARED IMPORTED)
@@ -105,5 +107,3 @@ install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
 
 # Install the icon
 install(FILES other/org.torx.gtk4.png DESTINATION share/icons/hicolor/48x48/apps)
-
-## Note: user should probably call sudo update-desktop-database afterwards

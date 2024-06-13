@@ -256,11 +256,15 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 		data->visibility = FALSE;
 		rebuild(data);
 	}
-	if(fork() < 1)
+	#ifdef WIN32
+	CreateProcess(NULL,"data->path",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL)
+	#else
+	if(fork() == 0)
 	{
 		execl(data->path,basename(data->path),NULL); // note: different memory space, safe to call basename without copying here
 		exit(EXIT_SUCCESS);
 	}
+	#endif
 }
 
 int main(int argc, char *argv[]) {
