@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.14)
-set(CMAKE_C_COMPILER "gcc") ## MUST be BEFORE project, or disabled altogether. gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
 project(torx-gtk4 LANGUAGES C)
 #[[ # Works but unsure how to pass args. Can we just declare and have them used?
 include(FetchContent)
@@ -31,6 +30,7 @@ else()
 	message(STATUS "Using default remote repositories instead of LAN (GTK).")
 	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
 endif()
+#set(CMAKE_C_COMPILER "clang") ## Enabling this breaks add_subdirectory, so would have to be placed after add_subdirectory. gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
 			#### C90 crap: -Wvla -Wdeclaration-after-statement
 			#### Unimportant: -Waggregate-return
 			#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
@@ -73,12 +73,13 @@ find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
 #find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
 pkg_check_modules(GTK4 REQUIRED gtk4)
 
-add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
-
 include_directories(${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
 #include_directories(${PNG_INCLUDE_DIRS} ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
 link_directories(${GTK4_LIBRARY_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 add_definitions(${GTK4_CFLAGS_OTHER})
+
+add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
+
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
