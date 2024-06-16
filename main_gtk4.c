@@ -6972,7 +6972,7 @@ static void *icon_communicator(void* arg)
 		return 0;
 	}
 	end: {}
-	error_printf(0,"Icon_communicator failed failed before successful connection");
+	error_printf(0,"Icon_communicator failed before successful connection");
 	if(sockfd > 0)
 		close(sockfd);
 	g_idle_add(icon_failure_idle,arg); // XXX

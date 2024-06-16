@@ -58,14 +58,12 @@ struct fresh_data {
 
 static int rebuild(void *arg)
 {
-//	printf("Checkpoint rebuilding\n");
 	struct data *data = (struct data*) arg;
 	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 	if(data->transparent)
 	{
 		gtk_status_icon_set_from_gicon(data->tray_icon,data->icon_logo_transparent);
 		data->transparent = FALSE;
-	//	printf("Checkpoint transparent false\n");
 	}
 	else if(data->unread_peer + data->unread_group + data->incoming)
 		gtk_status_icon_set_from_gicon(data->tray_icon,data->icon_logo_unread);
@@ -240,7 +238,6 @@ static int blinker_idle(void *arg)
 	{
 		data->blinks_left--;
 		data->transparent = TRUE;
-		printf("Checkpoint transparent true\n");
 		rebuild(data);
 		g_timeout_add(BLINK_TIME_MS,rebuild,data);
 	}
