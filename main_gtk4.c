@@ -2207,7 +2207,7 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 	(void) scrolled_window;
 	const int n = vptoi(data); // DO NOT FREE ARG
 	(void) n; // not implemented yet
-	if(pos == GTK_POS_BOTTOM)
+	if((INVERSION_TEST && pos == GTK_POS_TOP) || (!INVERSION_TEST && pos == GTK_POS_BOTTOM)) // GTK_POS_BOTTOM
 		return;
 	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\"\n");
 }
@@ -5286,7 +5286,6 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 		const int g = pair->fourth;
 		if(!t_peer[n].t_message[i].visible)
 			return;
-printf("Checkpoint message_builder\n");
 		GtkWidget *message_box = ui_message_generator(n,i,f,g);
 		if(INVERSION_TEST)
 			gtk_widget_add_css_class(message_box,"invert-vertical"); // failed inversion
@@ -5446,7 +5445,6 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
 		if(INVERSION_TEST)
 		{
-			printf("Checkpoint yes\n");
 			g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g)); // failed inversion // 
 			t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
 		}
@@ -6359,7 +6357,6 @@ static void ui_select_changed(const void *arg)
 	g_signal_connect(factory, "bind", G_CALLBACK(message_builder),NULL);
 //	g_signal_connect(factory, "setup", G_CALLBACK(setup_test),NULL);
 	GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
-printf("Checkpoint building the list_view\n");
 	if(INVERSION_TEST)
 	{
 	// OPTION 1, do not delete. This seperates the list view and the scroll bar (though effect is the same)
