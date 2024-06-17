@@ -5352,7 +5352,6 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				g_idle_add_full(301,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
 			else
 				g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
-
 		}
 		return; // do not display
 	}
@@ -5372,7 +5371,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	if((nn != global_n || !gtk_widget_get_visible(t_main.main_window)) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
 	{ /* Complete Message (indicated by scroll==1), but not on screen */
 		t_peer[nn].unread++;
-		if (owner == ENUM_OWNER_GROUP_CTRL)
+		if (owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 			totalUnreadGroup++;
 		else
 			totalUnreadPeer++;
