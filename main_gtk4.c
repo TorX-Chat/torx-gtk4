@@ -2886,7 +2886,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_save_qr = "Save QR";
 		text_copy_qr = "Copy QR";
 		text_delete = "Delete";
-		text_delete_log = "Delete Logs";
+		text_delete_log = "Clear Log";
 		text_button_send = "Send";
 		text_done = "Done";
 		text_cancel_editing = "Cancel editing";
