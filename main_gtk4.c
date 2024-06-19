@@ -3087,11 +3087,11 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 	if(spin == ENUM_SPIN_DEBUG)
 		value_original = (int)torx_debug_level(-1);
 	else if(spin == ENUM_SPIN_CPU_THREADS)
-		value_original = global_threads;
+		value_original = (int)global_threads;
 	else if(spin == ENUM_SPIN_SUFFIX_LENGTH)
 		value_original = (int)suffix_length;
 	else if(spin == ENUM_SPIN_LOG_DAYS)
-		value_original = show_log_days;
+		value_original = (int)show_log_days;
 	else if(spin == ENUM_SPIN_SING_EXPIRATION)
 		value_original = (int)sing_expiration_days;
 	else if(spin == ENUM_SPIN_MULT_EXPIRATION)
@@ -3113,22 +3113,22 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		}
 		else if(spin == ENUM_SPIN_CPU_THREADS)
 		{
-			global_threads = (int)value_current;
-			snprintf(p1,sizeof(p1),"%d",global_threads);
+			global_threads = (uint32_t)value_current;
+			snprintf(p1,sizeof(p1),"%u",global_threads);
 			pthread_rwlock_unlock(&mutex_global_variable);
 			sql_setting(0,-1,"global_threads",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_SUFFIX_LENGTH)
 		{
 			suffix_length = (uint8_t)value_current;
-			snprintf(p1,sizeof(p1),"%d",suffix_length);
+			snprintf(p1,sizeof(p1),"%u",suffix_length);
 			pthread_rwlock_unlock(&mutex_global_variable);
 			sql_setting(0,-1,"suffix_length",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_LOG_DAYS)
 		{
-			show_log_days = (int)value_current;
-			snprintf(p1,sizeof(p1),"%d",show_log_days);
+			show_log_days = (uint32_t)value_current;
+			snprintf(p1,sizeof(p1),"%u",show_log_days);
 			pthread_rwlock_unlock(&mutex_global_variable);
 			sql_setting(0,-1,"show_log_days",p1,strlen(p1));
 		}
@@ -3326,13 +3326,13 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), box1);
 
 	// Maximum CPU threads
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_cpu,ENUM_SPIN_CPU_THREADS,threadsafe_read_int32(&mutex_global_variable,&global_threads),1,threadsafe_read_int32(&mutex_global_variable,&threads_max)));
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_cpu,ENUM_SPIN_CPU_THREADS,(int)threadsafe_read_uint32(&mutex_global_variable,&global_threads),1,(int)threadsafe_read_uint32(&mutex_global_variable,&threads_max)));
 
 	// Suffix Length
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_suffix,ENUM_SPIN_SUFFIX_LENGTH,threadsafe_read_uint8(&mutex_global_variable,&suffix_length),0,9));
 
 	// Log Days
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_log_days,ENUM_SPIN_LOG_DAYS,threadsafe_read_int32(&mutex_global_variable,&show_log_days),0,100000)); // arbitrary max
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_log_days,ENUM_SPIN_LOG_DAYS,(int)threadsafe_read_uint32(&mutex_global_variable,&show_log_days),0,100000)); // arbitrary max
 
 	// Sing Validity
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_validity_sing,ENUM_SPIN_SING_EXPIRATION,(int)threadsafe_read_uint32(&mutex_global_variable,&sing_expiration_days),0,5475)); // setting reasonable max of 15 years because it it over-runs 2038 we gonna have issues
