@@ -1631,7 +1631,7 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 	if(file)
 	{
 		if(!strncmp(gtk_widget_get_name(button),"tor_location",12))
-		{
+		{ // TODO consider having a option to unset / reset default path
 			char *path = g_file_get_path(file);
 			if(!path)
 				return;
@@ -1698,12 +1698,14 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 		torx_free((void*)&download_dir);
 		download_dir = allocation;
 		pthread_rwlock_unlock(&mutex_global_variable);
+		sql_setting(0,-1,"download_dir",folder_path,len);
 	}
 	else
 	{ // Unset if cancelled
 		pthread_rwlock_wrlock(&mutex_global_variable);
 		torx_free((void*)&download_dir);
 		pthread_rwlock_unlock(&mutex_global_variable);
+		sql_delete_setting(0,-1,"download_dir");
 	}
 	pthread_rwlock_rdlock(&mutex_global_variable);
 	gtk_button_set_label (GTK_BUTTON(data),download_dir);
@@ -1737,13 +1739,9 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,const gp
 			const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
 			peer[n].file[f].file_path = torx_secure_malloc(maxlen);
 			#ifdef WIN32
-			{
-				snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'\\',peer[n].file[f].filename);
-			}
+			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'\\',peer[n].file[f].filename);
 			#else
-			{
-				snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'/',peer[n].file[f].filename);
-			}
+			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'/',peer[n].file[f].filename);
 			#endif
 			torx_unlock(n) // XXX
 			file_accept(n,f);
