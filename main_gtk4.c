@@ -441,7 +441,6 @@ static const char *text_yes = {0};
 static const char *text_leave_after = {0};
 static const char *text_delete_after = {0};
 static const char *text_select = {0};
-static const char *text_select_folder = {0};
 static const char *text_save_sing = {0};
 static const char *text_save_mult = {0};
 static const char *text_emit_global_kill = {0};
@@ -540,7 +539,7 @@ static const char *text_set_select_language = {0};
 static const char *text_set_onionid_or_torxid = {0};
 static const char *text_set_global_log = {0};
 static const char *text_set_auto_resume_inbound = {0};
-static const char *text_set_full_duplex = {0};
+static const char *text_set_download_directory = {0};
 static const char *text_set_tor = {0};
 static const char *text_set_cpu = {0};
 static const char *text_set_suffix = {0};
@@ -1684,41 +1683,71 @@ static void ui_on_choose_files(GtkFileDialog *dialog,GAsyncResult *res,const voi
 	}
 }
 
-static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,const gpointer data)
-{ /* For selecting a folder for saving file */
-	struct file_nf *file_nf = (struct file_nf*) data; // DO NOT FREE ARG
-	const int n = file_nf->n;
-	const int f = file_nf->f;
+static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,const gpointer data)
+{ // Choosing download_dir. Data is button.
 	GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
 	if(folder)
-	{
-		torx_read(n) // XXX
-		const char *filename = peer[n].file[f].filename;
-		torx_unlock(n) // XXX
-		if(filename == NULL)
-		{
-			error_simple(0,"Null file name. Failed sanity check.");
-			gtk_window_destroy(GTK_WINDOW(dialog));
-			return;
-		}
+	{ // Set
 		const char *folder_path = g_file_get_path(folder);
 		if(folder_path == NULL) // has happened, stupid GTK
 			return;
-		torx_write(n) // XXX
-		torx_free((void*)&peer[n].file[f].file_path);
-		const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
-		peer[n].file[f].file_path = torx_secure_malloc(maxlen);
-		#ifdef WIN32
+		const size_t len = strlen(folder_path);
+		char *allocation = torx_secure_malloc(len+1);
+		memcpy(allocation,folder_path,len+1);
+		pthread_rwlock_wrlock(&mutex_global_variable);
+		torx_free((void*)&download_dir);
+		download_dir = allocation;
+		pthread_rwlock_unlock(&mutex_global_variable);
+	}
+	else
+	{ // Unset if cancelled
+		pthread_rwlock_wrlock(&mutex_global_variable);
+		torx_free((void*)&download_dir);
+		pthread_rwlock_unlock(&mutex_global_variable);
+	}
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	gtk_button_set_label (GTK_BUTTON(data),download_dir);
+	pthread_rwlock_unlock(&mutex_global_variable);
+}
+
+static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,const gpointer data)
+{ // For selecting a folder for saving file
+	if(data)
+	{ // Choosing folder path
+		struct file_nf *file_nf = (struct file_nf*) data; // DO NOT FREE ARG
+		const int n = file_nf->n;
+		const int f = file_nf->f;
+		GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
+		if(folder)
 		{
-			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'\\',peer[n].file[f].filename);
+			torx_read(n) // XXX
+			const char *filename = peer[n].file[f].filename;
+			torx_unlock(n) // XXX
+			if(filename == NULL)
+			{
+				error_simple(0,"Null file name. Failed sanity check.");
+				gtk_window_destroy(GTK_WINDOW(dialog));
+				return;
+			}
+			const char *folder_path = g_file_get_path(folder);
+			if(folder_path == NULL) // has happened, stupid GTK
+				return;
+			torx_write(n) // XXX
+			torx_free((void*)&peer[n].file[f].file_path);
+			const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
+			peer[n].file[f].file_path = torx_secure_malloc(maxlen);
+			#ifdef WIN32
+			{
+				snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'\\',peer[n].file[f].filename);
+			}
+			#else
+			{
+				snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'/',peer[n].file[f].filename);
+			}
+			#endif
+			torx_unlock(n) // XXX
+			file_accept(n,f);
 		}
-		#else
-		{
-			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'/',peer[n].file[f].filename);
-		}
-		#endif
-		torx_unlock(n) // XXX
-		file_accept(n,f);
 	}
 }
 
@@ -1946,6 +1975,8 @@ static void ui_choose_file(GtkWidget *button,const gpointer arg)
 static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 { // Toggle File transfer (accept, pause/cancel)
 	(void) self;
+	if(!data)
+		return;
 	struct file_nf *file_nf = (struct file_nf*) data; // DO NOT FREE ARG
 	const int n = file_nf->n;
 	const int f = file_nf->f;
@@ -1955,7 +1986,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	const uint64_t size = peer[n].file[f].size;
 	const uint64_t transferred = calculate_transferred(n,f);
 	torx_unlock(n) // XXX
-printf("Checkpoint toggle_file: %u\n",status);
+	printf("Checkpoint toggle_file: %u\n",status);
 	if(size > 0 && size == transferred && size == get_file_size(file_path))
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 		GFile *file = g_file_new_for_path(file_path);
@@ -2844,7 +2875,6 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_leave_after = "Leave After";
 		text_delete_after = "Delete After";
 		text_select = "Select";
-		text_select_folder = "Select Folder";
 		text_save_sing = "Save as SING";
 		text_save_mult = "Save as MULT";
 		text_emit_global_kill = "Emit Global Kill Code";
@@ -2944,7 +2974,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_onionid_or_torxid = "TorX-ID (<=52 char) or OnionID (56 char with checksum)";
 		text_set_global_log = "Message Logging (Global Default)";
 		text_set_auto_resume_inbound = "Auto-Resume Inbound Transfers";
-		text_set_full_duplex = "Request Full-Duplex Inbound Transfers";
+		text_set_download_directory = "Select Download Directory";
 		text_set_tor = "Select Custom Tor binary location (effective immediately)";
 		text_set_cpu = "Maximum CPU threads for TorX-ID generation";
 		text_set_suffix = "Minimum Suffix Length for TorX-ID generation";
@@ -3241,6 +3271,15 @@ static GtkWidget *ui_spinbutton(const char *description,const int spinner,const 
 	return outer_box;
 }
 
+static void ui_choose_folder(GtkWidget *button,const gpointer arg)
+{
+	(void) arg;
+	GtkFileDialog *dialog = gtk_file_dialog_new();
+	gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
+	gtk_file_dialog_set_title(dialog,text_choose_folder); // also: gtk_file_dialog_set_filters
+	gtk_file_dialog_select_folder (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_download_dir,button);
+}
+
 static void ui_show_settings(void)
 { // Do not permit debug level as an option. Could make life easier but could also be very dangerous for people.
 	if(vertical_mode > 0)
@@ -3301,8 +3340,25 @@ static void ui_show_settings(void)
 	// Automatically resume inbound transfers (toggle)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_resume_inbound,&ui_change_resume,threadsafe_read_uint8(&mutex_global_variable,&auto_resume_inbound),text_disable,text_enable,NULL));
 
-//	// Force full_duplex Outbound transfers (toggle)
-//	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_full_duplex,&ui_change_full_duplex,threadsafe_read_uint8(&mutex_global_variable,&full_duplex_requests),text_disable,text_enable,NULL));
+	// Downloads Folder
+	GtkWidget *box0;
+	if(vertical_mode)
+		box0 = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
+	else
+		box0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *label0 = gtk_label_new(text_set_download_directory);
+	gtk_widget_set_halign(label0, GTK_ALIGN_START);
+	gtk_widget_set_hexpand(label0, TRUE);	// works, do not remove
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	GtkWidget *button_download_dir = gtk_button_new_with_label (download_dir);
+	GtkWidget *inner_box1  = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	gtk_widget_set_halign(inner_box1, GTK_ALIGN_END);
+	gtk_box_append (GTK_BOX (inner_box1), button_download_dir);
+	pthread_rwlock_unlock(&mutex_global_variable);
+	g_signal_connect(button_download_dir, "clicked", G_CALLBACK(ui_choose_folder), NULL);
+	gtk_box_append (GTK_BOX (box0), label0);
+	gtk_box_append (GTK_BOX (box0 ), inner_box1);
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), box0);
 
 	// Tor binary location
 	GtkWidget *box1;
