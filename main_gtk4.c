@@ -866,6 +866,21 @@ void expand_group_struc_cb_ui(const int g)
 	(void) g;
 }
 
+static gboolean write_test(const char *path)
+{ // Returns TRUE if path (directory) is writable
+	char temp_file_path[PATH_MAX];
+	snprintf(temp_file_path, sizeof(temp_file_path), "%s%cjgIYZZHLdU9gCKud1VxptmJlH3zWd0bA",path,platform_slash); // Random string must not clash with any file on user's device
+	FILE *file = fopen(temp_file_path, "wb");
+	if (file == NULL)
+	{
+		error_simple(0,"Directory is not writable. Choose a different directory.");
+		return FALSE; // not writable
+	}
+	fclose(file); file = NULL;
+	remove(temp_file_path);
+	return TRUE; // writable
+}
+
 static inline int display_notification_idle(void *arg) // g_idle_add() functions must return int
 {
 	struct notification *notification = (struct notification*) arg;
@@ -1438,7 +1453,6 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 	GFile *chosen_path = gtk_file_dialog_save_finish(dialog,res,NULL);
 	if(chosen_path)
 	{
-
 		struct qr_data *qr_data;
 		const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
 		if(owner == ENUM_OWNER_GROUP_CTRL)
@@ -1462,7 +1476,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		}
 		size_t png_size = 0;
 		void* png_data = return_png(&png_size,qr_data);
-		write_bytes(g_file_get_path(chosen_path),png_size,png_data);
+		write_bytes(g_file_get_path(chosen_path),png_data,png_size);
 	//	printf("Checkpoint png_size: %lu qr_data->size_allocated: %lu saving to: %s\n",png_size,qr_data->size_allocated,g_file_get_path(chosen_path));
 
 	//	sodium_memzero(png_data,png_size);
@@ -1689,7 +1703,7 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 	if(folder)
 	{ // Set
 		const char *folder_path = g_file_get_path(folder);
-		if(folder_path == NULL) // has happened, stupid GTK
+		if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 			return;
 		const size_t len = strlen(folder_path);
 		char *allocation = torx_secure_malloc(len+1);
@@ -1732,17 +1746,13 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,const gp
 				return;
 			}
 			const char *folder_path = g_file_get_path(folder);
-			if(folder_path == NULL) // has happened, stupid GTK
+			if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 				return;
 			torx_write(n) // XXX
 			torx_free((void*)&peer[n].file[f].file_path);
 			const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
 			peer[n].file[f].file_path = torx_secure_malloc(maxlen);
-			#ifdef WIN32
-			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'\\',peer[n].file[f].filename);
-			#else
-			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,'/',peer[n].file[f].filename);
-			#endif
+			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,platform_slash,peer[n].file[f].filename);
 			torx_unlock(n) // XXX
 			file_accept(n,f);
 		}
@@ -3349,10 +3359,10 @@ static void ui_show_settings(void)
 	gtk_widget_set_hexpand(label0, TRUE);	// works, do not remove
 	pthread_rwlock_rdlock(&mutex_global_variable);
 	GtkWidget *button_download_dir = gtk_button_new_with_label (download_dir);
+	pthread_rwlock_unlock(&mutex_global_variable);
 	GtkWidget *inner_box1  = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	gtk_widget_set_halign(inner_box1, GTK_ALIGN_END);
 	gtk_box_append (GTK_BOX (inner_box1), button_download_dir);
-	pthread_rwlock_unlock(&mutex_global_variable);
 	g_signal_connect(button_download_dir, "clicked", G_CALLBACK(ui_choose_folder), NULL);
 	gtk_box_append (GTK_BOX (box0), label0);
 	gtk_box_append (GTK_BOX (box0 ), inner_box1);
@@ -7053,14 +7063,14 @@ static void ui_activate(GtkApplication *application,void *arg)
 		GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/scalable/apps/logo-torx-symbolic.svg",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 		size_t size = 0;
 		const void *data = g_bytes_get_data(bytes,&size);
-		write_bytes(FILENAME_ICON,size,data);
+		write_bytes(FILENAME_ICON,data,size);
 	}
 	if(!get_file_size(FILENAME_BEEP))
 	{
 		GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 		size_t size = 0;
 		const void *data = g_bytes_get_data(bytes,&size);
-		write_bytes(FILENAME_BEEP,size,data);
+		write_bytes(FILENAME_BEEP,data,size);
 	}
 
 	/* Load all headerbar resources and resources required by Auth Screen */
@@ -7204,10 +7214,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 			snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 			char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 			char appindicator_path[PATH_MAX];
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s/%s/torx-tray",starting_dir,current_binary_directory);
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
 			if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
 			{ // try for GDB
-				snprintf(appindicator_path,sizeof(appindicator_path),"%s/torx-tray",current_binary_directory);
+				snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
 				if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
 					error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 			}
