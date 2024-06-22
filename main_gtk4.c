@@ -103,7 +103,6 @@ static uint8_t running = 0;
 static int global_n = -1; // Always CTRL or GROUP_CTRL. Currently open chat window. Avoid using where possible. (except notifications perhaps)
 static int treeview_n = -1;
 static int global_theme = -1;
-static int save_dir_always_ask = 1; // TODO consider moving this to library (yes)
 static int log_unread = 1;
 static int vertical_mode = 0; // see ui_determine_orientation()
 static int8_t force_sign = 0; // TODO Should be 0. Global value for testing only. This should be per-peer. can add timestamp to message (as a salt to prevent relay attacks in groups), Tor project does this with all signed messages.
@@ -2006,7 +2005,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	}
 	if(status == ENUM_FILE_INBOUND_PENDING)
 	{
-		if(file_path == NULL && (save_dir_always_ask == 1 || download_dir == NULL))
+		if(file_path == NULL && download_dir == NULL)
 		{ // this should only be for received files that are not started, otherwise should accept/pause/cancel via file_accept
 			GtkFileDialog *dialog = gtk_file_dialog_new();
 			gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
