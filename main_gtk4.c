@@ -161,6 +161,8 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	struct t_file_list {
 		GtkWidget *progress_bar;
 		GtkWidget *file_size;
+		int n; // The peer iter that progress_bar is in, for rebuilds upon completion
+		int i; // The message iter that progress_bar is in, for rebuilds upon completion
 	} *t_file;
 } *t_peer; // TODO do not initialize automatically, but upon use
 
@@ -589,6 +591,8 @@ static void ui_show_settings(void);
 static int ui_populate_peers(void *arg);
 GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size);
 GtkWidget *ui_button_generate(const int type,const int n);
+static inline uint8_t is_image_file(const char *filename);
+static void ui_print_message(const int n,const int i,const int scroll);
 
 static GtkApplication	*gtk_application_gtk4;
 
@@ -783,6 +787,8 @@ static int initialize_f_idle(void *arg)
 	const int f = file_nf->f;
 	torx_free((void*)&file_nf);
 
+	t_peer[n].t_file[f].n = -1;
+	t_peer[n].t_file[f].i = -1;
 	t_peer[n].t_file[f].progress_bar = NULL;
 	t_peer[n].t_file[f].file_size = NULL;
 	return 0;
@@ -1019,6 +1025,9 @@ static int transfer_progress_idle(void *arg)
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
 		return 0; // should check if visible?
 	const uint64_t size = getter_uint64(n,-1,f,-1,offsetof(struct file_list,size));
+	torx_read(n) // XXX
+	const char *file_path = peer[n].file[f].file_path;
+	torx_unlock(n) // XXX
 	if(transferred == size)
 	{ // Notify of completion
 		const uint8_t status = getter_uint8(n,-1,f,-1,offsetof(struct file_list,status));
@@ -1036,9 +1045,6 @@ static int transfer_progress_idle(void *arg)
 			return 0;
 		}
 		sodium_memzero(peernick,sizeof(peernick));
-		torx_read(n) // XXX
-		const char *file_path = peer[n].file[f].file_path;
-		torx_unlock(n) // XXX
 		ui_notify(heading,file_path);
 		sodium_memzero(heading,sizeof(heading));
 	}
@@ -1052,6 +1058,8 @@ static int transfer_progress_idle(void *arg)
 	const uint8_t status = getter_uint8(n,-1,f,-1,offsetof(struct file_list,status));
 	if(status == ENUM_FILE_INBOUND_ACCEPTED || status == ENUM_FILE_INBOUND_COMPLETED || status == ENUM_FILE_OUTBOUND_ACCEPTED || status == ENUM_FILE_OUTBOUND_COMPLETED)
 		gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
+	if(status == ENUM_FILE_INBOUND_COMPLETED && is_image_file(file_path))
+		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image
 	return 0;
 }
 
@@ -4990,8 +4998,8 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			create_button(text_private_messaging,ui_activity_pm,data)
 		if(owner == ENUM_OWNER_GROUP_PEER)
 			create_button(text_rename,ui_activity_rename,itovp(n))
-		create_button(text_delete,ui_message_delete,data)
 	}
+	create_button(text_delete,ui_message_delete,data)
 	g_signal_connect(t_main.popover_message, "closed", G_CALLBACK (gtk_widget_unparent), t_main.popover_message); // XXX necessary or a warning occurs
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_message));
 }
@@ -5287,6 +5295,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				fraction = (1.000 *(double)transferred / (double)size);
 
 			t_peer[nnn].t_file[f].progress_bar = gtk_progress_bar_new();
+			t_peer[nnn].t_file[f].n = n;
+			t_peer[nnn].t_file[f].i = i;
 			gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),TRUE);
 			gtk_progress_bar_set_text(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),NULL);
 			gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),fraction);
@@ -5351,7 +5361,7 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 			return;
 		GtkWidget *message_box = ui_message_generator(n,i,f,g);
 		if(INVERSION_TEST)
-			gtk_widget_add_css_class(message_box,"invert-vertical"); // failed inversion
+			gtk_widget_add_css_class(message_box,"invert-vertical");
 		const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
 		if(stat == ENUM_MESSAGE_RECV)
 			gtk_widget_set_halign(message_box, GTK_ALIGN_START);
@@ -5507,7 +5517,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
 		if(INVERSION_TEST)
 		{
-			g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g)); // failed inversion // 
+			g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
 			t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
 		}
 		else
@@ -6422,10 +6432,10 @@ static void ui_select_changed(const void *arg)
 	if(INVERSION_TEST)
 	{
 	// OPTION 1, do not delete. This seperates the list view and the scroll bar (though effect is the same)
-	//	gtk_widget_add_css_class(list_view,"invert-vertical"); // failed inversion
-	//	gtk_widget_add_css_class(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(t_main.scrolled_window_right)),"invert-vertical"); // failed inversion
+	//	gtk_widget_add_css_class(list_view,"invert-vertical");
+	//	gtk_widget_add_css_class(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(t_main.scrolled_window_right)),"invert-vertical");
 	// OPTION 2, do not delete. This just inverts the scrolled window
-		gtk_widget_add_css_class(t_main.scrolled_window_right,"invert-vertical"); // failed inversion
+		gtk_widget_add_css_class(t_main.scrolled_window_right,"invert-vertical");
 	}
 
 	gtk_widget_add_css_class(list_view, "invisible"); // XXX important
