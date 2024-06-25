@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 0.100 2024/06/01 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.5 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -119,6 +119,7 @@ static uint8_t start_minimized = 0;
 static uint8_t start_daemonized = 0;
 static uint8_t no_password = 0; // UI setting that is only relevant during first_start
 
+static pid_t tray_pid = -1;
 static size_t totalUnreadPeer = 0;
 static size_t totalUnreadGroup = 0;
 static size_t totalIncoming = 0;
@@ -7047,6 +7048,8 @@ static void *icon_communicator(void* arg)
 	if(sockfd > 0)
 		close(sockfd);
 	g_idle_add(icon_failure_idle,arg); // XXX
+	if(tray_pid > 0)
+		kill(tray_pid,SIGTERM);
 	pthread_exit(NULL);
 }
 
@@ -7211,10 +7214,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 		}
 	}
 	#else
-	pid_t pid;
-	if((pid = fork()) == -1)
+	if((tray_pid = fork()) == -1)
 		error_simple(-1,"fork");
-	if(pid == 0)
+	if(tray_pid == 0)
 	{ // Check in path before attempting to check from directory we run from
 		if(execlp("torx-tray","torx-tray","-p",port_array,"-P",binary_path,NULL))
 		{ // after checking PATH, assuming this isn't running in GDB
