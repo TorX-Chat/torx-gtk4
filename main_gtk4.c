@@ -403,7 +403,7 @@ void onion_deleted_cb_ui(const uint8_t owner,const int n);
 void peer_online_cb_ui(const int n);
 void peer_offline_cb_ui(const int n);
 void peer_new_cb_ui(const int n);
-void print_log_cb_ui(const int n,const int actual);
+void peer_loaded_cb_ui(const int n);
 void onion_ready_cb_ui(const int n);
 void cleanup_cb_ui(const int sig_num);
 void tor_log_cb_ui(char *message);
@@ -1405,9 +1405,8 @@ void peer_new_cb_ui(const int n)
 	g_idle_add(peer_new_idle,itovp(n));
 }
 
-void print_log_cb_ui(const int n,const int actual)
+void peer_loaded_cb_ui(const int n)
 { // NOTE: this runs frequently on startup
-	(void) actual;
 	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 		g_idle_add(ui_populate_peers,itovp(ENUM_STATUS_GROUP_CTRL));
@@ -7284,32 +7283,8 @@ int main(int argc,char **argv)
 		fprintf(stderr,"Error initializing LibSodium library. Be sure to compile with -lsodium flag\n");
 		return -1;
 	}
-/*	initialize_n_registered = initialize_n_cb_ui;
-	initialize_i_registered = initialize_i_cb_ui;
-	initialize_f_registered = initialize_f_cb_ui;
-	initialize_g_registered = initialize_g_cb_ui;
-	expand_file_struc_registered = expand_file_struc_cb_ui;
-	expand_messages_struc_registered = expand_messages_struc_cb_ui;
-	expand_peer_struc_registered = expand_peer_struc_cb_ui;
-	expand_group_struc_registered = expand_group_struc_cb_ui;
-	transfer_progress_registered = transfer_progress_cb_ui;
-	change_password_registered = change_password_cb_ui;
-	incoming_friend_request_registered = incoming_friend_request_cb_ui;
-	onion_deleted_registered = onion_deleted_cb_ui;
-	peer_online_registered = peer_online_cb_ui;
-	peer_offline_registered = peer_offline_cb_ui;
-	peer_new_registered = peer_new_cb_ui;
-	onion_ready_registered = onion_ready_cb_ui;
-	error_registered = error_cb_ui;
-	fatal_registered = fatal_cb_ui;
-	custom_setting_registered = custom_setting_cb_ui;
-	print_message_registered = print_message_cb_ui;
-	login_registered = login_cb_ui;
-	print_log_registered = print_log_cb_ui;
-	cleanup_registered = cleanup_cb_ui;
-	stream_registered = stream_cb_ui;	*/
 
-	// Utilizing setter functions instead of direct setting for typechecking
+	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
 	initialize_n_setter(initialize_n_cb_ui);
 	initialize_i_setter(initialize_i_cb_ui);
 	initialize_f_setter(initialize_f_cb_ui);
@@ -7332,7 +7307,7 @@ int main(int argc,char **argv)
 	custom_setting_setter(custom_setting_cb_ui);
 	print_message_setter(print_message_cb_ui);
 	login_setter(login_cb_ui);
-	print_log_setter(print_log_cb_ui);
+	peer_loaded_setter(peer_loaded_cb_ui);
 	cleanup_setter(cleanup_cb_ui);
 	stream_setter(stream_cb_ui);
 
