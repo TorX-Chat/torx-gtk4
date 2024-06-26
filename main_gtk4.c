@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.5 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.6 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -5537,8 +5537,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	skip_printing: {}
 	if(scroll)
 	{ // == 1 or == 2 or == 3
-		const int message_n = getter_int(n,-1,-1,-1,offsetof(struct peer_list,message_n));
-		if(scroll == 1 || i >= message_n-1) // TODO 2024/02/22 Minor bug: when deleting the last message (message_n-1), this if statement is not activated. A bad work-ardound would be to pass scroll==1, but a better one would be to check the validity of message_n-1 and look lower.
+		const int max_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,max_i));
+		if(scroll == 1 || i >= max_i) // TODO 2024/02/22 Minor bug: when deleting the last message (max_i), this if statement is not activated. A bad work-ardound would be to pass scroll==1, but a better one would be to check the validity of max_i and look lower.
 		{ // populate_peers if last message or commanded (1)
 			if(owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL)); // Necessary for last_message and also the order
@@ -5643,7 +5643,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 			if(save_all_stickers)
 				ui_sticker_save(itovp(s));
 			torx_read(n) // XXX
-			for(int i = peer[n].message_n - 1; i > -1 ; i--)
+			for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
 			{
 				const int p_iter_local = peer[n].message[i].p_iter;
 				const uint16_t protocol_local = protocols[p_iter_local].protocol;
@@ -6414,10 +6414,11 @@ static void ui_select_changed(const void *arg)
 	}
 	else
 	{
-		const int message_n = getter_int(n,-1,-1,-1,offsetof(struct peer_list,message_n));
-		for(int i = 0; i < message_n; i++)
+		const int max_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,max_i));
+		const int min_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,min_i));
+		for(int i = min_i; i < max_i + 1; i++)
 		{ // Display messages
-			if(i + 1 == message_n)
+			if(i == max_i)
 				ui_print_message(n,i,1); // scroll, but no new message
 			else
 				ui_print_message(n,i,0); // no scroll
@@ -6643,7 +6644,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 			int p_iter;
 			if(last_message_i > -1 && (p_iter = getter_int(nn,last_message_i,-1,-1,offsetof(struct message_list,p_iter))) > -1)
 			{
-				const int message_n = getter_int(nn,-1,-1,-1,offsetof(struct peer_list,message_n));
+				const int max_i = getter_int(nn,-1,-1,-1,offsetof(struct peer_list,max_i));
 				pthread_rwlock_rdlock(&mutex_protocols);
 				const uint16_t protocol = protocols[p_iter].protocol;
 				const uint8_t file_offer = protocols[p_iter].file_offer;
@@ -6652,7 +6653,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 				torx_read(nn) // XXX
 				const char *tmp_message = peer[nn].message[last_message_i].message;
 				torx_unlock(nn) // XXX
-				if(message_n > 0/* && protocol > 0*/ && tmp_message)
+				if(max_i > -1/* && protocol > 0*/ && tmp_message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
 					const uint8_t stat = getter_uint8(nn,last_message_i,-1,-1,offsetof(struct message_list,stat));
