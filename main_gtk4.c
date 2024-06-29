@@ -394,7 +394,7 @@ void initialize_i_cb_ui(const int n,const int i);
 void initialize_f_cb_ui(const int n,const int f);
 void initialize_g_cb_ui(const int g);
 void expand_file_struc_cb_ui(const int n,const int f);
-void expand_messages_struc_cb_ui(const int n,const int i);
+void expand_message_struc_cb_ui(const int n,const int i);
 void expand_peer_struc_cb_ui(const int n);
 void expand_group_struc_cb_ui(const int g);
 void transfer_progress_cb_ui(const int n,const int f,const uint64_t transferred);
@@ -830,26 +830,33 @@ void expand_file_struc_cb_ui(const int n,const int f)
 	g_idle_add(expand_file_struc_idle,file_nf);
 }
 
-static int expand_messages_struc_idle(void *arg)
+static int expand_message_struc_idle(void *arg)
 { // XXX DO NOT DELETE XXX
 	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
 	const int n = file_nf->n;
 	const int i = file_nf->f;
 	torx_free((void*)&file_nf);
-
-	struct t_message_list *tmp = torx_realloc(t_peer[n].t_message,sizeof(struct t_message_list)*(uint64_t)(i+1) + sizeof(struct t_message_list) *10);
+	torx_read(n) // XXX
+	const int max_i = peer[n].max_i;
+	const int min_i = peer[n].min_i;
+	torx_unlock(n) // XXX
+	struct t_message_list *tmp;
+	if(i > -1)
+		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(i+abs(min_i)+1) + sizeof(struct t_message_list) *10);
+	else
+		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(max_i+abs(i)+1) + sizeof(struct t_message_list) *10);
 	if(tmp ==  NULL)
 		error_simple(-1,"Ran out of ram. Should panic and wipe the struc to crash safely.UI-2");
-	t_peer[n].t_message = tmp;
+	t_peer[n].t_message = tmp + abs(min_i);
 	return 0;
 }
 
-void expand_messages_struc_cb_ui(const int n,const int i)
+void expand_message_struc_cb_ui(const int n,const int i)
 {
 	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
 	file_nf->n = n; // XXX DO NOT DELETE XXX
 	file_nf->f = i;
-	g_idle_add(expand_messages_struc_idle,file_nf);
+	g_idle_add(expand_message_struc_idle,file_nf);
 }
 
 static int expand_peer_struc_idle(void *arg)
@@ -6416,7 +6423,7 @@ static void ui_select_changed(const void *arg)
 	{
 		const int max_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,max_i));
 		const int min_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,min_i));
-		for(int i = min_i; i < max_i + 1; i++)
+		for(int i = min_i; i <= max_i; i++)
 		{ // Display messages
 			if(i == max_i)
 				ui_print_message(n,i,1); // scroll, but no new message
@@ -7293,7 +7300,7 @@ int main(int argc,char **argv)
 	initialize_f_setter(initialize_f_cb_ui);
 	initialize_g_setter(initialize_g_cb_ui);
 	expand_file_struc_setter(expand_file_struc_cb_ui);
-	expand_messages_struc_setter(expand_messages_struc_cb_ui);
+	expand_message_struc_setter(expand_message_struc_cb_ui);
 	expand_peer_struc_setter(expand_peer_struc_cb_ui);
 	expand_group_struc_setter(expand_group_struc_cb_ui);
 	transfer_progress_setter(transfer_progress_cb_ui);
