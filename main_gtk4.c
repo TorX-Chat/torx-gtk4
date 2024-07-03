@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.6 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.7 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2020,7 +2020,10 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	}
 	if(status == ENUM_FILE_INBOUND_PENDING)
 	{
-		if(file_path == NULL && download_dir == NULL)
+		pthread_rwlock_rdlock(&mutex_global_variable);
+		const char *download_dir_local = download_dir;
+		pthread_rwlock_unlock(&mutex_global_variable);
+		if(file_path == NULL && download_dir_local == NULL)
 		{ // this should only be for received files that are not started, otherwise should accept/pause/cancel via file_accept
 			GtkFileDialog *dialog = gtk_file_dialog_new();
 			gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
