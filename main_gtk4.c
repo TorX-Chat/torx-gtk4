@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.7 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.8 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -545,7 +545,6 @@ static const char *text_set_download_directory = {0};
 static const char *text_set_tor = {0};
 static const char *text_set_cpu = {0};
 static const char *text_set_suffix = {0};
-static const char *text_set_log_days = {0};
 static const char *text_set_validity_sing = {0};
 static const char *text_set_validity_mult = {0};
 static const char *text_set_auto_mult = {0};
@@ -750,7 +749,7 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
-	t_peer[n].edit_i = -1;
+	t_peer[n].edit_i = INT_MIN;
 	t_peer[n].buffer_write = NULL;
 	t_peer[n].t_message = torx_insecure_malloc(sizeof(struct t_message_list) *11);
 	t_peer[n].t_file = torx_insecure_malloc(sizeof(struct t_file_list) *11);
@@ -789,7 +788,7 @@ static int initialize_f_idle(void *arg)
 	torx_free((void*)&file_nf);
 
 	t_peer[n].t_file[f].n = -1;
-	t_peer[n].t_file[f].i = -1;
+	t_peer[n].t_file[f].i = INT_MIN;
 	t_peer[n].t_file[f].progress_bar = NULL;
 	t_peer[n].t_file[f].file_size = NULL;
 	return 0;
@@ -841,7 +840,7 @@ static int expand_message_struc_idle(void *arg)
 	const int min_i = peer[n].min_i;
 	torx_unlock(n) // XXX
 	struct t_message_list *tmp;
-	if(i > -1)
+	if(i > INT_MIN)
 		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(i+abs(min_i)+1) + sizeof(struct t_message_list) *10);
 	else
 		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(max_i+abs(i)+1) + sizeof(struct t_message_list) *10);
@@ -1024,7 +1023,7 @@ static int transfer_progress_idle(void *arg)
 	torx_free((void*)&progress);
 	int g = -1;
 	int group_n = -1;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_PEER)
 	{
 		g = set_g(n,NULL);
@@ -1032,15 +1031,15 @@ static int transfer_progress_idle(void *arg)
 	}
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
 		return 0; // should check if visible?
-	const uint64_t size = getter_uint64(n,-1,f,-1,offsetof(struct file_list,size));
+	const uint64_t size = getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,size));
 	torx_read(n) // XXX
 	const char *file_path = peer[n].file[f].file_path;
 	torx_unlock(n) // XXX
 	if(transferred == size)
 	{ // Notify of completion
-		const uint8_t status = getter_uint8(n,-1,f,-1,offsetof(struct file_list,status));
+		const uint8_t status = getter_uint8(n,INT_MIN,f,-1,offsetof(struct file_list,status));
 		char peernick[56+1];
-		getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+		getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 		char heading[256] = {0}; // zero'd
 		if(status == ENUM_FILE_OUTBOUND_COMPLETED)
 			snprintf(heading,sizeof(heading),"%s %s",text_transfer_completed_to,peernick);
@@ -1061,9 +1060,9 @@ static int transfer_progress_idle(void *arg)
 	torx_free((void*)&file_size_text);
 	double fraction = 0;
 	if(size > 0)
-		fraction = ((double)(getter_uint64(n,-1,f,-1,offsetof(struct file_list,last_transferred)))*1.000/(double)size);
+		fraction = ((double)(getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,last_transferred)))*1.000/(double)size);
 	gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[n].t_file[f].progress_bar),fraction);
-	const uint8_t status = getter_uint8(n,-1,f,-1,offsetof(struct file_list,status));
+	const uint8_t status = getter_uint8(n,INT_MIN,f,-1,offsetof(struct file_list,status));
 	if(status == ENUM_FILE_INBOUND_ACCEPTED || status == ENUM_FILE_INBOUND_COMPLETED || status == ENUM_FILE_OUTBOUND_ACCEPTED || status == ENUM_FILE_OUTBOUND_COMPLETED)
 		gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
 	if(status == ENUM_FILE_INBOUND_COMPLETED && is_image_file(file_path))
@@ -1123,9 +1122,9 @@ static void ui_set_image_lock(const int n)
 {
 	if(n != global_n)
 		return;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
-	const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
-	const uint8_t v3auth = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,v3auth));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
+	const uint8_t v3auth = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,v3auth));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(texture_logo));
@@ -1134,12 +1133,12 @@ static void ui_set_image_lock(const int n)
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
 			identifier = text_torxid;
-			getter_array(&onion,52+1,n,-1,-1,-1,offsetof(struct peer_list,torxid));
+			getter_array(&onion,52+1,n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 		}
 		else
 		{
 			identifier = text_onionid;
-			getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 		}
 		const int g = set_g(n,NULL);
 		pthread_rwlock_rdlock(&mutex_expand_group);
@@ -1161,8 +1160,8 @@ static void ui_set_image_lock(const int n)
 		}
 		else
 		{
-			const uint8_t sendfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,sendfd_connected));
-			const uint8_t recvfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,recvfd_connected));
+			const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
+			const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 			if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
 			{
 				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_green));
@@ -1194,8 +1193,8 @@ static void ui_set_image_lock(const int n)
 		}
 		else
 		{
-			const uint8_t sendfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,sendfd_connected));
-			const uint8_t recvfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,recvfd_connected));
+			const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
+			const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 			if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
 			{
 				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_green));
@@ -1224,7 +1223,7 @@ static void ui_set_last_seen(const int n)
 {
 	if(n != global_n)
 		return;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		const int g = set_g(n,NULL); // just looking up existing
@@ -1234,15 +1233,15 @@ static void ui_set_last_seen(const int n)
 		gtk_label_set_text(GTK_LABEL(t_main.last_online),peer_count);
 		return;
 	}
-	const uint8_t sendfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,sendfd_connected));
-	const uint8_t recvfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,recvfd_connected));
+	const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
+	const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 	if(sendfd_connected > 0 && recvfd_connected > 0)
 	{
 		gtk_label_set_text(GTK_LABEL(t_main.last_online),text_status_online);
 		return;
 	}
 	char last_online_text[256];
-	const time_t last_seen = getter_time(n,-1,-1,-1,offsetof(struct peer_list,last_seen));
+	const time_t last_seen = getter_time(n,INT_MIN,-1,-1,offsetof(struct peer_list,last_seen));
 	if(last_seen > 0)
 	{
 		struct tm *info = localtime(&last_seen);
@@ -1271,7 +1270,7 @@ static int incoming_friend_request_idle(void *arg)
 void incoming_friend_request_cb_ui(const int n)
 { // GUI Callback
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	ui_notify(peernick,text_new_friend);
 	sodium_memzero(peernick,sizeof(peernick));
 	g_idle_add(incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL));
@@ -1286,8 +1285,8 @@ static int onion_deleted_idle(void *arg)
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
-	t_peer[n].edit_i = -1;
-	if(generated_n > -1 && getter_uint8(generated_n,-1,-1,-1,offsetof(struct peer_list,owner)) == 0)
+	t_peer[n].edit_i = INT_MIN;
+	if(generated_n > -1 && getter_uint8(generated_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner)) == 0)
 	{
 		generated_n = -1;
 		if(t_main.window == window_main)
@@ -1347,7 +1346,7 @@ static int peer_online_idle(void *arg)
 		breakpoint();
 		return 0;
 	}
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	int group_n = -1;
 	if(owner == ENUM_OWNER_GROUP_PEER)
 	{
@@ -1366,12 +1365,12 @@ static int peer_online_idle(void *arg)
 		ui_populate_peers(itovp(ENUM_STATUS_FRIEND));
 		ui_set_image_lock(n);
 		ui_set_last_seen(n);
-		const uint8_t sendfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,sendfd_connected));
-		const uint8_t recvfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,recvfd_connected));
+		const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
+		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 		if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0 && sendfd_connected > 0 && recvfd_connected > 0)
 		{
 			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			ui_notify(peernick,text_online);
 			sodium_memzero(peernick,sizeof(peernick));
 		}
@@ -1397,7 +1396,7 @@ void peer_offline_cb_ui(const int n)
 static int peer_new_idle(void *arg)
 { // N is passed but we currently don't use it
 	const int n = vptoi(arg);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_PEER)
 	{
 		const int g = set_g(n,NULL);
@@ -1415,12 +1414,12 @@ void peer_new_cb_ui(const int n)
 
 void peer_loaded_cb_ui(const int n)
 { // NOTE: this runs frequently on startup
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 		g_idle_add(ui_populate_peers,itovp(ENUM_STATUS_GROUP_CTRL));
 	else
 	{
-		const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 		g_idle_add(ui_populate_peers,itovp(status));
 	}
 }
@@ -1430,7 +1429,7 @@ static void ui_copy_qr(const void *arg)
 	if(t_main.popover_qr && GTK_IS_WIDGET(t_main.popover_qr))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_qr)); // TODO throws GTK error if not existing. should check first
 	const int n = vptoi(arg);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	struct qr_data *qr_data;
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
@@ -1447,7 +1446,7 @@ static void ui_copy_qr(const void *arg)
 	else
 	{
 		char torxid[52+1];
-		getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+		getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 		qr_data = qr_bool(torxid,1);
 		sodium_memzero(torxid,sizeof(torxid));
 	}
@@ -1468,7 +1467,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 	if(chosen_path)
 	{
 		struct qr_data *qr_data;
-		const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 		{
 			const int g = set_g(n,NULL); // just looking up existing
@@ -1484,7 +1483,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		else
 		{
 			char torxid[52+1];
-			getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 			qr_data = qr_bool(torxid,8);
 			sodium_memzero(torxid,sizeof(torxid));
 		}
@@ -1518,18 +1517,18 @@ static int onion_ready_idle(void *arg)
 {
 	const int n = vptoi(arg);
 	generated_n = n;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(t_main.window == window_main)
 	{
 		gtk_entry_buffer_delete_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_generate_peernick)),0,-1); // Clear peernick
 		char torxid[52+1];
-		getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+		getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,torxid,-1);
 		else
 		{
 			char onion[56+1];
-			getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,onion,-1);
 			sodium_memzero(onion,sizeof(onion));
 		}
@@ -1820,7 +1819,7 @@ static void ui_sticker_send(gpointer *arg)
 		return;
 	int g = -1;
 	uint8_t g_invite_required = 0;
-	const uint8_t owner = getter_uint8(global_n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		g = set_g(global_n,NULL);
@@ -2040,7 +2039,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 
 static void ui_set_image_logging(GtkWidget *button,const int n)
 {
-	const int8_t log_messages = getter_int8(n,-1,-1,-1,offsetof(struct peer_list,log_messages));
+	const int8_t log_messages = getter_int8(n,INT_MIN,-1,-1,offsetof(struct peer_list,log_messages));
 	if(log_messages == -1)
 	{
 		if(global_theme == DARK_THEME)
@@ -2093,7 +2092,7 @@ static void ui_set_image_mute(GtkWidget *button,const int n)
 
 static void ui_set_image_block(GtkWidget *button,const int n)
 {
-	const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 	if(status == ENUM_STATUS_BLOCKED)
 	{
 		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(block_active)));
@@ -2118,7 +2117,7 @@ static void ui_go_back(void *arg)
 //	vertical_mode = 1;
 	if(n > -1 && t_peer[n].unread > 0)
 	{ // NOTE: we already do this when we select_changed, but we are doing it again in case main_window wasn't visible at that time. TODO Consider having this done when group_n > -1 when the window becomes re-visible
-		const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 		if (owner == ENUM_OWNER_GROUP_CTRL)
 			totalUnreadGroup -= t_peer[n].unread;
 		else
@@ -2127,12 +2126,12 @@ static void ui_go_back(void *arg)
 	}
 	if(n > -1 && t_peer[n].buffer_write != NULL)
 	{ // Draft exists
-		const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 			ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 		else
 		{
-			const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+			const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 			ui_populate_peers(itovp(status));
 		}
 	}
@@ -2152,18 +2151,18 @@ static void ui_go_back(void *arg)
 static void ui_toggle_logging(GtkWidget *button,const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
-	const int peer_index = getter_int(n,-1,-1,-1,offsetof(struct peer_list,peer_index));
-	int8_t log_messages = getter_int8(n,-1,-1,-1,offsetof(struct peer_list,log_messages));
+	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
+	int8_t log_messages = getter_int8(n,INT_MIN,-1,-1,offsetof(struct peer_list,log_messages));
 	// Update Setting
 	if(log_messages == -1 || log_messages == 0)
 	{
 		log_messages++;
-		setter(n,-1,-1,-1,offsetof(struct peer_list,log_messages),&log_messages,sizeof(log_messages));
+		setter(n,INT_MIN,-1,-1,offsetof(struct peer_list,log_messages),&log_messages,sizeof(log_messages));
 	}
 	else if(log_messages == 1)
 	{
 		log_messages = -1;
-		setter(n,-1,-1,-1,offsetof(struct peer_list,log_messages),&log_messages,sizeof(log_messages));
+		setter(n,INT_MIN,-1,-1,offsetof(struct peer_list,log_messages),&log_messages,sizeof(log_messages));
 	}
 	ui_set_image_logging(button,n);
 	// Save Setting
@@ -2175,7 +2174,7 @@ static void ui_toggle_logging(GtkWidget *button,const gpointer data)
 static void ui_toggle_mute(const gpointer data)
 {
 	const int n = vptoi(data);// DO NOT FREE ARG
-	const int peer_index = getter_int(n,-1,-1,-1,offsetof(struct peer_list,peer_index));
+	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	// Update Setting
 	if(t_peer[n].mute == 0)
 		t_peer[n].mute = 1;
@@ -2200,7 +2199,7 @@ static void ui_toggle_block(const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
 	block_peer(n);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
 		gtk_popover_set_autohide(GTK_POPOVER(t_main.popover_group_peerlist),TRUE); // WORKS!!! gtk_popover_set_cascade_popdown / gtk_popover_popdown do NOT work
 	if(owner != ENUM_OWNER_GROUP_PEER)
@@ -2214,7 +2213,7 @@ static void ui_toggle_block_button(GtkWidget *button,const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
 	ui_toggle_block(data);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner != ENUM_OWNER_GROUP_PEER)
 		ui_set_image_block(button,n);
 }
@@ -2233,7 +2232,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 { // should not need to ui_populate_peers() because onion_deleted_cb should run
 	const int n = vptoi(data); // DO NOT FREE ARG
-	const int peer_index = getter_int(n,-1,-1,-1,offsetof(struct peer_list,peer_index));
+	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
 	takedown_onion(peer_index,1);
 	if(t_main.popover_block && GTK_IS_WIDGET(t_main.popover_block))
@@ -2246,12 +2245,12 @@ static void ui_delete_log(GtkWidget *button,const gpointer data)
 	const int n = vptoi(data); // DO NOT FREE ARG
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
 	delete_log(n);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 		ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 	else
 	{
-		const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 		ui_populate_peers(itovp(status));
 	}
 	// TODO re-draw scroll window?
@@ -2262,10 +2261,21 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 { // Do not delete this function.
 	(void) scrolled_window;
 	const int n = vptoi(data); // DO NOT FREE ARG
-	(void) n; // not implemented yet
 	if((INVERSION_TEST && pos == GTK_POS_TOP) || (!INVERSION_TEST && pos == GTK_POS_BOTTOM)) // GTK_POS_BOTTOM
 		return;
-	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\"\n");
+	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
+	const uint32_t local_show_log_messages = threadsafe_read_uint32(&mutex_global_variable,&show_log_messages);
+	const int loaded = sql_populate_message(peer_index,0,local_show_log_messages);
+	if(loaded)
+	{ // Need to re-sort messages
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+		if(owner == ENUM_OWNER_GROUP_CTRL)
+		{
+			const int g = set_g(n,NULL);
+			message_sort(g);
+		}
+	}
+	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\" of %d messages\n",loaded);
 }
 
 /* Other */
@@ -2368,11 +2378,11 @@ static int cleanup_idle(void *arg)
 	/* Log Unread Message Count in the same manner that we store last_seen */
 	if(log_unread == 1)
 	{
-		for(int peer_index,n = 0 ; (peer_index = getter_int(n,-1,-1,-1,offsetof(struct peer_list,peer_index))) > -1 || getter_byte(n,-1,-1,-1,offsetof(struct peer_list,onion)) != 0 ; n++)
+		for(int peer_index,n = 0 ; (peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index))) > -1 || getter_byte(n,INT_MIN,-1,-1,offsetof(struct peer_list,onion)) != 0 ; n++)
 		{ // storing last_seen time to .key file. NOTE: this will execute more frequently than we might want if logging is disabled. however there is little we can do.
 			if(peer_index < 0)
 				continue;
-			const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
 			{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
 				snprintf(p1,sizeof(p1),"%lu",t_peer[n].unread);
@@ -3003,7 +3013,6 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_tor = "Select Custom Tor binary location (effective immediately)";
 		text_set_cpu = "Maximum CPU threads for TorX-ID generation";
 		text_set_suffix = "Minimum Suffix Length for TorX-ID generation";
-		text_set_log_days = "Number of previous days to show in chat window (on startup)";
 		text_set_validity_sing = "Single-Use TorX-ID expiration time (days)";
 		text_set_validity_mult = "Multiple-Use TorX-ID expiration time (days)";
 		text_set_auto_mult = "Automatically Accept Incoming Mult Requests";
@@ -3145,8 +3154,6 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		value_original = (int)global_threads;
 	else if(spin == ENUM_SPIN_SUFFIX_LENGTH)
 		value_original = (int)suffix_length;
-	else if(spin == ENUM_SPIN_LOG_DAYS)
-		value_original = (int)show_log_days;
 	else if(spin == ENUM_SPIN_SING_EXPIRATION)
 		value_original = (int)sing_expiration_days;
 	else if(spin == ENUM_SPIN_MULT_EXPIRATION)
@@ -3179,13 +3186,6 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 			snprintf(p1,sizeof(p1),"%u",suffix_length);
 			pthread_rwlock_unlock(&mutex_global_variable);
 			sql_setting(0,-1,"suffix_length",p1,strlen(p1));
-		}
-		else if(spin == ENUM_SPIN_LOG_DAYS)
-		{
-			show_log_days = (uint32_t)value_current;
-			snprintf(p1,sizeof(p1),"%u",show_log_days);
-			pthread_rwlock_unlock(&mutex_global_variable);
-			sql_setting(0,-1,"show_log_days",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_SING_EXPIRATION)
 		{
@@ -3224,13 +3224,13 @@ static void ui_submit_custom_input(const void *arg)
 		return;
 	}
 	char torxid[52+1];
-	getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+	getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 	if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		gtk_text_buffer_set_text(t_main.textbuffer_custom_onion,torxid,-1);
 	else
 	{
 		char onion[56+1];
-		getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+		getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 		gtk_text_buffer_set_text(t_main.textbuffer_custom_onion,onion,-1);
 		sodium_memzero(onion,sizeof(onion));
 	}
@@ -3411,9 +3411,6 @@ static void ui_show_settings(void)
 
 	// Suffix Length
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_suffix,ENUM_SPIN_SUFFIX_LENGTH,threadsafe_read_uint8(&mutex_global_variable,&suffix_length),0,9));
-
-	// Log Days
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_log_days,ENUM_SPIN_LOG_DAYS,(int)threadsafe_read_uint32(&mutex_global_variable,&show_log_days),0,100000)); // arbitrary max
 
 	// Sing Validity
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_validity_sing,ENUM_SPIN_SING_EXPIRATION,(int)threadsafe_read_uint32(&mutex_global_variable,&sing_expiration_days),0,5475)); // setting reasonable max of 15 years because it it over-runs 2038 we gonna have issues
@@ -3750,7 +3747,7 @@ static void ui_n_from_treeview(gpointer data)
 		return;
 	}
 	char byte = '\0';
-	getter_array(&byte,1,n,-1,-1,-1,offsetof(struct peer_list,onion));
+	getter_array(&byte,1,n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 	if(byte != '\0')
 		treeview_n = n;
 	else
@@ -3774,7 +3771,7 @@ static void ui_rename(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
 			p = NULL;
 			change_nick(n,freshpeernick);
 			sodium_memzero(freshpeernick,sizeof(freshpeernick));
-			const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			ui_populate_list(itovp(owner));
 		}
 	}
@@ -3795,8 +3792,8 @@ static void ui_delete(void)
 {
 	if(treeview_n < 0)
 		return;
-	const uint8_t owner = getter_uint8(treeview_n,-1,-1,-1,offsetof(struct peer_list,owner)); // in case of delete
-	const int peer_index = getter_int(treeview_n,-1,-1,-1,offsetof(struct peer_list,peer_index));
+	const uint8_t owner = getter_uint8(treeview_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner)); // in case of delete
+	const int peer_index = getter_int(treeview_n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	if(owner == ENUM_OWNER_CTRL)
 	{
 		totalIncoming--;
@@ -3816,7 +3813,7 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 		n = treeview_n;
 	if(n < 0)
 		return;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		const int g = set_g(n,NULL);
@@ -3838,14 +3835,14 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
 			char torxid[52+1];
-			getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),torxid);
 			sodium_memzero(torxid,sizeof(torxid));
 		}
 		else
 		{
 			char onion[56+1];
-			getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),onion);
 			sodium_memzero(onion,sizeof(onion));
 		}
@@ -3857,7 +3854,7 @@ static void ui_show_qr(void)
 	if(treeview_n < 0)
 		return;
 	char torxid[52+1];
-	getter_array(&torxid,sizeof(torxid),treeview_n,-1,-1,-1,offsetof(struct peer_list,torxid));
+	getter_array(&torxid,sizeof(torxid),treeview_n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 
 	GtkWidget *generated_qr_code;
 	struct qr_data *qr_data;
@@ -3911,9 +3908,9 @@ static gboolean ui_treeview_toggled(GtkSwitch *self,gboolean state,gpointer data
 	(void) state; // TRUE or FALSE
 	(void) data;
 	const int n = vptoi(data);
-//	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+//	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	char byte = '\0';
-	getter_array(&byte,1,n,-1,-1,-1,offsetof(struct peer_list,onion));
+	getter_array(&byte,1,n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 	if(byte != '\0')
 	{
 		treeview_n = n;
@@ -3938,7 +3935,7 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		if(column_number == 0)
 		{
 			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_editable_label_new(peernick);
 			g_signal_connect(label, "notify::editing", G_CALLBACK(ui_rename),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 			sodium_memzero(peernick,sizeof(peernick));
@@ -3948,9 +3945,9 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		{
 			char onion[56+1];
 			if(list == ENUM_OWNER_PEER)
-				getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,peeronion));
+				getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,peeronion));
 			else
-				getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+				getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 			GtkWidget *label = gtk_label_new(onion);
 			sodium_memzero(onion,sizeof(onion));
 			gtk_box_append(GTK_BOX(box), label);
@@ -3958,14 +3955,14 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		else if(column_number == 2)
 		{
 			char torxid[52+1];
-			getter_array(&torxid,sizeof(torxid),n,-1,-1,-1,offsetof(struct peer_list,torxid));
+			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 			GtkWidget *label = gtk_label_new(torxid);
 			sodium_memzero(torxid,sizeof(torxid));
 			gtk_box_append(GTK_BOX(box), label);
 		}
 		else if(column_number == 3)
 		{
-			const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+			const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 			GtkWidget *toggle = gtk_switch_new();
 			if(status == ENUM_STATUS_FRIEND)
 				gtk_switch_set_active(GTK_SWITCH(toggle),TRUE);
@@ -4472,13 +4469,13 @@ static void ui_show_generate(void)
 	char torxid[52+1];
 	if(generated_n > -1)
 	{
-		getter_array(&torxid,sizeof(torxid),generated_n,-1,-1,-1,offsetof(struct peer_list,torxid));
+		getter_array(&torxid,sizeof(torxid),generated_n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,torxid,-1);
 		else
 		{
 			char onion[56+1];
-			getter_array(&onion,sizeof(onion),generated_n,-1,-1,-1,offsetof(struct peer_list,onion));
+			getter_array(&onion,sizeof(onion),generated_n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,onion,-1);
 			sodium_memzero(onion,sizeof(onion));
 		}
@@ -4642,7 +4639,7 @@ static int custom_setting_idle(void *arg)
 		t_peer[n].unread = (size_t)atol(setting_value);
 		if(t_peer[n].unread > 0)
 		{
-			const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			if (owner == ENUM_OWNER_GROUP_CTRL)
 				totalUnreadGroup += t_peer[n].unread;
 			else
@@ -4719,7 +4716,7 @@ static void ui_message_resend(const gpointer data)
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint16_t protocol = protocols[p_iter].protocol;
 	pthread_rwlock_unlock(&mutex_protocols);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	printf("Checkpoint ui_message_resend owner==%d\n",owner);
 	int target_n = n;
 	if(owner == ENUM_OWNER_GROUP_PEER)
@@ -4739,7 +4736,7 @@ static int handle_stuff(const int n,const int i)
 	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols);
 	int nnn = n;
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
 	{
 		const int g = set_g(n,NULL);
@@ -4794,21 +4791,21 @@ static void ui_open_folder(const gpointer data)
 static void ui_activity_cancel(const gpointer data)
 { // Cancel active activity
 	(void) data;
-	if(t_peer[global_n].edit_n == -1 && t_peer[global_n].edit_i == -1 && t_peer[global_n].pm_n == -1) // make it safe to call from select_changed
+	if(t_peer[global_n].edit_n == -1 && t_peer[global_n].edit_i == INT_MIN && t_peer[global_n].pm_n == -1) // make it safe to call from select_changed
 		return;
 //	if(t_main.write_message == NULL || t_main.button_activity == NULL)
 //		return;
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 	gtk_text_buffer_set_text(buffer,"",0);
-	if(t_peer[global_n].edit_n > -1 || t_peer[global_n].edit_i > -1)
+	if(t_peer[global_n].edit_n > -1 || t_peer[global_n].edit_i > INT_MIN)
 	{ // Editing was active (of message or a GROUP_PEER peernick)
 		t_peer[global_n].edit_n = -1;
-		t_peer[global_n].edit_i = -1;
+		t_peer[global_n].edit_i = INT_MIN;
 		gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send); // redundant, doing later in all cases
 		if(t_peer[global_n].pm_n > -1)
 		{ // PM was active before edit, restore it
 			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),t_peer[global_n].pm_n,-1,-1,-1,offsetof(struct peer_list,peernick));
+			getter_array(&peernick,sizeof(peernick),t_peer[global_n].pm_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			char cancel_message[256];
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 			sodium_memzero(peernick,sizeof(peernick));
@@ -4818,7 +4815,7 @@ static void ui_activity_cancel(const gpointer data)
 	}
 	else if(t_peer[global_n].pm_n > -1) // DO NOT MAKE ELSE. PM was active and editing was not
 		t_peer[global_n].pm_n = -1;
-	if(t_peer[global_n].edit_n == -1 && t_peer[global_n].edit_i == -1 && t_peer[global_n].pm_n == -1) // DO NOT MAKE ELSE.	
+	if(t_peer[global_n].edit_n == -1 && t_peer[global_n].edit_i == INT_MIN && t_peer[global_n].pm_n == -1) // DO NOT MAKE ELSE.	
 	{
 		gtk_widget_set_visible(t_main.button_activity,FALSE);
 		if(!INVERSION_TEST)
@@ -4839,22 +4836,22 @@ static void ui_activity_rename(const gpointer data)
 		gtk_popover_set_autohide(GTK_POPOVER(t_main.popover_group_peerlist),TRUE); // WORKS!!! gtk_popover_set_cascade_popdown / gtk_popover_popdown do NOT work
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),t_peer[global_n].edit_n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),t_peer[global_n].edit_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	gtk_text_buffer_set_text(buffer,peernick,(int)strlen(peernick));
 	sodium_memzero(peernick,sizeof(peernick));
 }
 
 static void ui_establish_pm(const int n,void *popover)
 {
-	if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > -1)
+	if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > INT_MIN)
 	{
 		gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send); // cancel any ongoing edits first, without cleaning buffer
 		t_peer[global_n].edit_n = -1;
-		t_peer[global_n].edit_i = -1;
+		t_peer[global_n].edit_i = INT_MIN;
 	}
 	t_peer[global_n].pm_n = n;
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	char cancel_message[256];
 	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 	sodium_memzero(peernick,sizeof(peernick));
@@ -4955,7 +4952,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	gtk_widget_add_css_class(box, "popover_inner");
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_message),box);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
 	if(f > -1)
 	{ // files:	start/pause,reject/cancel	text_start / text_pause, text_reject (in) / text_cancel (out) // TODO rebuild int_int struct and pass f along with n,i
@@ -4966,7 +4963,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			nnn = getter_group_int(g,offsetof(struct group_list,n));
 			f = set_f(nnn,(const unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
 		}
-		const uint8_t status = getter_uint8(nnn,-1,f,-1,offsetof(struct file_list,status));
+		const uint8_t status = getter_uint8(nnn,INT_MIN,f,-1,offsetof(struct file_list,status));
 		torx_read(nnn) // XXX
 		const char *file_path = peer[nnn].file[f].file_path;
 		torx_unlock(nnn) // XXX
@@ -5025,12 +5022,12 @@ static GtkWidget *ui_message_info(const int n,const int i)
 	torx_free((void*)&timebuffer);
 
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *peernick_widget = gtk_label_new(peernick);
 	sodium_memzero(peernick,sizeof(peernick));
 	gtk_widget_add_css_class(peernick_widget, "message_info_peernick");
 
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
 	gtk_widget_set_halign(info_message_box, stat == ENUM_MESSAGE_RECV ? GTK_ALIGN_START : GTK_ALIGN_END);
 	if(owner != ENUM_OWNER_GROUP_CTRL && owner != ENUM_OWNER_CTRL)
@@ -5135,7 +5132,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				group_type = text_group_public;
 			char peernick[56+1];
 			if(group_n > -1)
-				getter_array(&peernick,sizeof(peernick),group_n,-1,-1,-1,offsetof(struct peer_list,peernick));
+				getter_array(&peernick,sizeof(peernick),group_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			char group_message[256];
 			if(group_n > -1 && strlen(peernick))
 				snprintf(group_message,sizeof(group_message),"%s\n%s %u\n%s",group_type,text_current_members,peercount,peernick);
@@ -5300,7 +5297,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			t_peer[nnn].t_file[f].file_size = gtk_label_new(file_size_text);
 			torx_free((void*)&file_size_text);
 			double fraction = 0;
-			const uint64_t size = getter_uint64(nnn,-1,f,-1,offsetof(struct file_list,size));
+			const uint64_t size = getter_uint64(nnn,INT_MIN,f,-1,offsetof(struct file_list,size));
 			if(size > 0)
 				fraction = (1.000 *(double)transferred / (double)size);
 
@@ -5383,14 +5380,14 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 
 static void ui_print_message(const int n,const int i,const int scroll)
 { // use _idle or _cb unless in main thread // TODO TODO TODO XXX this function is too complex, theorize how to move most of it to library so we don't have to maintain it in UI
-	if(n < 0 || i < 0)
+	if(n < 0)
 	{
 		error_simple(0,"Sanity check failed in ui_print_message. Coding error. Report this.");
 		breakpoint();
 		return;
 	}
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 //printf("Checkpoint scroll: %d\n",scroll);
 	if(p_iter == -1)
@@ -5443,7 +5440,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	{
 		if(!group_pm && stat != ENUM_MESSAGE_RECV)
 			return;	// Do not print OUTBOUND messages on GROUP_PEER unless they are private
-		const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 		if(stat == ENUM_MESSAGE_RECV && (t_peer[n].mute || status == ENUM_STATUS_BLOCKED))
 			return; // Do not print inbound messages from muted (ignored) or blocked group peers
 		g = set_g(n,NULL);
@@ -5462,7 +5459,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(t_peer[nn].mute == 0 && t_peer[n].mute == 0)
 		{ // Notification + beep
 			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			if(null_terminated_len == 1)
 				ui_notify(peernick,tmp_message);
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
@@ -5475,7 +5472,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
-				getter_array(&peernick,sizeof(peernick),nn,-1,-1,-1,offsetof(struct peer_list,peernick)); // XXX
+				getter_array(&peernick,sizeof(peernick),nn,INT_MIN,-1,-1,offsetof(struct peer_list,peernick)); // XXX
 				const int f = set_f(nn,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
 				torx_read(nn) // XXX
 				const char *filename = peer[nn].file[f].filename;
@@ -5547,14 +5544,14 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	skip_printing: {}
 	if(scroll)
 	{ // == 1 or == 2 or == 3
-		const int max_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,max_i));
+		const int max_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
 		if(scroll == 1 || i >= max_i) // TODO 2024/02/22 Minor bug: when deleting the last message (max_i), this if statement is not activated. A bad work-ardound would be to pass scroll==1, but a better one would be to check the validity of max_i and look lower.
 		{ // populate_peers if last message or commanded (1)
 			if(owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL)); // Necessary for last_message and also the order
 			else
 			{
-				const uint8_t status_nn = getter_uint8(nn,-1,-1,-1,offsetof(struct peer_list,status));
+				const uint8_t status_nn = getter_uint8(nn,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 				ui_populate_peers(itovp(status_nn)); // Necessary for last_message and also the order
 			}
 		}
@@ -5585,8 +5582,8 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint16_t protocol = protocols[p_iter].protocol;
 	pthread_rwlock_unlock(&mutex_protocols);
-	uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
-	const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+	uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
 		goto end; // ignored or blocked
 	if(data_len >= CHECKSUM_BIN_LEN && protocol == ENUM_PROTOCOL_STICKER_REQUEST)
@@ -5606,7 +5603,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 			{ // if not on peer_n(pm), try group_n (public)
 				const int g = set_g(n,NULL);
 				relevant_n = getter_group_int(g,offsetof(struct group_list,n));
-				owner = getter_uint8(relevant_n,-1,-1,-1,offsetof(struct peer_list,owner));
+				owner = getter_uint8(relevant_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 				goto try_group_n;
 			}
 			else
@@ -5711,7 +5708,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 			return; // enter press but not at end of line, do not send yet
 		if(gtk_widget_get_visible(t_main.button_activity))
 		{ // PM / edits require button_activity to be functional to trigger (this is really good)
-			if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > -1)
+			if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > INT_MIN)
 			{
 				message_edit(t_peer[global_n].edit_n,t_peer[global_n].edit_i,message);
 				ui_activity_cancel(NULL);
@@ -5739,7 +5736,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		{
 			int g = -1;
 			uint8_t g_invite_required = 0;
-			const uint8_t owner = getter_uint8(global_n,-1,-1,-1,offsetof(struct peer_list,owner));
+			const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			if(owner == ENUM_OWNER_GROUP_CTRL)
 			{
 				g = set_g(global_n,NULL);
@@ -5767,7 +5764,7 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 	const int n = vptoi(data); // DO NOT FREE ARG
 	if(!gtk_editable_label_get_editing(GTK_EDITABLE_LABEL(self)))
 	{
-		const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 		char freshpeernick[56+1]; // zero'd
 		char *p = gtk_editable_get_chars(GTK_EDITABLE(self),0,56);
 		if(p)
@@ -5778,7 +5775,7 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 			p = NULL;
 		}
 		char peernick[56+1];
-		getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+		getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 		if(strlen(freshpeernick) == 0 || !strncmp(freshpeernick," ",1))
 		{
 			gtk_editable_set_text(GTK_EDITABLE(self),peernick);
@@ -5798,7 +5795,7 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 			else
 			{
-				const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+				const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 				ui_populate_peers(itovp(status));
 			}
 		}
@@ -5869,7 +5866,7 @@ static int ui_populate_peers(void *arg) // g_idle_add() functions must return in
 			for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
 			{
 				const int n = array[pos];
-				const uint8_t status_local = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+				const uint8_t status_local = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 				if(status == ENUM_STATUS_GROUP_CTRL)
 					g_list_store_append(list_store, int_pair_new(array[pos],-1,0,-1));
 				else if(status == ENUM_STATUS_BLOCKED && status_local == ENUM_STATUS_BLOCKED)
@@ -6050,7 +6047,7 @@ static void ui_choose_vertical(GtkWidget *button,const gpointer data)
 	GtkWidget *box_popover = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	gtk_widget_add_css_class(box_popover, "popover_inner");
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_block),box_popover);
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner != ENUM_OWNER_GROUP_CTRL)
 	{
 		gtk_box_append(GTK_BOX(box_popover),ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
@@ -6066,7 +6063,7 @@ GtkWidget *ui_button_generate(const int type,const int n)
 {
 	GtkWidget *button = gtk_button_new();
 	gtk_widget_add_css_class(button, "invisible");
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(type == ENUM_BUTTON_LOGGING)
 	{
 		ui_set_image_logging(button,n);
@@ -6237,7 +6234,7 @@ static void ui_group_peerlist(const gpointer data)
 static void ui_select_changed(const void *arg)
 { /* show_peer() Triggered when a peer is selected from the peer list */
 	const int n = vptoi(arg); // DO NOT FREE ARG
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 //	if(t_peer[n].unread)
 //	{ // TODO 2024/03/22 this conditional SHOULD exist, but it causes problems in horizonal mode because "clicked" callbacks are only available once.
 		if(t_peer[n].unread > 0)
@@ -6253,7 +6250,7 @@ static void ui_select_changed(const void *arg)
 			ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 		else
 		{
-			const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+			const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 			ui_populate_peers(itovp(status));
 		}
 //	}
@@ -6270,7 +6267,7 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_valign(info_box, GTK_ALIGN_CENTER);
 	gtk_widget_set_margin_start(info_box,size_margin_ten);
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *group_or_user_name = gtk_editable_label_new(peernick);
 	sodium_memzero(peernick,sizeof(peernick));
 	gtk_widget_set_tooltip_text(group_or_user_name,text_tooltip_group_or_user_name);
@@ -6387,7 +6384,7 @@ static void ui_select_changed(const void *arg)
 		if(t_peer[n].pm_n > -1)
 		{
 			char peernick_local[56+1];
-			getter_array(&peernick_local,sizeof(peernick_local),t_peer[n].pm_n,-1,-1,-1,offsetof(struct peer_list,peernick));
+			getter_array(&peernick_local,sizeof(peernick_local),t_peer[n].pm_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			char cancel_message[256];
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
 			sodium_memzero(peernick_local,sizeof(peernick_local));
@@ -6424,8 +6421,8 @@ static void ui_select_changed(const void *arg)
 	}
 	else
 	{
-		const int max_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,max_i));
-		const int min_i = getter_int(n,-1,-1,-1,offsetof(struct peer_list,min_i));
+		const int max_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
+		const int min_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,min_i));
 		for(int i = min_i; i <= max_i; i++)
 		{ // Display messages
 			if(i == max_i)
@@ -6488,7 +6485,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		GtkWidget *popover = gtk_popover_new();
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 		gtk_widget_add_css_class(box, "popover_inner");
-		const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 		create_button(text_rename,ui_activity_rename,itovp(n))
 		if(t_peer[n].mute)
 			create_button(text_unignore,ui_toggle_mute,itovp(n))
@@ -6523,12 +6520,12 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
 			identifier = text_torxid;
-			getter_array(&onion,52+1,n,-1,-1,-1,offsetof(struct peer_list,torxid));
+			getter_array(&onion,52+1,n,INT_MIN,-1,-1,offsetof(struct peer_list,torxid));
 		}
 		else
 		{
 			identifier = text_onionid;
-			getter_array(&onion,sizeof(onion),n,-1,-1,-1,offsetof(struct peer_list,onion));
+			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,-1,offsetof(struct peer_list,onion));
 		}
 		char tooltip[256];
 		const int g = set_g(n,NULL);
@@ -6564,8 +6561,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		gtk_widget_add_controller(button_peer, GTK_EVENT_CONTROLLER(click));
 	}
 
-	const uint8_t owner = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,owner));
-	const uint8_t status = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,status));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 	/* Build Avatar or Online Status Indicator Image */
 	GtkWidget *image_peerlist;
 	if(owner == ENUM_OWNER_GROUP_CTRL) // Handle group TODO should have a > arrow that goes to downward pointing upon click, to show individual GROUP_PEERs
@@ -6574,8 +6571,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
 	else
 	{
-		const uint8_t sendfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,sendfd_connected));
-		const uint8_t recvfd_connected = getter_uint8(n,-1,-1,-1,offsetof(struct peer_list,recvfd_connected));
+		const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
+		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 		if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
 			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_green));
 		else if(sendfd_connected > 0 && recvfd_connected < 1)
@@ -6620,7 +6617,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 
 	/* Build Peernick Label */
 	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,-1,-1,-1,offsetof(struct peer_list,peernick));
+	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *chat_name = gtk_label_new(peernick);
 	sodium_memzero(peernick,sizeof(peernick));
 	gtk_widget_add_css_class(chat_name, "chat_name");
@@ -6643,18 +6640,18 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		else
 		{ // No draft
 			int nn;
-			int last_message_i = -1;
+			int last_message_i = INT_MIN;
 			for(int count_back = 0; (last_message_i = set_last_message(&nn,n,count_back)) > -1 ; count_back++)
 			{
-				if(t_peer[nn].mute && getter_uint8(nn,-1,-1,-1,offsetof(struct peer_list,owner)) == ENUM_OWNER_GROUP_PEER)
+				if(t_peer[nn].mute && getter_uint8(nn,INT_MIN,-1,-1,offsetof(struct peer_list,owner)) == ENUM_OWNER_GROUP_PEER)
 					continue; // do not print, these are hidden messages from ignored users
 				else
 					break;
 			}
 			int p_iter;
-			if(last_message_i > -1 && (p_iter = getter_int(nn,last_message_i,-1,-1,offsetof(struct message_list,p_iter))) > -1)
+			if(last_message_i > INT_MIN && (p_iter = getter_int(nn,last_message_i,-1,-1,offsetof(struct message_list,p_iter))) > -1)
 			{
-				const int max_i = getter_int(nn,-1,-1,-1,offsetof(struct peer_list,max_i));
+				const int max_i = getter_int(nn,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
 				pthread_rwlock_rdlock(&mutex_protocols);
 				const uint16_t protocol = protocols[p_iter].protocol;
 				const uint8_t file_offer = protocols[p_iter].file_offer;
@@ -6663,7 +6660,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 				torx_read(nn) // XXX
 				const char *tmp_message = peer[nn].message[last_message_i].message;
 				torx_unlock(nn) // XXX
-				if(max_i > -1/* && protocol > 0*/ && tmp_message)
+				if(max_i > INT_MIN/* && protocol > 0*/ && tmp_message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
 					const uint8_t stat = getter_uint8(nn,last_message_i,-1,-1,offsetof(struct message_list,stat));
