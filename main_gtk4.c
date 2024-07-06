@@ -5104,6 +5104,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		const uint64_t size = peer[tmp_n].file[f].size;
 		transferred = calculate_transferred(tmp_n,f);
 		torx_unlock(tmp_n) // XXX
+		printf("Checkpoint checking file size 3\n");
 		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
 		{
 		//	finished_file = 1;
@@ -5154,9 +5155,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		else if(tmp_message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
 		{
 			const int s = ui_sticker_set((unsigned char*)tmp_message);
-			if(s > -1 && sticker[s].paintable_animated != NULL)
-				msg = ui_sticker_box(sticker[s].paintable_animated,size_sticker_large);
-			else
+			if(s < 0 || sticker[s].paintable_animated == NULL || !(msg = ui_sticker_box(sticker[s].paintable_animated,size_sticker_large)))
 			{
 				if(stat == ENUM_MESSAGE_RECV)
 					message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,tmp_message,CHECKSUM_BIN_LEN);
@@ -5268,10 +5267,9 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	{
 		if(finished_image)
 		{
-			if(extension_check(file_path,strlen(file_path),".gif"))
-			{
-				GFile *file = g_file_new_for_path(file_path);
-				GBytes *bytes_file = g_file_load_bytes(file,NULL,NULL,NULL); // get gbytes from a gfile
+			GBytes *bytes_file;
+			if(extension_check(file_path,strlen(file_path),".gif") && (bytes_file = g_file_load_bytes(g_file_new_for_path(file_path),NULL,NULL,NULL)))
+			{ // We check if bytes_file exists because otherwise there can be issues once we reach g_bytes_get_data
 				size_t bytes_size = 0;
 				const void *bytes = g_bytes_get_data(bytes_file,&bytes_size);
 				GtkWidget *gif = ui_sticker_box(gif_animated_new_from_data(bytes,bytes_size),size_sticker_large);
@@ -5281,7 +5279,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 					error_simple(0,"A bunk gif occured.");
 			}
 			else
-			{
+			{ // If file doesn't load or doesn't exist, it will show a red x
 				GtkWidget *image = gtk_image_new_from_file(file_path);
 				gtk_widget_set_size_request(image,size_sticker_large,size_sticker_large);
 				gtk_grid_attach (GTK_GRID(grid),image,0,0,1,1);
