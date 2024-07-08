@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.8 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.9 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -6661,7 +6661,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		{ // No draft
 			int nn;
 			int last_message_i = INT_MIN;
-			for(int count_back = 0; (last_message_i = set_last_message(&nn,n,count_back)) > -1 ; count_back++)
+			for(int count_back = 0; (last_message_i = set_last_message(&nn,n,count_back)) > INT_MIN ; count_back++)
 			{
 				if(t_peer[nn].mute && getter_uint8(nn,INT_MIN,-1,-1,offsetof(struct peer_list,owner)) == ENUM_OWNER_GROUP_PEER)
 					continue; // do not print, these are hidden messages from ignored users
