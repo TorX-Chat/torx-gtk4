@@ -75,7 +75,8 @@ XXX ERRORS XXX
 #define RESOURCE_CSS_DARK "/org/torx/gtk4/theme/dark_chat.css"
 #define RESOURCE_CSS_LIGHT "/org/torx/gtk4/theme/light_chat.css"
 #define MESSAGES_START_AT_TOP_OF_WINDOW 1 // 0 seems a bit buggy
-#define INVERSION_TEST 1
+#define INVERSION_TEST 1 // https://gitlab.gnome.org/GNOME/gtk/-/issues/4680 NOTE: using g_list_store_insert / g_list_store_splice at position 0 will cause a rebuild of the entire list
+#define GTK_FACTORY_BUG 1 // Memory intensive. Enabling this is kind of necessary until https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/7420 is widely merged.
 #define QR_IS_PNG 1
 /* XXX NOTE: Bundled files are the two below, the .desktop, and /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png XXX */
 #define FILENAME_ICON "icon.svg" // .png/.svg
@@ -87,6 +88,7 @@ XXX ERRORS XXX
 
 #define ICON_COMMUNICATION_ATTEMPTS 3 // currently must be 1+
 #define ENABLE_APPINDICATOR 1 // DO NOT USE TO VERIFY FUNCTIONALITY
+
 static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will be set upon successful connection.
 /*#ifdef WIN32
 	#define ENABLE_APPINDICATOR 0 // TODO no, lets let it ride. docs say windows is at least somewhat supported.
@@ -158,6 +160,9 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		guint pos;
 		uint8_t visible;
+		#if GTK_FACTORY_BUG
+		GtkWidget *message_box;
+		#endif
 	} *t_message; // TODO do not initialize automatically, but upon use
 	struct t_file_list {
 		GtkWidget *progress_bar;
@@ -769,6 +774,9 @@ static int initialize_i_idle(void *arg)
 	torx_free((void*)&file_nf);
 	t_peer[n].t_message[i].pos = 0;
 	t_peer[n].t_message[i].visible = 0;
+	#if GTK_FACTORY_BUG
+	t_peer[n].t_message[i].message_box = NULL;
+	#endif
 	return 0;
 }
 
@@ -5104,7 +5112,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		const uint64_t size = peer[tmp_n].file[f].size;
 		transferred = calculate_transferred(tmp_n,f);
 		torx_unlock(tmp_n) // XXX
-		printf("Checkpoint checking file size 3\n");
 		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
 		{
 		//	finished_file = 1;
@@ -5342,14 +5349,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	return outer_message_box;
 }
 
-/*static void setup_test(GtkListItemFactory *factory, GtkListItem *list_item, gpointer data)
-{
-	(void) factory;
-	(void) list_item;
-	(void) data;
-printf("Checkpoint setup_test\n");
-}*/
-
 static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item, gpointer data)
 {
 	(void) factory;
@@ -5364,6 +5363,27 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 		const int g = pair->fourth;
 		if(!t_peer[n].t_message[i].visible)
 			return;
+		#if GTK_FACTORY_BUG
+		if(t_peer[n].t_message[i].message_box) // sanity check
+		{
+			if(gtk_widget_get_parent (t_peer[n].t_message[i].message_box) == NULL) // DO NOT REMOVE THIS, even though it makes this whole function potentially non-op in some circumstances
+				gtk_list_item_set_child(list_item, t_peer[n].t_message[i].message_box);
+		}
+		else
+		{
+			GtkWidget *message_box;
+			t_peer[n].t_message[i].message_box = message_box = ui_message_generator(n,i,f,g);
+			if(INVERSION_TEST)
+				gtk_widget_add_css_class(message_box,"invert-vertical");
+			const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
+			if(stat == ENUM_MESSAGE_RECV)
+				gtk_widget_set_halign(message_box, GTK_ALIGN_START);
+			else
+				gtk_widget_set_halign(message_box, GTK_ALIGN_END);
+			gtk_list_item_set_child(list_item, message_box);
+			g_object_ref(message_box);
+		}
+		#else
 		GtkWidget *message_box = ui_message_generator(n,i,f,g);
 		if(INVERSION_TEST)
 			gtk_widget_add_css_class(message_box,"invert-vertical");
@@ -5373,6 +5393,7 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 		else
 			gtk_widget_set_halign(message_box, GTK_ALIGN_END);
 		gtk_list_item_set_child(list_item, message_box);
+		#endif
 	}
 }
 
@@ -5387,7 +5408,13 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
-//printf("Checkpoint scroll: %d\n",scroll);
+	#if GTK_FACTORY_BUG
+	if((scroll == 2 || scroll == 3) && t_peer[n].t_message[i].message_box)
+	{
+		g_object_unref(t_peer[n].t_message[i].message_box);
+		t_peer[n].t_message[i].message_box = NULL;
+	}
+	#endif
 	if(p_iter == -1)
 	{ // hide or do not print (deleted message)
 		if(t_peer[n].t_message[i].visible)
@@ -5522,6 +5549,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
 		if(INVERSION_TEST)
 		{
+		/*	IntPair *pair = int_pair_new(n,i,f,g);
+			g_list_store_splice(t_main.list_store_chat, 0, 0, (void**)&pair,1); */ // This is the same as g_list_store_insert
 			g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
 			t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
 		}
@@ -6432,8 +6461,10 @@ static void ui_select_changed(const void *arg)
 	/* NOTE: This block MUST come AFTER ui_print_message */
 	GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (t_main.list_store_chat));
 	GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
-	g_signal_connect(factory, "bind", G_CALLBACK(message_builder),NULL);
-//	g_signal_connect(factory, "setup", G_CALLBACK(setup_test),NULL);
+	g_signal_connect(factory, "bind", G_CALLBACK(message_builder),NULL); // not using unbind, setup, etc. Have tried setup but it didn't work as well as we'd hope.
+/*NO	GtkWidget *list_view = gtk_column_view_new(GTK_SELECTION_MODEL (ns));
+	gtk_column_view_set_row_factory(GTK_COLUMN_VIEW(list_view),factory);
+	gtk_column_view_insert_column(GTK_COLUMN_VIEW(list_view),0,gtk_column_view_column_new("fishsticks",factory));	NO*/
 	GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
 	if(INVERSION_TEST)
 	{

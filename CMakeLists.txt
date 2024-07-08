@@ -37,7 +37,7 @@ endif()
 			#### other static analyzer binaries: cppcheck clang-tidy
 			## XXX For dev builds: -D_FORTIFY_SOURCE=0 -fsanitize=thread -fsanitize=address -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero
 			## XXX For release: -D_FORTIFY_SOURCE=2 -O2 and REMOVE ALL -fsanitize
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fwrapv -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fwrapv -mshstk -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
 if(NOT WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero")
 endif()
