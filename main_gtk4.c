@@ -5887,7 +5887,7 @@ static int ui_populate_peers(void *arg) // g_idle_add() functions must return in
 			GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 			GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 			g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_select_changed);
-			GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
+			GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
 			gtk_widget_add_css_class(list_view, "invisible"); // XXX important
 			gtk_box_append (GTK_BOX(scroll_box), list_view);
 			for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
@@ -5936,7 +5936,7 @@ static void ui_populate_group_peerlist_popover(GtkWidget *entry_search_popover,G
 		torx_free((void*)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_private_message);
-		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
+		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
 		gtk_box_append (GTK_BOX(box_popover), list_view);
 	}
 }
@@ -5957,7 +5957,7 @@ static void ui_populate_peer_popover(GtkWidget *entry_search_popover,GParamSpec 
 		torx_free((void*)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_group_invite);
-		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
+		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
 		gtk_box_append (GTK_BOX(box_popover), list_view);
 	}
 }
@@ -6479,16 +6479,7 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_vexpand(list_view, TRUE); // works, do not remove
 	if(MESSAGES_START_AT_TOP_OF_WINDOW == 0)
 		gtk_widget_set_valign(list_view, GTK_ALIGN_END);
-/*	GtkWidget *viewport = gtk_viewport_new (NULL,NULL);
-	gtk_widget_set_vexpand(viewport, TRUE);
-	if(MESSAGES_START_AT_TOP_OF_WINDOW == 0)
-		gtk_widget_set_valign(viewport, GTK_ALIGN_END);
-	gtk_viewport_set_child (GTK_VIEWPORT(viewport),list_view);
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right),viewport);	*/
-
-//	gtk_box_append(GTK_BOX(t_main.scroll_box_right), list_view);
-//	gtk_list_view_scroll_to(GTK_LIST_VIEW(list_view),G_MAXINT, GTK_LIST_SCROLL_NONE, NULL); // seems not useful at the moment
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view); // Do not change. ListView should be a direct child of a Scrolled Window otherwise weird things happen with > 205 widgets.
 }
 
 GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size)

@@ -73,18 +73,16 @@ find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
 #find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
 pkg_check_modules(GTK4 REQUIRED gtk4)
 
-include_directories(${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
-#include_directories(${PNG_INCLUDE_DIRS} ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
-link_directories(${GTK4_LIBRARY_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
-add_definitions(${GTK4_CFLAGS_OTHER})
-
 add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
+target_include_directories(gif_animation PRIVATE ${GTK4_INCLUDE_DIRS})
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
+target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
+target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER})
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
 target_link_libraries(
-	${PROJECT_NAME}
+	${PROJECT_NAME} PRIVATE
 		gif_animation
 		${GTK4_LIBRARIES}
 		sodium
