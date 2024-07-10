@@ -2542,18 +2542,11 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 			gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(button),GTK_TOGGLE_BUTTON(first_button));
 		else // we ARE the first button
 			first_button = button;
-		GtkWidget *overlay;
 		if(overlay_count)
 		{
-			overlay = gtk_overlay_new();
+			GtkWidget *overlay = gtk_overlay_new();
 			gtk_overlay_set_child(GTK_OVERLAY(overlay),button);
-		}
-		struct stack_change *stack_change = torx_insecure_malloc(sizeof(struct stack_change));
-		stack_change->stack = stack;
-		stack_change->iter = iter;
-		g_signal_connect(button, "toggled", G_CALLBACK (ui_custom_switch),stack_change); // DO NOT FREE arg because this only gets passed ONCE.
-		if(overlay_count)
-		{
+
 			GtkWidget *overlay2 = gtk_overlay_new();
 			gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/1.5),(int)(size_peerlist_icon_size/1.5));
 			gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
@@ -2574,6 +2567,10 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 		}
 		else
 			gtk_box_append (GTK_BOX (box), button);
+		struct stack_change *stack_change = torx_insecure_malloc(sizeof(struct stack_change));
+		stack_change->stack = stack;
+		stack_change->iter = iter;
+		g_signal_connect(button, "toggled", G_CALLBACK (ui_custom_switch),stack_change); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	return box;
 }
@@ -5096,7 +5093,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	uint8_t finished_image = 0;
 	char *filename;
 	char *file_path;
-	uint64_t transferred;
+	uint64_t transferred = 0; // clang wants this initialized, but it doesn't need to be
 	if(f > -1) // File
 	{
 		int tmp_n;
@@ -5225,6 +5222,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		g_signal_connect(long_press, "pressed", G_CALLBACK(ui_message_long_press),int_int); // DO NOT FREE arg because this only gets passed ONCE.
 //	}
 	GtkWidget *file_icon = {0};
+	/* Set up text area of message */
 	if(f > -1)
 	{
 		int nnn = n;
@@ -5242,34 +5240,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			file_nf->f = f;
 			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),file_nf); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
 		}
-	}
-	else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
-	{
-		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
-		gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
-		if(stat == ENUM_MESSAGE_RECV)
-		{
-			GtkGesture *gesture = gtk_gesture_click_new();
-			struct int_int_char *int_int_char = torx_insecure_malloc(sizeof(struct int_int_char));
-			int_int_char->n = n;
-			int_int_char->g = set_g(-1,tmp_message); // necessary to do this again even if we have g because it reserves
-			if(protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
-			{
-				int_int_char->p = &tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)];
-				int_int_char->up = (unsigned char*)&tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)+56];
-			}
-			else // ENUM_PROTOCOL_GROUP_OFFER
-			{
-				int_int_char->p = NULL;
-				int_int_char->up = NULL;
-			}
-			g_signal_connect_swapped(gesture, "pressed", G_CALLBACK(ui_group_join),int_int_char); // do not free
-			gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(gesture));
-		}
-	}
-	/* Set up text area of message */
-	if(f > -1)
-	{
+
 		if(finished_image)
 		{
 			GBytes *bytes_file;
@@ -5292,9 +5263,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		}
 		else
 		{
-			int nnn = n;
-			if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
-				nnn = nn;
 		//	const uint64_t transferred = calculate_transferred(nnn,f);
 			char *file_size_text = file_progress_string(nnn,f);
 			t_peer[nnn].t_file[f].file_size = gtk_label_new(file_size_text);
@@ -5325,6 +5293,27 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	}
 	else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 	{
+		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
+		gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
+		if(stat == ENUM_MESSAGE_RECV)
+		{
+			GtkGesture *gesture = gtk_gesture_click_new();
+			struct int_int_char *int_int_char = torx_insecure_malloc(sizeof(struct int_int_char));
+			int_int_char->n = n;
+			int_int_char->g = set_g(-1,tmp_message); // necessary to do this again even if we have g because it reserves
+			if(protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
+			{
+				int_int_char->p = &tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)];
+				int_int_char->up = (unsigned char*)&tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)+56];
+			}
+			else // ENUM_PROTOCOL_GROUP_OFFER
+			{
+				int_int_char->p = NULL;
+				int_int_char->up = NULL;
+			}
+			g_signal_connect_swapped(gesture, "pressed", G_CALLBACK(ui_group_join),int_int_char); // do not free
+			gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(gesture));
+		}
 	//	GtkWidget *text_area = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	//	gtk_box_append(GTK_BOX(text_area),msg);
 		gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
@@ -5700,7 +5689,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 		torx_free((void*)&message);
 	} */
 	else
-		error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);;
+		error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
 	torx_free((void*)&data);
 	return;
 	end: {}

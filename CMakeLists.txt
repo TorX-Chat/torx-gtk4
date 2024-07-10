@@ -30,18 +30,21 @@ else()
 	message(STATUS "Using default remote repositories instead of LAN (GTK).")
 	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
 endif()
-#set(CMAKE_C_COMPILER "clang") ## Enabling this breaks add_subdirectory, so would have to be placed after add_subdirectory. gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
-			#### C90 crap: -Wvla -Wdeclaration-after-statement
-			#### Unimportant: -Waggregate-return
-			#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
-			#### other static analyzer binaries: cppcheck clang-tidy
-			## XXX For dev builds: -D_FORTIFY_SOURCE=0 -fsanitize=thread -fsanitize=address -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero
-			## XXX For release: -D_FORTIFY_SOURCE=2 -O2 and REMOVE ALL -fsanitize
+
+	#### C90 crap: -Wvla -Wdeclaration-after-statement
+	#### Unimportant: -Waggregate-return
+	#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
+	#### other static analyzer binaries: cppcheck clang-tidy
+	## XXX For dev builds: -D_FORTIFY_SOURCE=0 -fsanitize=thread -fsanitize=address -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero
+	## XXX For release: -D_FORTIFY_SOURCE=2 -O2 and REMOVE ALL -fsanitize
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -D_FORTIFY_SOURCE=0 -O0 -fwrapv -mshstk -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion")
 if(NOT WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero")
 endif()
-if(${CMAKE_C_COMPILER} STREQUAL "clang") # TODO To reveal 1300+ thread-unsafe reads, remove -Wno-unsafe-buffer-usage
+
+message(STATUS "Using compiler: ${CMAKE_C_COMPILER}") # To use clang, export CC=clang ; likewise with gcc / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
+string(FIND ${CMAKE_C_COMPILER} "clang" found_clang) # TODO To reveal 1300+ thread-unsafe reads, remove -Wno-unsafe-buffer-usage
+if(found_clang GREATER -1)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-duplicate-enum -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage")
 else() # GCC
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fwhole-program -Wcast-align=strict -Wformat-signedness")

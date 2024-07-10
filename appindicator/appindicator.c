@@ -304,9 +304,9 @@ int main(int argc, char *argv[]) {
 	GFile *file_transparent = g_file_new_for_uri("resource:///org/torx/tray/logo-torx-symbolic.svg");
 	GFile *file_unread = g_file_new_for_uri("resource:///org/torx/tray/icon_square_unread.png");
 
-	data->icon_logo_default = g_file_icon_new (file_default);;
-	data->icon_logo_transparent = g_file_icon_new (file_transparent);;
-	data->icon_logo_unread = g_file_icon_new (file_unread);;
+	data->icon_logo_default = g_file_icon_new (file_default);
+	data->icon_logo_transparent = g_file_icon_new (file_transparent);
+	data->icon_logo_unread = g_file_icon_new (file_unread);
 
 	G_GNUC_END_IGNORE_DEPRECATIONS
 
