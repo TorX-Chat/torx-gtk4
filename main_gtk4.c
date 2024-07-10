@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.9 2024/06/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.9 2024/07/10 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -3589,10 +3589,8 @@ static int error_idle(void *arg)
 		gtk_text_buffer_insert(t_main.torx_log_buffer,&end,error_message,-1);
 		if(t_main.window == window_log_torx)
 			g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
-		torx_free(&arg);
 	}
-	else
-		torx_free((void*)&error_message);
+	torx_free(&arg);
 	return 0;
 }
 
@@ -7299,20 +7297,13 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 }
 
 int main(int argc,char **argv)
-{
+{ // XXX WARNING: Do not use error_* before initial or SEVERE memory errors will occur that are VERY hard to diagnose XXX
 	binary_path = argv[0];
 	binary_name = argv[1];
 	getcwd(starting_dir,sizeof(starting_dir));
 	/* Options configurable by client */
 	debug = 0;
 	reduced_memory = 2; // TODO probably remove before release
-
-	/* Initialize non-keyed components of the TorX library */
-	if(sodium_init() < 0) 
-	{ // DO NOT use error_ll or it fucks with fanalyzer
-		fprintf(stderr,"Error initializing LibSodium library. Be sure to compile with -lsodium flag\n");
-		return -1;
-	}
 
 	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
 	initialize_n_setter(initialize_n_cb_ui);
