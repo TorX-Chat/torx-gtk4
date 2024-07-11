@@ -4618,7 +4618,7 @@ static int custom_setting_idle(void *arg)
 	const int plaintext = custom_setting->plaintext;
 	if(!strncmp(setting_name,"theme",5))
 	{
-		global_theme = atoi(setting_value);
+		global_theme = (int)strtoll(setting_value, NULL, 10);
 		if(global_theme != THEME_DEFAULT)
 			ui_theme(global_theme);
 	}
@@ -4628,18 +4628,18 @@ static int custom_setting_idle(void *arg)
 		language[setting_value_len] = '\0';
 	}
 	else if(!strncmp(setting_name,"gtk4-width",10))
-		size_window_default_width = atoi(setting_value);
+		size_window_default_width = (int)strtoll(setting_value, NULL, 10);
 	else if(!strncmp(setting_name,"gtk4-height",11))
-		size_window_default_height = atoi(setting_value);
+		size_window_default_height = (int)strtoll(setting_value, NULL, 10);
 	else if(!strncmp(setting_name,"minimize_to_tray",20))
-		minimize_to_tray = (uint8_t)atoi(setting_value);
+		minimize_to_tray = (uint8_t)strtoull(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"mute",4))
-		t_peer[n].mute = (int8_t)atoi(setting_value);
+		t_peer[n].mute = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"unread",6))
 	{
 		if(log_unread != 1)
 			return 0; // ignoring (potentially old)
-		t_peer[n].unread = (size_t)atol(setting_value);
+		t_peer[n].unread = strtoull(setting_value, NULL, 10);
 		if(t_peer[n].unread > 0)
 		{
 			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
@@ -7280,7 +7280,7 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 		if(!value)
 			debug = 1;
 		else
-			debug = (int8_t)atoi(value);
+			debug = (int8_t)strtoll(value, NULL, 10);
 	}
 	return true; // tells GTK we processed it successfully
 }
