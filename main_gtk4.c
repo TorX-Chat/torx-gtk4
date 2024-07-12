@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.9 2024/07/10 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.10 2024/07/12 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -1132,7 +1132,6 @@ static void ui_set_image_lock(const int n)
 		return;
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
-	const uint8_t v3auth = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,v3auth));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(texture_logo));
@@ -1159,7 +1158,7 @@ static void ui_set_image_lock(const int n)
 		sodium_memzero(tooltip,sizeof(tooltip));
 		torx_free((void*)&groupid);
 	}
-	else if(v3auth == 1)
+	else
 	{
 		if(status == ENUM_STATUS_BLOCKED) // Handle blocked first
 		{
@@ -1189,39 +1188,6 @@ static void ui_set_image_lock(const int n)
 			{
 				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_grey));
 				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_4);
-			}
-		}
-	}
-	else
-	{
-		if(status == ENUM_STATUS_BLOCKED) // Handle blocked first
-		{
-			gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_red));
-			gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_5);
-		}
-		else
-		{
-			const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,sendfd_connected));
-			const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
-			if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
-			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_green));
-				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_6);
-			}
-			else if(sendfd_connected > 0 && recvfd_connected < 1)
-			{  // This occurs when our proxy doesn't realize it is broken yet (common)
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_yellow));
-				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_7);
-			}
-			else if(sendfd_connected < 1 && recvfd_connected > 0)
-			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_orange));
-				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_8);
-			}
-			else
-			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(unlock_grey));
-				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_9);
 			}
 		}
 	}
