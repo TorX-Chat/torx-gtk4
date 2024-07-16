@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.10 2024/07/12 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.11 2024/07/16 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2197,7 +2197,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 	const int n = vptoi(data); // DO NOT FREE ARG
 	if(n != -1) // Not global kill
 		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active)));
-	kill_code(n);
+	kill_code(n,NULL);
 	if(t_main.popover_block && GTK_IS_WIDGET(t_main.popover_block))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_block));
 //	error("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
