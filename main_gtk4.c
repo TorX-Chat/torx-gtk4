@@ -7313,9 +7313,17 @@ int main(int argc,char **argv)
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 	snowflake_location = which("snowflake-client"); // TODO move to initial_keyed?
 	obfs4proxy_location = which("obfs4proxy"); // TODO move to initial_keyed?
-	const char directory[] = "tor_data_directory";
-	tor_data_directory = torx_insecure_malloc(sizeof(directory));
-	memcpy(tor_data_directory,directory,sizeof(directory));
+
+	const char *tdd = "tor_data_directory";
+	char current_working_directory[PATH_MAX];
+	getcwd(current_working_directory,sizeof(current_working_directory));
+	char tdd_full_path[PATH_MAX];
+	const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%c%s",current_working_directory,platform_slash,tdd) + 1;
+	if(tdd_len > 1)
+	{
+		tor_data_directory = torx_insecure_malloc((size_t)tdd_len);
+		memcpy(tor_data_directory,tdd_full_path,(size_t)tdd_len);
+	}
 
 	g_signal_connect(gtk_application_gtk4, "activate", G_CALLBACK (ui_activate), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	const int status = g_application_run (G_APPLICATION (gtk_application_gtk4), argc, argv);
