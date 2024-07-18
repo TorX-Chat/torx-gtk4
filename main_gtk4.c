@@ -687,13 +687,6 @@ struct notification { // XXX Do not sodium_malloc structs unless they contain se
 //	size_t message_len;
 };
 
-struct int_int_char { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
-	int n;
-	int g;
-	char *p;
-	unsigned char *up;
-};
-
 struct file_nf { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	int f;
@@ -746,6 +739,38 @@ static IntPair *int_pair_new(gint first,gint second,gint third,gint fourth)
 
 G_DEFINE_TYPE(IntPair, int_pair, G_TYPE_OBJECT)
 
+static inline void *iitovp(const int n,const int i)
+{ // This is ONLY for functions where it is NOT POSSIBLE to free the argument. If it is possible to free, pass an int_int struct manually and free it.
+	if(sizeof(void*) == 8) // 64 bit, no malloc
+	{
+		if(n+SHIFT == 0)
+		{
+			error_printf(0,"Shift is insufficient in iitovp. Must increase it or determine source of error. Coding error. Report this. %d",n);
+			breakpoint();
+		}
+		return (void*)(((uint64_t)(n+SHIFT) << 32) | (uint32_t)i);
+	}
+	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
+	int_int->n = n;
+	int_int->i = i;
+	return int_int;
+}
+
+static inline int vptoii_n(const void *arg)
+{ // WARNING: Does not free arg (applicable to 32 bit only)
+	if(sizeof(void*) == 8) // 64 bit, no malloc
+		return (int)((uint64_t)arg >> 32)-SHIFT;
+	const struct int_int *int_int = (const struct int_int*) arg; // Casting passed struct
+	return int_int->n;
+}
+
+static inline int vptoii_i(const void *arg)
+{ // WARNING: Does not free arg (applicable to 32 bit only)
+	if(sizeof(void*) == 8) // 64 bit, no malloc
+		return (int)((uint64_t)arg & 0xFFFFFFFF);
+	const struct int_int *int_int = (const struct int_int*) arg; // Casting passed struct
+	return int_int->i;
+}
 
 static int initialize_n_idle(void *arg)
 {
@@ -768,10 +793,10 @@ void initialize_n_cb_ui(const int n)
 
 static int initialize_i_idle(void *arg)
 {
-	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
-	const int n = file_nf->n; // XXX DO NOT DELETE XXX
-	const int i = file_nf->f;
-	torx_free((void*)&file_nf);
+	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
+	const int n = int_int->n; // XXX DO NOT DELETE XXX
+	const int i = int_int->i;
+	torx_free((void*)&int_int);
 	t_peer[n].t_message[i].pos = 0;
 	t_peer[n].t_message[i].visible = 0;
 	#if GTK_FACTORY_BUG
@@ -782,10 +807,10 @@ static int initialize_i_idle(void *arg)
 
 void initialize_i_cb_ui(const int n,const int i)
 {
-	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-	file_nf->n = n;
-	file_nf->f = i;
-	g_idle_add(initialize_i_idle,file_nf);
+	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
+	int_int->n = n;
+	int_int->i = i;
+	g_idle_add(initialize_i_idle,int_int);
 }
 
 static int initialize_f_idle(void *arg)
@@ -839,10 +864,10 @@ void expand_file_struc_cb_ui(const int n,const int f)
 
 static int expand_message_struc_idle(void *arg)
 { // XXX DO NOT DELETE XXX
-	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
-	const int n = file_nf->n;
-	const int i = file_nf->f;
-	torx_free((void*)&file_nf);
+	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
+	const int n = int_int->n;
+	const int i = int_int->i;
+	torx_free((void*)&int_int);
 	torx_read(n) // XXX
 	const int max_i = peer[n].max_i;
 	const int min_i = peer[n].min_i;
@@ -860,10 +885,10 @@ static int expand_message_struc_idle(void *arg)
 
 void expand_message_struc_cb_ui(const int n,const int i)
 {
-	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-	file_nf->n = n; // XXX DO NOT DELETE XXX
-	file_nf->f = i;
-	g_idle_add(expand_message_struc_idle,file_nf);
+	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
+	int_int->n = n; // XXX DO NOT DELETE XXX
+	int_int->i = i;
+	g_idle_add(expand_message_struc_idle,int_int);
 }
 
 static int expand_peer_struc_idle(void *arg)
@@ -1255,6 +1280,7 @@ static int onion_deleted_idle(void *arg)
 	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
 	const int n = int_int->n;
 	const int owner = int_int->i;
+	torx_free((void*)&arg);
 	t_peer[n].unread = 0;
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
@@ -1713,13 +1739,14 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 	pthread_rwlock_unlock(&mutex_global_variable);
 }
 
-static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,const gpointer data)
+static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer data)
 { // For selecting a folder for saving file
 	if(data)
 	{ // Choosing folder path
-		struct file_nf *file_nf = (struct file_nf*) data; // DO NOT FREE ARG
+		struct file_nf *file_nf = (struct file_nf*) data;
 		const int n = file_nf->n;
 		const int f = file_nf->f;
+		torx_free((void*)&data);
 		GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
 		if(folder)
 		{
@@ -1972,9 +1999,8 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	(void) self;
 	if(!data)
 		return;
-	struct file_nf *file_nf = (struct file_nf*) data; // DO NOT FREE ARG
-	const int n = file_nf->n;
-	const int f = file_nf->f;
+	const int n = vptoii_n(data);
+	const int f = vptoii_i(data);
 	torx_read(n) // XXX
 	const uint8_t status = peer[n].file[f].status;
 	const uint64_t size = peer[n].file[f].size;
@@ -2002,6 +2028,9 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 			GtkFileDialog *dialog = gtk_file_dialog_new();
 			gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
 			gtk_file_dialog_set_title(dialog,text_choose_folder); // also: gtk_file_dialog_set_filters
+			struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
+			file_nf->n = n;
+			file_nf->f = f;
 			gtk_file_dialog_select_folder (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_folder,file_nf);
 		}
 		else
@@ -4149,22 +4178,9 @@ static void ui_group_join(void* arg)
 	int ret;
 	if(arg)
 	{ // Responding to invite
-		struct int_int_char *int_int_char = (struct int_int_char*) arg; // Casting passed struct
-		const int inviter_n = int_int_char->n;
-		const int g = int_int_char->g;
-		unsigned char id[GROUP_ID_SIZE];
-		pthread_rwlock_rdlock(&mutex_expand_group);
-		memcpy(id,group[g].id,sizeof(id));
-		pthread_rwlock_unlock(&mutex_expand_group);
-		if(int_int_char->p != NULL && int_int_char->up != NULL)
-		{ // responding to an ENUM_PROTOCOL_GROUP_OFFER_FIRST
-			const char *creator_onion = int_int_char->p;
-			const unsigned char *creator_ed25519_pk = int_int_char->up; // do not free, can null
-			ret = group_join(inviter_n,id,NULL,creator_onion,creator_ed25519_pk);
-		}
-		else // responding to an ENUM_PROTOCOL_GROUP_OFFER
-			ret = group_join(inviter_n,id,NULL,NULL,NULL);
-		sodium_memzero(id,sizeof(id));
+		const int inviter_n = vptoii_n(arg);
+		const int inviter_i = vptoii_i(arg);
+		ret = group_join_from_i(inviter_n,inviter_i);
 	}
 	else
 	{ // Joining public group
@@ -4663,10 +4679,9 @@ static void ui_message_copy(const gpointer data)
 	pthread_rwlock_unlock(&mutex_protocols);
 	if(null_terminated_len == 1)
 	{
-		torx_read(n) // XXX
-		const char *tmp_message = peer[n].message[i].message;
-		torx_unlock(n) // XXX
-		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),tmp_message);
+		char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),message);
+		torx_free((void*)&message);
 	}
 	else
 		error_simple(0,"Attempting to copy a message type that hasn't yet been configured for copying");
@@ -4872,10 +4887,9 @@ static void ui_activity_edit(const gpointer data)
 	pthread_rwlock_unlock(&mutex_protocols);
 	if(null_terminated_len == 1)
 	{
-		torx_read(t_peer[global_n].edit_n) // XXX
-		const char *tmp_message = peer[t_peer[global_n].edit_n].message[t_peer[global_n].edit_i].message;
-		torx_unlock(t_peer[global_n].edit_n) // XXX
-		gtk_text_buffer_set_text(buffer,tmp_message,(int)strlen(tmp_message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
+		char *message = getter_string(NULL,t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
+		gtk_text_buffer_set_text(buffer,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
+		torx_free((void*)&message);
 	}
 	else
 		error_simple(0,"Attempting to edit a message type that hasn't yet been configured for editing");
@@ -4891,9 +4905,8 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 {
 	(void) x;
 	(void) y;
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 	int f = -1;
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
@@ -4910,11 +4923,9 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	const uint32_t date_len = protocols[p_iter].date_len;
 	const uint32_t signature_len = protocols[p_iter].signature_len;
 	pthread_rwlock_unlock(&mutex_protocols);
-	torx_read(n) // XXX
-	const char *tmp_message = peer[n].message[i].message;
-	torx_unlock(n) // XXX
+	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
 	if(file_checksum == 1)
-		f = set_f(n,(const unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+		f = set_f(n,(const unsigned char*)message,CHECKSUM_BIN_LEN);
 	t_main.popover_message = gtk_popover_new();
 	gtk_popover_set_autohide(GTK_POPOVER(t_main.popover_message),TRUE);
 	GtkWidget *parent = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(self));
@@ -4932,7 +4943,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		{
 			const int g = set_g(n,NULL);
 			nnn = getter_group_int(g,offsetof(struct group_list,n));
-			f = set_f(nnn,(const unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+			f = set_f(nnn,(const unsigned char*)message,CHECKSUM_BIN_LEN);
 		}
 		const uint8_t status = getter_uint8(nnn,INT_MIN,f,-1,offsetof(struct file_list,status));
 		torx_read(nnn) // XXX
@@ -4966,7 +4977,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			create_button(text_copy,ui_message_copy,data)
 		else if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
 		{ // checking that data and data_len exist before displaying (ie, check that the sticker isn't already saved)
-			const int s = ui_sticker_set((const unsigned char*)tmp_message);
+			const int s = ui_sticker_set((const unsigned char*)message);
 			if(s > -1 && sticker[s].data && sticker[s].data_len)
 				create_button(text_save,ui_sticker_save,itovp(s))
 		}
@@ -4977,6 +4988,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		if(owner == ENUM_OWNER_GROUP_PEER)
 			create_button(text_rename,ui_activity_rename,itovp(n))
 	}
+	torx_free((void*)&message);
 	create_button(text_delete,ui_message_delete,data)
 	g_signal_connect(t_main.popover_message, "closed", G_CALLBACK (gtk_widget_unparent), t_main.popover_message); // XXX necessary or a warning occurs
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_message));
@@ -5043,10 +5055,10 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	pthread_rwlock_unlock(&mutex_protocols);
 	torx_read(n) // XXX
 	const uint8_t owner = peer[n].owner;
-	char *tmp_message = peer[n].message[i].message;
-	const uint32_t tmp_message_len = peer[n].message[i].message_len;
 	const uint8_t stat = peer[n].message[i].stat;
 	torx_unlock(n) // XXX
+	uint32_t message_len;
+	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 //	int g = -1;
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
@@ -5084,12 +5096,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	else
 	{ // Audited 2024/02/16 // not file related
 		if(null_terminated_len == 1)
-			msg = gtk_label_new(tmp_message);
+			msg = gtk_label_new(message);
 		else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 		{
-			g = set_g(-1,tmp_message); // necessary to do this again even if we have g because it reserves. also WE MIGHT NOT ALREADY HAVE IT
+			g = set_g(-1,message); // necessary to do this again even if we have g because it reserves. also WE MIGHT NOT ALREADY HAVE IT
 			const int group_n = getter_group_int(g,offsetof(struct group_list,n));
-			uint32_t peercount = be32toh(align_uint32((void*)&tmp_message[GROUP_ID_SIZE])); // XXX cannot use g_peercount because its zero
+			uint32_t peercount = be32toh(align_uint32((void*)&message[GROUP_ID_SIZE])); // XXX cannot use g_peercount because its zero
 			const uint32_t g_peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
 			const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 			if(peercount < g_peercount)
@@ -5120,13 +5132,13 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			msg = gtk_label_new(group_message);
 			sodium_memzero(group_message,sizeof(group_message));
 		}
-		else if(tmp_message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
+		else if(message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
 		{
-			const int s = ui_sticker_set((unsigned char*)tmp_message);
+			const int s = ui_sticker_set((unsigned char*)message);
 			if(s < 0 || sticker[s].paintable_animated == NULL || !(msg = ui_sticker_box(sticker[s].paintable_animated,size_sticker_large)))
 			{
 				if(stat == ENUM_MESSAGE_RECV)
-					message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,tmp_message,CHECKSUM_BIN_LEN);
+					message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,message,CHECKSUM_BIN_LEN);
 				if(stat == ENUM_MESSAGE_RECV && ENABLE_SPINNERS)
 				{
 					msg = gtk_spinner_new();
@@ -5182,10 +5194,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 //	{
 		long_press = gtk_gesture_long_press_new();
 		gtk_gesture_long_press_set_delay_factor(GTK_GESTURE_LONG_PRESS(long_press),LONG_PRESS_TIME);
-		struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
-		int_int->n = n;
-		int_int->i = i;
-		g_signal_connect(long_press, "pressed", G_CALLBACK(ui_message_long_press),int_int); // DO NOT FREE arg because this only gets passed ONCE.
+		g_signal_connect(long_press, "pressed", G_CALLBACK(ui_message_long_press),iitovp(n,i)); // DO NOT FREE arg because this only gets passed ONCE.
 //	}
 	GtkWidget *file_icon = {0};
 	/* Set up text area of message */
@@ -5200,12 +5209,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
 		}
 		if(long_press)
-		{
-			struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-			file_nf->n = nnn;
-			file_nf->f = f;
-			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),file_nf); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
-		}
+			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),iitovp(nnn,f)); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
 
 		if(finished_image)
 		{
@@ -5256,6 +5260,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		//	gtk_box_append(GTK_BOX(inner_message_box),text_area);
 		//	printf("Checkpoint ui_print_message nnn==%d f==%d\n",nnn,f);
 		}
+		torx_free((void*)&filename);
+		torx_free((void*)&file_path);
 	}
 	else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 	{
@@ -5264,20 +5270,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		if(stat == ENUM_MESSAGE_RECV)
 		{
 			GtkGesture *gesture = gtk_gesture_click_new();
-			struct int_int_char *int_int_char = torx_insecure_malloc(sizeof(struct int_int_char));
-			int_int_char->n = n;
-			int_int_char->g = set_g(-1,tmp_message); // necessary to do this again even if we have g because it reserves
-			if(protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
-			{
-				int_int_char->p = &tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)];
-				int_int_char->up = (unsigned char*)&tmp_message[GROUP_ID_SIZE+sizeof(uint32_t)+sizeof(uint8_t)+56];
-			}
-			else // ENUM_PROTOCOL_GROUP_OFFER
-			{
-				int_int_char->p = NULL;
-				int_int_char->up = NULL;
-			}
-			g_signal_connect_swapped(gesture, "pressed", G_CALLBACK(ui_group_join),int_int_char); // do not free
+			g_signal_connect_swapped(gesture, "pressed", G_CALLBACK(ui_group_join),iitovp(n,i)); // do not free
 			gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(gesture));
 		}
 	//	GtkWidget *text_area = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
@@ -5298,8 +5291,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 
 //	if(scroll != 3)
 		gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(long_press));
-	torx_free((void*)&filename);
-	torx_free((void*)&file_path);
+	torx_free((void*)&message);
 	return outer_message_box;
 }
 
@@ -5389,14 +5381,12 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 //	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols);
-	torx_read(n) // XXX
-	char *tmp_message = peer[n].message[i].message;
-	const uint32_t tmp_message_len = peer[n].message[i].message_len;
-	torx_unlock(n) // XXX
+	uint32_t message_len;
+	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
-	if(scroll == 2 && stat != ENUM_MESSAGE_RECV && tmp_message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
+	if(scroll == 2 && stat != ENUM_MESSAGE_RECV && message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
 	{ // THE FOLLOWING IS IMPORTANT TO PREVENT FINGERPRINTING BY STICKER WALLET. XXX NOTE: To allow offline stickers to work for GROUP messages, also permit scroll == 1 (prolly very bad idea thou because unlimitd peers could repeatedly request)
-		const int s = ui_sticker_set((unsigned char*)tmp_message);
+		const int s = ui_sticker_set((unsigned char*)message);
 		int iter = 0;
 		while(iter < MAX_PEERS && sticker[s].peers[iter] != n && sticker[s].peers[iter] > -1)
 			iter++;
@@ -5412,16 +5402,23 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			else
 				g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 		}
+		torx_free((void*)&message);
 		return; // do not display
 	}
 	int g = -1;
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
 	{
 		if(!group_pm && stat != ENUM_MESSAGE_RECV)
+		{
+			torx_free((void*)&message);
 			return;	// Do not print OUTBOUND messages on GROUP_PEER unless they are private
+		}
 		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 		if(stat == ENUM_MESSAGE_RECV && (t_peer[n].mute || status == ENUM_STATUS_BLOCKED))
+		{
+			torx_free((void*)&message);
 			return; // Do not print inbound messages from muted (ignored) or blocked group peers
+		}
 		g = set_g(n,NULL);
 		const int group_n = getter_group_int(g,offsetof(struct group_list,n));
 		if(group_n > -1)
@@ -5440,10 +5437,10 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			char peernick[56+1];
 			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 			if(null_terminated_len == 1)
-				ui_notify(peernick,tmp_message);
+				ui_notify(peernick,message);
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
 			{
-				const int f = set_f(n,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+				const int f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN);
 				char *filename = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,filename));
 				ui_notify(peernick,filename);
 				torx_free((void*)&filename);
@@ -5451,7 +5448,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
 				getter_array(&peernick,sizeof(peernick),nn,INT_MIN,-1,-1,offsetof(struct peer_list,peernick)); // XXX
-				const int f = set_f(nn,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN);
 				char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
 				ui_notify(peernick,filename);
 				torx_free((void*)&filename);
@@ -5472,9 +5469,9 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	{
 		int f = -1;
 		if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
-			f = set_f(n,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+			f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN);
 		else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
-			f = set_f(nn,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+			f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN);
 		else if(protocol == ENUM_PROTOCOL_FILE_REQUEST)
 		{
 			if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
@@ -5484,6 +5481,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				else
 					g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 			}
+			torx_free((void*)&message);
 			return; // do not display other types of files messages
 		}
 		// Handle :sent: TODO
@@ -5496,6 +5494,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				g_list_store_splice (t_main.list_store_chat,t_main.global_pos - t_peer[n].t_message[i].pos,1,(void**)&pair,1);
 			else
 				g_list_store_splice (t_main.list_store_chat,t_peer[n].t_message[i].pos,1,(void**)&pair,1);
+			torx_free((void*)&message);
 			return;
 		}
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
@@ -5520,6 +5519,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 		}
 	}
+	torx_free((void*)&message);
 	skip_printing: {}
 	if(scroll)
 	{ // == 1 or == 2 or == 3
@@ -5535,6 +5535,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			}
 		}
 	}
+
 }
 
 static int print_message_idle(void *arg)
@@ -6629,10 +6630,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 				const uint8_t file_offer = protocols[p_iter].file_offer;
 				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 				pthread_rwlock_unlock(&mutex_protocols);
-				torx_read(nn) // XXX
-				const char *tmp_message = peer[nn].message[last_message_i].message;
-				torx_unlock(nn) // XXX
-				if(max_i > INT_MIN/* && protocol > 0*/ && tmp_message)
+				const char *message = getter_string(NULL,nn,last_message_i,-1,offsetof(struct message_list,message));
+				if(max_i > INT_MIN/* && protocol > 0*/ && message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
 					const uint8_t stat = getter_uint8(nn,last_message_i,-1,-1,offsetof(struct message_list,stat));
@@ -6650,17 +6649,13 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 							const int g = set_g(nn,NULL);
 							nnn = getter_group_int(g,offsetof(struct group_list,n));
 						}
-						const int f = set_f(nnn,(const unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
+						const int f = set_f(nnn,(const unsigned char*)message,CHECKSUM_BIN_LEN);
 						torx_read(nnn) // XXX
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",peer[nnn].file[f].filename);
 						torx_unlock(nnn) // XXX
 					}
 					else if(null_terminated_len)
-					{
-						torx_read(nn) // XXX
-						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",peer[nn].message[last_message_i].message);
-						torx_unlock(nn) // XXX
-					}
+						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",message);
 					else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",text_group_offer);
 					else if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
@@ -6668,6 +6663,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 					else
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"Protocol: %d",protocol);
 				}
+				torx_free((void*)&message);
 			}
 		}
 		int count = sizeof(last_message);
