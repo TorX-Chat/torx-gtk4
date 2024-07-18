@@ -1040,9 +1040,7 @@ static int transfer_progress_idle(void *arg)
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
 		return 0; // should check if visible?
 	const uint64_t size = getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,size));
-	torx_read(n) // XXX
-	const char *file_path = peer[n].file[f].file_path;
-	torx_unlock(n) // XXX
+	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(transferred == size)
 	{ // Notify of completion
 		const uint8_t status = getter_uint8(n,INT_MIN,f,-1,offsetof(struct file_list,status));
@@ -1057,6 +1055,7 @@ static int transfer_progress_idle(void *arg)
 		{ // probably something full of zeroes. this should never occur. Its a bug.
 			sodium_memzero(peernick,sizeof(peernick));
 			error_printf(0,"Unhandled file status in transfer_progress_cb: %u transferred: %lu [f].size %lu",status,transferred,size);
+			torx_free((void*)&file_path);
 			return 0;
 		}
 		sodium_memzero(peernick,sizeof(peernick));
@@ -1075,6 +1074,7 @@ static int transfer_progress_idle(void *arg)
 		gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
 	if(status == ENUM_FILE_INBOUND_COMPLETED && is_image_file(file_path))
 		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image
+	torx_free((void*)&file_path);
 	return 0;
 }
 
@@ -1977,10 +1977,10 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	const int f = file_nf->f;
 	torx_read(n) // XXX
 	const uint8_t status = peer[n].file[f].status;
-	const char *file_path = peer[n].file[f].file_path;
 	const uint64_t size = peer[n].file[f].size;
 	const uint64_t transferred = calculate_transferred(n,f);
 	torx_unlock(n) // XXX
+	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
 	printf("Checkpoint toggle_file: %u\n",status);
 	if(size > 0 && size == transferred && size == get_file_size(file_path))
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
@@ -1989,6 +1989,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	//	gtk_file_launcher_set_always_ask (launcher,TRUE); // doesn't do shit
 	//	gtk_file_launcher_launch (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL); // not good, it opens in default without asking
 		gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
+		torx_free((void*)&file_path);
 		return;
 	}
 	if(status == ENUM_FILE_INBOUND_PENDING)
@@ -2009,6 +2010,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 			file_accept(n,f);
 		}
 	}
+	torx_free((void*)&file_path);
 }
 
 static void ui_set_image_logging(GtkWidget *button,const int n)
@@ -4744,17 +4746,17 @@ static void ui_open_folder(const gpointer data)
 	const int i = int_int->i;
 	const int nnn = handle_stuff(n,i);
 	const int f = set_f_from_i(n,i);
-	torx_read(nnn) // XXX
-	const char *file_path = peer[nnn].file[f].file_path;
-	torx_unlock(nnn) // XXX
+	char *file_path = getter_string(NULL,nnn,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(file_path == NULL)
 	{
 		error_simple(0,"File path is NULL. Cannot open folder.");
+		torx_free((void*)&file_path);
 		return;
 	}
 	GFile *file = g_file_new_for_path(file_path);
 	GtkFileLauncher *launcher = gtk_file_launcher_new (file);
 	gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
+	torx_free((void*)&file_path);
 }
 
 static void ui_activity_cancel(const gpointer data)
@@ -5067,12 +5069,10 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			tmp_n = nn;
 		else
 			tmp_n = n;
-		torx_read(tmp_n) // XXX
-		filename = peer[tmp_n].file[f].filename;
-		file_path = peer[tmp_n].file[f].file_path;
-		const uint64_t size = peer[tmp_n].file[f].size;
+		filename = getter_string(NULL,tmp_n,INT_MIN,f,offsetof(struct file_list,filename));
+		file_path = getter_string(NULL,tmp_n,INT_MIN,f,offsetof(struct file_list,file_path));
+		const uint64_t size = getter_uint64(tmp_n,INT_MIN,f,-1,offsetof(struct file_list,size));
 		transferred = calculate_transferred(tmp_n,f);
-		torx_unlock(tmp_n) // XXX
 		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
 		{
 		//	finished_file = 1;
@@ -5298,7 +5298,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 
 //	if(scroll != 3)
 		gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(long_press));
-
+	torx_free((void*)&filename);
+	torx_free((void*)&file_path);
 	return outer_message_box;
 }
 
