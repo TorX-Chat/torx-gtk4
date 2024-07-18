@@ -5444,19 +5444,17 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
 			{
 				const int f = set_f(n,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
-				torx_read(n) // XXX
-				const char *filename = peer[n].file[f].filename;
-				torx_unlock(n) // XXX
+				char *filename = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,filename));
 				ui_notify(peernick,filename);
+				torx_free((void*)&filename);
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
 				getter_array(&peernick,sizeof(peernick),nn,INT_MIN,-1,-1,offsetof(struct peer_list,peernick)); // XXX
 				const int f = set_f(nn,(unsigned char*)tmp_message,CHECKSUM_BIN_LEN);
-				torx_read(nn) // XXX
-				const char *filename = peer[nn].file[f].filename;
-				torx_unlock(nn) // XXX
+				char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
 				ui_notify(peernick,filename);
+				torx_free((void*)&filename);
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_REQUEST)
 				ui_notify(peernick,text_accepted_file);
