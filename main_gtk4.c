@@ -1489,9 +1489,10 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		}
 		size_t png_size = 0;
 		void* png_data = return_png(&png_size,qr_data);
-		write_bytes(g_file_get_path(chosen_path),png_data,png_size);
-	//	printf("Checkpoint png_size: %lu qr_data->size_allocated: %lu saving to: %s\n",png_size,qr_data->size_allocated,g_file_get_path(chosen_path));
-
+		char *file_path = g_file_get_path(chosen_path); // free'd
+		write_bytes(file_path,png_data,png_size);
+	//	printf("Checkpoint png_size: %lu qr_data->size_allocated: %lu saving to: %s\n",png_size,qr_data->size_allocated,file_path);
+		g_free(file_path); file_path = NULL;
 	//	sodium_memzero(png_data,png_size);
 		torx_free((void*)&png_data);
 
@@ -1659,7 +1660,7 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 	{
 		if(!strncmp(gtk_widget_get_name(button),"tor_location",12))
 		{ // TODO consider having a option to unset / reset default path
-			char *path = g_file_get_path(file);
+			char *path = g_file_get_path(file); // free'd
 			if(!path)
 				return;
 			gtk_button_set_label ( GTK_BUTTON(button),path);
@@ -1672,17 +1673,20 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			sql_setting(0,-1,"tor_location",path,strlen(path));
 			// TODO free path somehow? gtk allocated
 			start_tor();
+			g_free(path); path = NULL;
 		}
 		else if(!strncmp(gtk_widget_get_name(button),"custom_input_location",21))
 		{
-			t_main.custom_input_location = g_file_get_path(file);
-			char *privkey = custom_input_file(g_file_get_path(file));
+			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
+			char *path = g_file_get_path(file); // free'd
+			char *privkey = custom_input_file(path);
 			gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_privkey)),privkey,-1);
 			torx_free((void*)&privkey);
+			g_free(path); path = NULL;
 		}
 		else if(!strncmp(gtk_widget_get_name(button),"button_add_sticker",18))
 		{
-			char *path = g_file_get_path(file);
+			char *path = g_file_get_path(file); // free'd
 			if(!path)
 				return;
 			size_t data_len = 0;
@@ -1693,6 +1697,7 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			sticker[s].data_len = data_len;
 			ui_sticker_save(itovp(s));
 			torx_free((void*)&data);
+			g_free(path); path = NULL;
 		}
 // ??? what??	fprintf(stderr,"GTK bug where placeholder text is not overwritten. Should be fixed by publication time.\n"); // https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/4875
 	}
@@ -1706,7 +1711,11 @@ static void ui_on_choose_files(GtkFileDialog *dialog,GAsyncResult *res,const voi
 	{
 		guint z = 0;
         	for(GFile *file ; (file = g_list_model_get_item(file_list,z)) != NULL ; z++)
-			file_send(n,g_file_get_path(file));
+		{
+			char *file_path = g_file_get_path(file); // free'd
+			file_send(n,file_path);
+			g_free(file_path); file_path = NULL;
+		}
 	}
 }
 
@@ -1715,7 +1724,7 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 	GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
 	if(folder)
 	{ // Set
-		const char *folder_path = g_file_get_path(folder);
+		char *folder_path = g_file_get_path(folder); // free'd (in most cases)
 		if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 			return;
 		const size_t len = strlen(folder_path);
@@ -1726,6 +1735,7 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 		download_dir = allocation;
 		pthread_rwlock_unlock(&mutex_global_variable);
 		sql_setting(0,-1,"download_dir",folder_path,len);
+		g_free(folder_path); folder_path = NULL;
 	}
 	else
 	{ // Unset if cancelled
@@ -1759,7 +1769,7 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 				gtk_window_destroy(GTK_WINDOW(dialog));
 				return;
 			}
-			const char *folder_path = g_file_get_path(folder);
+			char *folder_path = g_file_get_path(folder); // free'd (in most cases)
 			if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 				return;
 			torx_write(n) // XXX
@@ -1769,6 +1779,7 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,platform_slash,peer[n].file[f].filename);
 			torx_unlock(n) // XXX
 			file_accept(n,f);
+			g_free(folder_path); folder_path = NULL;
 		}
 	}
 }
@@ -6211,6 +6222,17 @@ static void ui_group_peerlist(const gpointer data)
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_group_peerlist));
 }
 
+
+static inline void on_file_drop(GtkDropTarget *drop_target, const GValue *value, gpointer arg)
+{ // https://gitlab.gnome.org/GNOME/gtk/-/issues/3755
+	(void) drop_target;
+	const int n = vptoi(arg);
+	GFile *file = g_value_get_object(value);
+	char *file_path = g_file_get_path(file); // free'd
+	file_send(n,file_path);
+	g_free(file_path); file_path = NULL;
+}
+
 static void ui_select_changed(const void *arg)
 { /* show_peer() Triggered when a peer is selected from the peer list */
 	const int n = vptoi(arg); // DO NOT FREE ARG
@@ -6317,6 +6339,11 @@ static void ui_select_changed(const void *arg)
 	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_peer[n].buffer_write);
 	gtk_widget_add_css_class(t_main.write_message, "write_message");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
+
+	/* Add drop target */
+	GtkDropTarget *drop_target = gtk_drop_target_new(G_TYPE_FILE, GDK_ACTION_COPY);
+	g_signal_connect(drop_target, "drop", G_CALLBACK(on_file_drop), itovp(n));
+	gtk_widget_add_controller(t_main.write_message, GTK_EVENT_CONTROLLER(drop_target));
 
 	/* Write Message Box (inner-outer2) */
 	GtkWidget *write_message_scroll = gtk_scrolled_window_new();
@@ -7032,6 +7059,7 @@ static void *icon_communicator(void* arg)
 //static void activate (GtkApplication* app, gpointer user_data)
 static void ui_activate(GtkApplication *application,void *arg)
 { // Cannot set window position, GTK removed it.// https://stackoverflow.com/questions/62614703/how-to-make-window-centered-in-gtk4
+	(void) arg;
 	if(running)
 	{ // Already running, show the window to the user. XXX NOTE: Arguments passed on command line are in a different process and therefore not available. (ie: -m, -f, -d)
 		if(t_main.main_window && gtk_widget_get_visible(t_main.main_window))
@@ -7042,7 +7070,61 @@ static void ui_activate(GtkApplication *application,void *arg)
 	}
 	running = 1;
 
-	(void) arg;
+	getcwd(starting_dir,sizeof(starting_dir));
+	/* Options configurable by client */
+	debug = 0;
+	reduced_memory = 2; // TODO probably remove before release
+
+	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
+	initialize_n_setter(initialize_n_cb_ui);
+	initialize_i_setter(initialize_i_cb_ui);
+	initialize_f_setter(initialize_f_cb_ui);
+	initialize_g_setter(initialize_g_cb_ui);
+	expand_file_struc_setter(expand_file_struc_cb_ui);
+	expand_message_struc_setter(expand_message_struc_cb_ui);
+	expand_peer_struc_setter(expand_peer_struc_cb_ui);
+	expand_group_struc_setter(expand_group_struc_cb_ui);
+	transfer_progress_setter(transfer_progress_cb_ui);
+	change_password_setter(change_password_cb_ui);
+	incoming_friend_request_setter(incoming_friend_request_cb_ui);
+	onion_deleted_setter(onion_deleted_cb_ui);
+	peer_online_setter(peer_online_cb_ui);
+	peer_offline_setter(peer_offline_cb_ui);
+	peer_new_setter(peer_new_cb_ui);
+	onion_ready_setter(onion_ready_cb_ui);
+	tor_log_setter(tor_log_cb_ui);
+	error_setter(error_cb_ui);
+	fatal_setter(fatal_cb_ui);
+	custom_setting_setter(custom_setting_cb_ui);
+	print_message_setter(print_message_cb_ui);
+	login_setter(login_cb_ui);
+	peer_loaded_setter(peer_loaded_cb_ui);
+	cleanup_setter(cleanup_cb_ui);
+	stream_setter(stream_cb_ui);
+
+	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
+
+	initial();
+//	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
+	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
+	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
+	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
+	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
+	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
+	snowflake_location = which("snowflake-client"); // TODO move to initial_keyed?
+	obfs4proxy_location = which("obfs4proxy"); // TODO move to initial_keyed?
+
+	const char *tdd = "tor_data_directory";
+	char current_working_directory[PATH_MAX];
+	getcwd(current_working_directory,sizeof(current_working_directory));
+	char tdd_full_path[PATH_MAX];
+	const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%c%s",current_working_directory,platform_slash,tdd) + 1;
+	if(tdd_len > 1)
+	{
+		tor_data_directory = torx_insecure_malloc((size_t)tdd_len);
+		memcpy(tor_data_directory,tdd_full_path,(size_t)tdd_len);
+	}
+
 	ui_initialize_language(NULL);
 
 	if(!get_file_size(FILENAME_ICON))
@@ -7250,39 +7332,7 @@ int main(int argc,char **argv)
 { // XXX WARNING: Do not use error_* before initial or SEVERE memory errors will occur that are VERY hard to diagnose XXX
 	binary_path = argv[0];
 	binary_name = argv[1];
-	getcwd(starting_dir,sizeof(starting_dir));
-	/* Options configurable by client */
-	debug = 0;
-	reduced_memory = 2; // TODO probably remove before release
 
-	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
-	initialize_n_setter(initialize_n_cb_ui);
-	initialize_i_setter(initialize_i_cb_ui);
-	initialize_f_setter(initialize_f_cb_ui);
-	initialize_g_setter(initialize_g_cb_ui);
-	expand_file_struc_setter(expand_file_struc_cb_ui);
-	expand_message_struc_setter(expand_message_struc_cb_ui);
-	expand_peer_struc_setter(expand_peer_struc_cb_ui);
-	expand_group_struc_setter(expand_group_struc_cb_ui);
-	transfer_progress_setter(transfer_progress_cb_ui);
-	change_password_setter(change_password_cb_ui);
-	incoming_friend_request_setter(incoming_friend_request_cb_ui);
-	onion_deleted_setter(onion_deleted_cb_ui);
-	peer_online_setter(peer_online_cb_ui);
-	peer_offline_setter(peer_offline_cb_ui);
-	peer_new_setter(peer_new_cb_ui);
-	onion_ready_setter(onion_ready_cb_ui);
-	tor_log_setter(tor_log_cb_ui);
-	error_setter(error_cb_ui);
-	fatal_setter(fatal_cb_ui);
-	custom_setting_setter(custom_setting_cb_ui);
-	print_message_setter(print_message_cb_ui);
-	login_setter(login_cb_ui);
-	peer_loaded_setter(peer_loaded_cb_ui);
-	cleanup_setter(cleanup_cb_ui);
-	stream_setter(stream_cb_ui);
-
-	/* Initialize GTK4 */
 	gtk_application_gtk4 = gtk_application_new (DBUS_TITLE, G_APPLICATION_DEFAULT_FLAGS);
 	#pragma GCC diagnostic push
 	#pragma GCC diagnostic ignored "-Wpedantic"
@@ -7296,29 +7346,6 @@ int main(int argc,char **argv)
 		{0} };
 	#pragma GCC diagnostic pop
 	g_application_add_main_option_entries(G_APPLICATION(gtk_application_gtk4),entries);
-
-	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
-
-	initial();
-//	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
-	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
-	snowflake_location = which("snowflake-client"); // TODO move to initial_keyed?
-	obfs4proxy_location = which("obfs4proxy"); // TODO move to initial_keyed?
-
-	const char *tdd = "tor_data_directory";
-	char current_working_directory[PATH_MAX];
-	getcwd(current_working_directory,sizeof(current_working_directory));
-	char tdd_full_path[PATH_MAX];
-	const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%c%s",current_working_directory,platform_slash,tdd) + 1;
-	if(tdd_len > 1)
-	{
-		tor_data_directory = torx_insecure_malloc((size_t)tdd_len);
-		memcpy(tor_data_directory,tdd_full_path,(size_t)tdd_len);
-	}
 
 	g_signal_connect(gtk_application_gtk4, "activate", G_CALLBACK (ui_activate), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	const int status = g_application_run (G_APPLICATION (gtk_application_gtk4), argc, argv);
