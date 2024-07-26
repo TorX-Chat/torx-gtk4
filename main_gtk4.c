@@ -5681,7 +5681,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 	(void) keycode;
 	(void) state;
 //	fprintf(stderr,"%d ",keyval); // TODO with the results of this, we can do ctrl+enter for send,etc (edit: nope, not viable. ctrl+k is same if held or not)
-	if(!keyval || keyval == GDK_KEY_Return) // 0 == pressed enter
+	if(!keyval || ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))) // 0 == pressed enter
 	{
 		GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 		GtkTextIter start, end;
@@ -5690,12 +5690,12 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		if(!message || message[0] == '\0') // message[0] == '\n' // removed prohibition against newline start because it was issues.
 			return; // Sanity check
 		size_t buf_len = strlen(message);
-		if(keyval == GDK_KEY_Return && message[buf_len-1] == '\n')
+		if((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK) && message[buf_len-1] == '\n')
 		{ // Strip Trailing Newline, if applicable
 			message[buf_len-1] = '\0';
 			buf_len--;
 		}
-		else if(keyval == GDK_KEY_Return)
+		else if((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))
 			return; // enter press but not at end of line, do not send yet
 		if(gtk_widget_get_visible(t_main.button_activity))
 		{ // PM / edits require button_activity to be functional to trigger (this is really good)
@@ -6340,7 +6340,7 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_add_css_class(t_main.write_message, "write_message");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
 
-	/* Add drop target */
+	/* Add drop target (for drag-and-drop file sends) */
 	GtkDropTarget *drop_target = gtk_drop_target_new(G_TYPE_FILE, GDK_ACTION_COPY);
 	g_signal_connect(drop_target, "drop", G_CALLBACK(on_file_drop), itovp(n));
 	gtk_widget_add_controller(t_main.write_message, GTK_EVENT_CONTROLLER(drop_target));
