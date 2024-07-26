@@ -3531,7 +3531,7 @@ static int scroll_func_idle_inverted(void *arg)
 //	fprintf(stderr,"Checkpoint Scroll Upper: %e\n",upper);
 	gtk_adjustment_set_value(GTK_ADJUSTMENT(adj), offset);
 	gtk_scrolled_window_set_vadjustment (GTK_SCROLLED_WINDOW(window),GTK_ADJUSTMENT(adj));
-//TODO	printf("Checkpoint scrolling\n");
+//	printf("Checkpoint scrolling\n");
 	return 0;
 }
 
@@ -5436,7 +5436,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			nn = group_n;
 	}
 	if((nn != global_n || !gtk_widget_get_visible(t_main.main_window)) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
-	{ /* Complete Message (indicated by scroll==1), but not on screen */
+	{ /* Notify of complete Message (indicated by scroll==1), but not on screen */
 		t_peer[nn].unread++;
 		if (owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 			totalUnreadGroup++;
@@ -5476,8 +5476,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			beep();
 		}
 	}
-	else if(nn == global_n)
-	{
+	if(nn == global_n)
+	{ // Print it. DO NOT make this else if (needs to occur even if window not visible)
 		int f = -1;
 		if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
 			f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN);
