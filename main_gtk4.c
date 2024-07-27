@@ -5501,6 +5501,9 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		//	ui_message_info(n,i);
 //printf("Checkpoint derp 2\n");
 			IntPair *pair = int_pair_new(n,i,f,g);
+			/* guint n_items = g_list_model_get_n_items(G_LIST_MODEL(t_main.list_store_chat));
+			printf("Checkpoint splice: pos=%u + rem=1 <=? n_items=%u\n",t_main.global_pos - t_peer[n].t_message[i].pos,n_items);
+			printf("Checkpoint splice: n=%d i=%d global_pos=%u message pos=%u\n",n,i,t_main.global_pos,t_peer[n].t_message[i].pos); */
 			if(INVERSION_TEST)
 				g_list_store_splice (t_main.list_store_chat,t_main.global_pos - t_peer[n].t_message[i].pos,1,(void**)&pair,1);
 			else
@@ -5521,7 +5524,6 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
 			t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
 		}
-
 		if(scroll == 1 || scroll == 3) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
 		{
 			if(INVERSION_TEST)
@@ -5644,14 +5646,17 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 			for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
 			{
 				const int p_iter_local = peer[n].message[i].p_iter;
-				const uint16_t protocol_local = protocols[p_iter_local].protocol;
-				if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
-				&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
-				{ // Find the first relevant message and update it TODO this might not work in groups
-					torx_unlock(n) // XXX
-					ui_print_message(n,i,3);
-					torx_read(n) // XXX
-					break;
+				if(p_iter_local > -1)
+				{
+					const uint16_t protocol_local = protocols[p_iter_local].protocol;
+					if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
+					&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
+					{ // Find the first relevant message and update it TODO this might not work in groups
+						torx_unlock(n) // XXX
+						ui_print_message(n,i,3);
+						torx_read(n) // XXX
+						break;
+					}
 				}
 			}
 			torx_unlock(n) // XXX
