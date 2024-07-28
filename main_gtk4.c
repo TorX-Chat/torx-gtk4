@@ -794,7 +794,7 @@ void initialize_n_cb_ui(const int n)
 }
 
 static int initialize_i_idle(void *arg)
-{
+{ // XXX NOTICE: These also need to be carefully reset following message_deleted_cb (currently they are)
 	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
 	const int n = int_int->n; // XXX DO NOT DELETE XXX
 	const int i = int_int->i;
@@ -5381,6 +5381,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			else
 				g_list_store_splice (t_main.list_store_chat,t_peer[n].t_message[i].pos,1,(void**)&pair,1);
 		}
+		t_peer[n].t_message[i].pos = 0;
 		goto skip_printing;
 	}
 	pthread_rwlock_rdlock(&mutex_protocols);
