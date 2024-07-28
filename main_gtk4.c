@@ -416,7 +416,9 @@ void tor_log_cb_ui(char *message);
 void error_cb_ui(char *error_message);
 void fatal_cb_ui(char *error_message);
 void custom_setting_cb_ui(const int n,char *setting_name,char *setting_value,const size_t setting_value_len,const int plaintext);
-void print_message_cb_ui(const int n,const int i,const int scroll);
+void message_new_cb_ui(const int n,const int i);
+void message_modified_cb_ui(const int n,const int i);
+void message_deleted_cb_ui(const int n,const int i);
 void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len);
 void login_cb_ui(const int value);
 
@@ -5559,12 +5561,30 @@ static int print_message_idle(void *arg)
 	return 0;
 }
 
-void print_message_cb_ui(const int n,const int i,const int scroll) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
+void message_new_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
 { // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
 	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
 	printing->n = n;
 	printing->i = i;
-	printing->scroll = scroll;
+	printing->scroll = 1;
+	g_idle_add(print_message_idle,printing);
+}
+
+void message_modified_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
+{ // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
+	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
+	printing->n = n;
+	printing->i = i;
+	printing->scroll = 2;
+	g_idle_add(print_message_idle,printing);
+}
+
+void message_deleted_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
+{ // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
+	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
+	printing->n = n;
+	printing->i = i;
+	printing->scroll = 3;
 	g_idle_add(print_message_idle,printing);
 }
 
@@ -5644,7 +5664,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 				ui_sticker_save(itovp(s));
 			torx_read(n) // XXX
 			for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
-			{
+			{ // Rebuild any messages that had this sticker (NOTE: may not be functioning)
 				const int p_iter_local = peer[n].message[i].p_iter;
 				if(p_iter_local > -1)
 				{
@@ -5653,6 +5673,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 					&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
 					{ // Find the first relevant message and update it TODO this might not work in groups
 						torx_unlock(n) // XXX
+						printf("Checkpoint should be rebuilding a sticker??\n");
 						ui_print_message(n,i,3);
 						torx_read(n) // XXX
 						break;
@@ -7101,7 +7122,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 	error_setter(error_cb_ui);
 	fatal_setter(fatal_cb_ui);
 	custom_setting_setter(custom_setting_cb_ui);
-	print_message_setter(print_message_cb_ui);
+	message_new_setter(message_new_cb_ui);
+	message_modified_setter(message_modified_cb_ui);
+	message_deleted_setter(message_deleted_cb_ui);
 	login_setter(login_cb_ui);
 	peer_loaded_setter(peer_loaded_cb_ui);
 	cleanup_setter(cleanup_cb_ui);
