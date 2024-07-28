@@ -4677,9 +4677,8 @@ void custom_setting_cb_ui(const int n,char *setting_name,char *setting_value,con
 
 static void ui_message_copy(const gpointer data)
 {
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
@@ -4702,9 +4701,8 @@ static void ui_message_copy(const gpointer data)
 
 static void ui_message_resend(const gpointer data)
 {
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 /*	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
@@ -4746,18 +4744,16 @@ static int handle_stuff(const int n,const int i)
 
 static void ui_message_pause(const gpointer data)
 { // file_accept alternates between accept and pause
-	const struct int_int *int_int = (const struct int_int*) data;
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
 	const int f = set_f_from_i(n,i);
 	file_accept(nnn,f);
 }
 static void ui_message_cancel(const gpointer data)
 { // file_cancel() NOTE: this is for cancelling FILES not unsent messages.
-	const struct int_int *int_int = (const struct int_int*) data;
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
 	const int f = set_f_from_i(n,i);
 	file_cancel(nnn,f);
@@ -4769,9 +4765,8 @@ static void ui_message_reject(const gpointer data)
 
 static void ui_open_folder(const gpointer data)
 { // NOTE: we have gtk_file_launcher_open_containing_folder in two places
-	const struct int_int *int_int = (const struct int_int*) data;
-	const int n = int_int->n;
-	const int i = int_int->i;
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
 	const int f = set_f_from_i(n,i);
 	char *file_path = getter_string(NULL,nnn,INT_MIN,f,offsetof(struct file_list,file_path));
@@ -4872,15 +4867,15 @@ static void ui_private_message(const void *data)
 
 static void ui_activity_pm(const gpointer data)
 { // start PM from message popover
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	ui_establish_pm(int_int->n,t_main.popover_message);
+	const int n = vptoii_n(data);
+//	const int i = vptoii_i(data);
+	ui_establish_pm(n,t_main.popover_message);
 }
 
 static void ui_activity_edit(const gpointer data)
 {
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	t_peer[global_n].edit_n = int_int->n;
-	t_peer[global_n].edit_i = int_int->i;
+	t_peer[global_n].edit_n = vptoii_n(data);
+	t_peer[global_n].edit_i = vptoii_i(data);
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),NULL);
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
@@ -4910,8 +4905,9 @@ static void ui_activity_edit(const gpointer data)
 
 static void ui_message_delete(const gpointer data)
 { // Should work for public, private, etc, messages.
-	const struct int_int *int_int = (const struct int_int*) data; // Casting passed struct
-	message_edit(int_int->n,int_int->i,NULL);
+	const int n = vptoii_n(data);
+	const int i = vptoii_i(data);
+	message_edit(n,i,NULL);
 }
 
 static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,const gpointer data)
@@ -5561,8 +5557,8 @@ static int print_message_idle(void *arg)
 	return 0;
 }
 
-void message_new_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
-{ // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
+void message_new_cb_ui(const int n,const int i)
+{ // GUI Callback
 	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
 	printing->n = n;
 	printing->i = i;
@@ -5570,8 +5566,8 @@ void message_new_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new 
 	g_idle_add(print_message_idle,printing);
 }
 
-void message_modified_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
-{ // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
+void message_modified_cb_ui(const int n,const int i)
+{ // GUI Callback
 	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
 	printing->n = n;
 	printing->i = i;
@@ -5579,8 +5575,8 @@ void message_modified_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes
 	g_idle_add(print_message_idle,printing);
 }
 
-void message_deleted_cb_ui(const int n,const int i) // == 0 no scroll, == 1 yes new message, == 2 :sent:, == 3 modified message ( deleted message can be 1/2/3, does not matter )
-{ // GUI Callback from Libevent.c and message_send, also stupidly being implemented as a ui function by select_changed()
+void message_deleted_cb_ui(const int n,const int i)
+{ // GUI Callback
 	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
 	printing->n = n;
 	printing->i = i;
@@ -5674,7 +5670,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 					{ // Find the first relevant message and update it TODO this might not work in groups
 						torx_unlock(n) // XXX
 						printf("Checkpoint should be rebuilding a sticker??\n");
-						ui_print_message(n,i,3);
+						ui_print_message(n,i,2);
 						torx_read(n) // XXX
 						break;
 					}
