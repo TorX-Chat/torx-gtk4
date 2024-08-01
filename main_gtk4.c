@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.11 2024/07/16 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.12 2024/07/29 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -156,6 +156,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	int pm_n;
 	int edit_n;
 	int edit_i;
+	int pointer_location;
 	GtkTextBuffer* buffer_write;
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		guint pos;
@@ -596,9 +597,9 @@ static void ui_show_generate(void);
 static void ui_show_home(void);
 static void ui_show_settings(void);
 static int ui_populate_peers(void *arg);
-GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size);
-GtkWidget *ui_button_generate(const int type,const int n);
-static inline uint8_t is_image_file(const char *filename);
+GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
+GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unused_result));
+static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unused_result));
 static void ui_print_message(const int n,const int i,const int scroll);
 
 static GtkApplication	*gtk_application_gtk4;
@@ -783,7 +784,8 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
 	t_peer[n].buffer_write = NULL;
-	t_peer[n].t_message = torx_insecure_malloc(sizeof(struct t_message_list) *11);
+	t_peer[n].pointer_location = -10;
+	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
 	t_peer[n].t_file = torx_insecure_malloc(sizeof(struct t_file_list) *11);
 	return 0;
 }
@@ -846,13 +848,10 @@ static int expand_file_struc_idle(void *arg)
 {
 	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
 	const int n = file_nf->n;
-	const int f = file_nf->f;
+//	const int f = file_nf->f;
 	torx_free((void*)&file_nf);
-
-	struct t_file_list *tmp = torx_realloc(t_peer[n].t_file,/*sizeof(struct t_file_list)*(f+1), */sizeof(struct t_file_list)*(uint64_t)(f+1) + sizeof(struct t_file_list) *10);
-	if(tmp ==  NULL)
-		error_simple(-1,"Ran out of ram. Should panic and wipe the struc to crash safely.3");
-	t_peer[n].t_file = tmp;
+	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_file);
+	t_peer[n].t_file = torx_realloc(t_peer[n].t_file,current_allocation_size + sizeof(struct t_file_list) *10);
 	return 0;
 }
 
@@ -870,18 +869,13 @@ static int expand_message_struc_idle(void *arg)
 	const int n = int_int->n;
 	const int i = int_int->i;
 	torx_free((void*)&int_int);
-	torx_read(n) // XXX
-	const int max_i = peer[n].max_i;
-	const int min_i = peer[n].min_i;
-	torx_unlock(n) // XXX
-	struct t_message_list *tmp;
-	if(i > INT_MIN)
-		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(i+abs(min_i)+1) + sizeof(struct t_message_list) *10);
-	else
-		tmp = torx_realloc(t_peer[n].t_message - abs(min_i),sizeof(struct t_message_list)*(uint64_t)(max_i+abs(i)+1) + sizeof(struct t_message_list) *10);
-	if(tmp ==  NULL)
-		error_simple(-1,"Ran out of ram. Should panic and wipe the struc to crash safely.UI-2");
-	t_peer[n].t_message = tmp + abs(min_i);
+	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location);
+	int current_shift = 0;
+	if(i < 0)
+		current_shift = -10;
+printf(RED"Checkpoint realloc UI n=%d i=%d cas=%lu pl=%d\n"RESET,n,i,current_allocation_size,t_peer[n].pointer_location);
+	t_peer[n].t_message = (struct t_message_list*)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,current_allocation_size + sizeof(struct t_message_list) *10) - t_peer[n].pointer_location - current_shift;
+	t_peer[n].pointer_location += current_shift;
 	return 0;
 }
 
@@ -895,11 +889,9 @@ void expand_message_struc_cb_ui(const int n,const int i)
 
 static int expand_peer_struc_idle(void *arg)
 {
-	const int n = vptoi(arg);
-	struct t_peer_list *tmp = torx_realloc(t_peer,/*sizeof(struct t_peer_list)*(n+1), */sizeof(struct t_peer_list)*(uint64_t)(n+1) + sizeof(struct t_peer_list) *10);
-	if(tmp ==  NULL)
-		error_simple(-1,"Ran out of ram. Should panic and wipe the struc to crash safely.UI-1");
-	t_peer = tmp;
+	(void) arg;
+	const size_t current_allocation_size = torx_allocation_len(t_peer);
+	t_peer = torx_realloc(t_peer,current_allocation_size + sizeof(struct t_peer_list) *10);
 	return 0;
 }
 
@@ -2283,6 +2275,7 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 		return;
 	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	const uint32_t local_show_log_messages = threadsafe_read_uint32(&mutex_global_variable,&show_log_messages);
+printf("Checkpoint load_more_messages: %u\n",local_show_log_messages);
 	const int loaded = sql_populate_message(peer_index,0,local_show_log_messages);
 	if(loaded)
 	{ // Need to re-sort messages
@@ -5354,6 +5347,7 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 
 static void ui_print_message(const int n,const int i,const int scroll)
 { // use _idle or _cb unless in main thread // TODO TODO TODO XXX this function is too complex, theorize how to move most of it to library so we don't have to maintain it in UI
+printf("Checkpoint ui_print_message n=%d i=%d scroll=%d\n",n,i,scroll);
 	if(n < 0)
 	{
 		error_simple(0,"Sanity check failed in ui_print_message. Coding error. Report this.");
@@ -6853,6 +6847,7 @@ static void ui_show_main_screen(GtkWidget *window)
 
 static int login_act_idle(void *arg) // g_idle_add() functions must return int
 {
+	printf("Checkpoint login_act_idle\n"); // login bug detection
 	const int value = vptoi(arg);
 	if(value == 0)
 		ui_show_main_screen(t_main.main_window);
@@ -7272,9 +7267,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 	t_main.torx_log_buffer = gtk_text_buffer_new(NULL);
 	t_main.textbuffer_torrc = gtk_text_buffer_new(NULL);
 
-	if(no_password) // UI setting, relevant to first_run only
+	const int8_t lockout_local = threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout);
+	if(no_password && !lockout_local) // UI setting, relevant to first_run only
 		login_start("");
-	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
+printf("Checkpoint please wait\n"); // login bug detection
+	if(lockout_local)
 		gtk_button_set_label(GTK_BUTTON(t_main.auth_button),text_wait);
 
 	#ifdef ENABLE_APPINDICATOR
