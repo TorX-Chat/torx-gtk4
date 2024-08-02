@@ -872,9 +872,12 @@ static int expand_message_struc_idle(void *arg)
 	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location);
 	int current_shift = 0;
 	if(i < 0)
+	{
 		current_shift = -10;
-printf(RED"Checkpoint realloc UI n=%d i=%d cas=%lu pl=%d\n"RESET,n,i,current_allocation_size,t_peer[n].pointer_location);
-	t_peer[n].t_message = (struct t_message_list*)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,current_allocation_size + sizeof(struct t_message_list) *10) - t_peer[n].pointer_location - current_shift;
+		t_peer[n].t_message = (struct t_message_list*)torx_realloc_shift(t_peer[n].t_message + t_peer[n].pointer_location,current_allocation_size + sizeof(struct t_message_list) *10,1) - t_peer[n].pointer_location - current_shift;
+	}
+	else
+		t_peer[n].t_message = (struct t_message_list*)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,current_allocation_size + sizeof(struct t_message_list) *10) - t_peer[n].pointer_location;
 	t_peer[n].pointer_location += current_shift;
 	return 0;
 }
@@ -2275,7 +2278,6 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 		return;
 	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	const uint32_t local_show_log_messages = threadsafe_read_uint32(&mutex_global_variable,&show_log_messages);
-printf("Checkpoint load_more_messages: %u\n",local_show_log_messages);
 	const int loaded = sql_populate_message(peer_index,0,local_show_log_messages);
 	if(loaded)
 	{ // Need to re-sort messages
@@ -2286,7 +2288,7 @@ printf("Checkpoint load_more_messages: %u\n",local_show_log_messages);
 			message_sort(g);
 		}
 	}
-	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\" of %d messages\n",loaded);
+	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\" of %d of requested %u\n",loaded,local_show_log_messages);
 }
 
 /* Other */
@@ -5347,7 +5349,6 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 
 static void ui_print_message(const int n,const int i,const int scroll)
 { // use _idle or _cb unless in main thread // TODO TODO TODO XXX this function is too complex, theorize how to move most of it to library so we don't have to maintain it in UI
-printf("Checkpoint ui_print_message n=%d i=%d scroll=%d\n",n,i,scroll);
 	if(n < 0)
 	{
 		error_simple(0,"Sanity check failed in ui_print_message. Coding error. Report this.");
@@ -6847,7 +6848,6 @@ static void ui_show_main_screen(GtkWidget *window)
 
 static int login_act_idle(void *arg) // g_idle_add() functions must return int
 {
-	printf("Checkpoint login_act_idle\n"); // login bug detection
 	const int value = vptoi(arg);
 	if(value == 0)
 		ui_show_main_screen(t_main.main_window);
@@ -7270,7 +7270,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	const int8_t lockout_local = threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout);
 	if(no_password && !lockout_local) // UI setting, relevant to first_run only
 		login_start("");
-printf("Checkpoint please wait\n"); // login bug detection
+
 	if(lockout_local)
 		gtk_button_set_label(GTK_BUTTON(t_main.auth_button),text_wait);
 
