@@ -16,7 +16,7 @@ Note: For retrieving sizes (in UI) ( Useful for aspect ratio )
 */
 
 enum { // Currently we only have one property (ie the data itself), but we can specify more
-	GIF_DATA = 1,
+	GIF_DATA = 1
 };
 
 static inline void snapshot(GdkPaintable *paintable,GdkSnapshot *snapshot,double width,double height)
@@ -35,9 +35,9 @@ static inline void snapshot(GdkPaintable *paintable,GdkSnapshot *snapshot,double
 	g_object_unref(texture);
 }
 
-static inline void get_frame(GdkPaintableInterface *interface)
-{ // Runs frequently, so do not bloat.
-	interface->snapshot = snapshot;
+static inline void get_frame(GdkPaintableInterface *iface)
+{ // Runs frequently, so do not bloat. NOTE: Argument *must* be named iface or errors occur on Windows builds.
+	iface->snapshot = snapshot;
 }
 
 G_DEFINE_TYPE_WITH_CODE(ILiekCats,pixbuf_paintable,G_TYPE_OBJECT,G_IMPLEMENT_INTERFACE(GDK_TYPE_PAINTABLE,get_frame))

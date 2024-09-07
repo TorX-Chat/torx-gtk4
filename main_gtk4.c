@@ -95,6 +95,11 @@ static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will b
 #else
 	#define ENABLE_APPINDICATOR 1
 #endif*/
+#ifdef WIN32
+HANDLE tray_fd_stdout = {0};
+/*#else
+int tray_fd_stdout;*/
+#endif
 
 /* Global Variables */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 static char language[5+1] = {0};
@@ -7029,7 +7034,7 @@ static int icon_communicator_idle(void *arg)
 	}
 	return TRUE;
 	end: {}
-	error_printf(0,"Icon_communicator failed after successful connection");
+	error_simple(0,"Icon_communicator failed after successful connection");
 	if(sockfd > 0)
 		close(sockfd);
 	icon_failure_idle(arg);
@@ -7065,12 +7070,19 @@ static void *icon_communicator(void* arg)
 		return 0;
 	}
 	end: {}
-	error_printf(0,"Icon_communicator failed before successful connection");
+	error_simple(0,"Icon_communicator failed before successful connection");
 	if(sockfd > 0)
 		close(sockfd);
 	g_idle_add(icon_failure_idle,arg); // XXX
 	if(tray_pid > 0)
+	{
+		#ifdef WIN32
+		if(tray_fd_stdout)
+			TerminateProcess(tray_fd_stdout,0);
+		#else
 		kill(tray_pid,SIGTERM);
+		#endif
+	}
 	pthread_exit(NULL);
 }
 
@@ -7278,21 +7290,67 @@ static void ui_activate(GtkApplication *application,void *arg)
 	const uint16_t icon_port = randport(0);
 	char port_array[6];
 	snprintf(port_array,sizeof(port_array),"%u",icon_port);
+
+
+/*
+// The following CANNOT be used because run_binary hangs due to limitations.
+// If we want to use the following, we have to read tray_fd_stdout for FAILURE_STRING, but that could be subject to race conditions
+	char appindicator_path[PATH_MAX];
+	char small_p[3];
+	char large_p[3];
+	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
+	snprintf(small_p,sizeof(small_p),"-p");
+	snprintf(large_p,sizeof(large_p),"-P");
+	char* const args_cmd[] = {appindicator_path,small_p,port_array,large_p,binary_path,NULL};
 	#ifdef WIN32
-	if(!CreateProcess(NULL,"torx-tray",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+	run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
+	#else
+	run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
+	#endif
+	if(tray_pid < 0)
+	{
+		char binary_path_copy[PATH_MAX];
+		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
+		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
+		snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
+		#ifdef WIN32
+		run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
+		#else
+		run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
+		#endif
+		if(tray_pid < 0 && )
+		{ // try for GDB
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
+			#ifdef WIN32
+			run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
+			#else
+			run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
+			#endif
+			if(tray_pid < 0 && )
+				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+		}
+	}
+ */
+
+
+
+	#ifdef WIN32
+	PROCESS_INFORMATION pi;
+	if(!CreateProcess(NULL,"torx-tray",NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
 	{ // after checking PATH, assuming this isn't running in GDB
 		char binary_path_copy[PATH_MAX];
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 		char appindicator_path[PATH_MAX];
 		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray",starting_dir,current_binary_directory);
-		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
 		{ // try for GDB
 			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray",current_binary_directory);
-			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL))
+			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
 				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 		}
 	}
+	tray_fd_stdout = pi.hProcess;
 	#else
 	if((tray_pid = fork()) == -1)
 		error_simple(-1,"fork");
@@ -7315,6 +7373,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 		exit(0);
 	}
 	#endif
+
+
+
 	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
 		error_simple(0,"Failed to create thread");
 	#endif

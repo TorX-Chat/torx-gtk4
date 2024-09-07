@@ -79,12 +79,29 @@ pkg_check_modules(GTK4 REQUIRED gtk4)
 
 add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
 target_include_directories(gif_animation PRIVATE ${GTK4_INCLUDE_DIRS})
+target_link_libraries(gif_animation ${GTK4_LIBRARIES}) # necessary on Windows, unsure why it works without on Linux
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
 target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER})
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
+
+if(WIN32)
+target_link_libraries(
+	${PROJECT_NAME} PRIVATE
+		Winmm
+		Ws2_32
+		gif_animation
+		${GTK4_LIBRARIES}
+		sodium
+	#	event
+		event_core
+	#	event_pthreads
+		png
+		sqlcipher
+)
+else()
 target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		gif_animation
@@ -96,6 +113,7 @@ target_link_libraries(
 		png
 		sqlcipher
 )
+endif()
 
 # Install the executables
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)

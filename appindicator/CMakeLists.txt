@@ -12,4 +12,15 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${GTK3_INCLUDE_DIRS})
 
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK3_CFLAGS_OTHER})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${GTK3_LIBRARIES})
+if(WIN32)
+target_link_libraries(
+	${PROJECT_NAME} PRIVATE
+	${GTK3_LIBRARIES}
+	Ws2_32
+)
+else()
+target_link_libraries(
+	${PROJECT_NAME} PRIVATE
+	${GTK3_LIBRARIES}
+)
+endif()

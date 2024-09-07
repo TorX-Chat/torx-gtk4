@@ -2,11 +2,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <pthread.h>
 #include <libgen.h>	// for basename
+#include <unistd.h>
+
+#ifdef WIN32 // XXX
+#include <winsock2.h> // necessary
+#include <ws2tcpip.h> // necessary
+#else
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
+
 #include "torx-tray.c"	// gresource
 
 /* TODO
@@ -254,7 +261,7 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 		rebuild(data);
 	}
 	#ifdef WIN32
-	CreateProcess(NULL,"data->path",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL)
+	CreateProcess(NULL,"data->path",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL);
 	#else
 	if(fork() == 0)
 	{
@@ -265,7 +272,9 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 }
 
 int main(int argc, char *argv[]) {
+	#ifndef WIN32
 	signal(SIGCHLD, SIG_IGN); // XXX prevent zombies
+	#endif
 	// Initialize GTK
 	gtk_init(&argc, &argv);
 
