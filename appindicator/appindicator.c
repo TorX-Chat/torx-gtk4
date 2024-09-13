@@ -5,6 +5,15 @@
 #include <pthread.h>
 #include <libgen.h>	// for basename
 #include <unistd.h>
+#include <event2/event.h> // for evutil_socket_t
+
+#ifdef WIN32 // NOTE: This must also be in appindicator.c file
+#define SOCKET_CAST_IN (evutil_socket_t)
+#define SOCKET_CAST_OUT (SOCKET)
+#else
+#define SOCKET_CAST_IN
+#define SOCKET_CAST_OUT
+#endif
 
 #ifdef WIN32 // XXX
 #include <winsock2.h> // necessary
@@ -192,7 +201,7 @@ static int handle_fresh_data(void *arg)
 static void *start_listener(void *arg)
 {
 	struct data *data = (struct data*) arg;
-	const int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	const evutil_socket_t sockfd = SOCKET_CAST_IN socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0)
 	{
 		fprintf(stderr,"Checkpoint status icon: failed to get socket.\n");
@@ -203,14 +212,14 @@ static void *start_listener(void *arg)
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 	serv_addr.sin_port = htons(data->port);
-	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+	if (bind(SOCKET_CAST_OUT sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
 	{
 		fprintf(stderr,"Checkpoint status icon: failed to bind. Port must be in use..\n");
 		exit(EXIT_SUCCESS); // success because we want to distinguish unavailable port from broader unavailability
 	}
-	listen(sockfd, 5);
+	listen(SOCKET_CAST_OUT sockfd, 5);
 	socklen_t clilen = sizeof(cli_addr);
-	const int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+	const evutil_socket_t newsockfd = SOCKET_CAST_IN accept(SOCKET_CAST_OUT sockfd, (struct sockaddr *) &cli_addr, &clilen);
 	if (newsockfd < 0)
 	{
 		fprintf(stderr,"Checkpoint status icon: failed to accept.\n");
@@ -219,7 +228,7 @@ static void *start_listener(void *arg)
 	char buffer[256];
 	while (1)
 	{
-		const ssize_t bytes_recieved = read(newsockfd, buffer, sizeof(buffer)-1);
+		const ssize_t bytes_recieved = recv(SOCKET_CAST_OUT newsockfd, buffer, sizeof(buffer)-1,0);
 		if(bytes_recieved < 1)
 			break; // parent closed
 		buffer[bytes_recieved] = '\0';
@@ -232,8 +241,8 @@ static void *start_listener(void *arg)
 
 		g_idle_add(handle_fresh_data, fresh_data);
 	}
-	close(newsockfd);
-	close(sockfd);
+	evutil_closesocket(newsockfd);
+	evutil_closesocket(sockfd);
 //	fprintf(stderr,"Checkpoint status icon: parent software closed connection.\n");
 	exit(EXIT_SUCCESS); // parent closed
 }
@@ -261,7 +270,7 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 		rebuild(data);
 	}
 	#ifdef WIN32
-	CreateProcess(NULL,"data->path",NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL);
+	CreateProcess(NULL,data->path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL);
 	#else
 	if(fork() == 0)
 	{

@@ -104,8 +104,8 @@ int tray_fd_stdout;*/
 /* Global Variables */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 static char language[5+1] = {0};
 static char starting_dir[PATH_MAX/2] = {0};
+static char *argv_0 = NULL;
 static char *binary_path = NULL; // current binary's full path
-static char *binary_name = NULL; // current binary's full path
 static uint8_t running = 0;
 static int global_n = -1; // Always CTRL or GROUP_CTRL. Currently open chat window. Avoid using where possible. (except notifications perhaps)
 static int treeview_n = -1;
@@ -1247,7 +1247,7 @@ static void ui_set_last_seen(const int n)
 	{
 		struct tm *info = localtime(&last_seen);
 		char timebuffer[20] = {0};
-		strftime(timebuffer,20,"%Y/%m/%d %T",info);
+		strftime(timebuffer,20,"%Y/%m/%d %H:%M:%S",info);
 		snprintf(last_online_text,sizeof(last_online_text),"%s%s",text_status_last_seen,timebuffer);
 	}
 	else
@@ -2403,7 +2403,7 @@ static int cleanup_idle(void *arg)
 			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
 			{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
-				snprintf(p1,sizeof(p1),"%lu",t_peer[n].unread);
+				snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
 				sql_setting(0,peer_index,"unread",p1,strlen(p1));
 			}
 		}
@@ -2504,7 +2504,7 @@ static void ui_custom_switch(GtkToggleButton *button,void *arg)
 	(void) button;
 	struct stack_change *stack_change = (struct stack_change*) arg; // Casting passed struct
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%lu",stack_change->iter);
+	snprintf(p1,sizeof(p1),"%zu",stack_change->iter);
 	gtk_stack_set_visible_child_name (stack_change->stack,p1);
 }
 
@@ -2545,7 +2545,7 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 		GtkWidget *button = gtk_toggle_button_new_with_label (*options[iter]);
 		gtk_widget_set_hexpand(button, TRUE);
 		char p1[21];
-		snprintf(p1,sizeof(p1),"%lu",iter);
+		snprintf(p1,sizeof(p1),"%zu",iter);
 		if(!strncmp(t_main.stack_current,p1,1))
 			gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button),TRUE);
 		if(first_button) // first button already exists
@@ -2565,7 +2565,7 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 			gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 			char unread_count[21];
-			snprintf(unread_count,sizeof(unread_count),"%lu",overlay_count);
+			snprintf(unread_count,sizeof(unread_count),"%zu",overlay_count);
 			GtkWidget *unread_counter = gtk_label_new(unread_count);
 			gtk_widget_add_css_class(unread_counter, "unread_count");
 			gtk_widget_set_halign(unread_counter, GTK_ALIGN_CENTER);
@@ -2637,7 +2637,7 @@ static void ui_decorate_panel_left_top(void)
 		gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 		char incoming_count[21];
-		snprintf(incoming_count,sizeof(incoming_count),"%lu",totalIncoming);
+		snprintf(incoming_count,sizeof(incoming_count),"%zu",totalIncoming);
 		GtkWidget *unread_counter = gtk_label_new(incoming_count);
 		gtk_widget_add_css_class(unread_counter, "unread_count");
 		gtk_widget_set_halign(unread_counter, GTK_ALIGN_CENTER);
@@ -6622,7 +6622,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 			gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 			char unread_count[21];
-			snprintf(unread_count,sizeof(unread_count),"%lu",t_peer[n].unread);
+			snprintf(unread_count,sizeof(unread_count),"%zu",t_peer[n].unread);
 			GtkWidget *unread_counter = gtk_label_new(unread_count);
 			gtk_widget_add_css_class(unread_counter, "unread_count");
 			gtk_widget_set_halign(unread_counter, GTK_ALIGN_CENTER);
@@ -7009,26 +7009,26 @@ static int icon_failure_idle(void *arg)
 
 static int icon_communicator_idle(void *arg)
 {
-	const int sockfd = vptoi(arg);
+	evutil_socket_t sockfd = (evutil_socket_t)(intptr_t)arg;
 	char message[256];
-	int diff,str_len;
+	size_t diff,str_len = 0; // I think only str_len must be initialized here
 //	printf("Checkpoint data: %d = %lu - %lu\n",(int)totalUnreadPeer - (int)last_totalUnreadPeer,totalUnreadPeer,last_totalUnreadPeer);
-	if ((diff = (int)totalUnreadPeer - (int)last_totalUnreadPeer) && (diff != 1 ? (str_len = snprintf(message,sizeof(message),"p%lu",totalUnreadPeer)) : (str_len = snprintf(message,sizeof(message),"p"))) > 0)
+	if ((diff = totalUnreadPeer - last_totalUnreadPeer) && (diff != 1 ? (str_len = (size_t) snprintf(message,sizeof(message),"p%zu",totalUnreadPeer)) : (str_len = (size_t) snprintf(message,sizeof(message),"p"))) > 0)
 	{
 	//	printf("Checkpoint awesome: %s\n",message);
-		if(write(sockfd, message, (size_t)str_len+1) < 0)
+		if(send(SOCKET_CAST_OUT sockfd, message, SOCKET_WRITE_SIZE str_len+1,0) < 0)
 			goto end;
 		last_totalUnreadPeer = totalUnreadPeer;
 	}
-	if ((diff = (int)totalUnreadGroup - (int)last_totalUnreadGroup) && (diff != 1 ? (str_len = snprintf(message,sizeof(message),"g%lu",totalUnreadGroup)) : (str_len = snprintf(message,sizeof(message),"g"))) > 0)
+	if ((diff = totalUnreadGroup - last_totalUnreadGroup) && (diff != 1 ? (str_len = (size_t) snprintf(message,sizeof(message),"g%zu",totalUnreadGroup)) : (str_len = (size_t) snprintf(message,sizeof(message),"g"))) > 0)
 	{
-		if(write(sockfd, message, (size_t)str_len+1) < 0)
+		if(send(SOCKET_CAST_OUT sockfd, message, SOCKET_WRITE_SIZE str_len+1,0) < 0)
 			goto end;
 		last_totalUnreadGroup = totalUnreadGroup;
 	}
-	if ((diff = (int)totalIncoming - (int)last_totalIncoming) && (diff != 1 ? (str_len = snprintf(message,sizeof(message),"i%lu",totalIncoming)) : (str_len = snprintf(message,sizeof(message),"i"))) > 0)
+	if ((diff = totalIncoming - last_totalIncoming) && (diff != 1 ? (str_len = (size_t) snprintf(message,sizeof(message),"i%zu",totalIncoming)) : (str_len = (size_t) snprintf(message,sizeof(message),"i"))) > 0)
 	{
-		if(write(sockfd, message, (size_t)str_len+1) < 0)
+		if(send(SOCKET_CAST_OUT sockfd, message, SOCKET_WRITE_SIZE str_len+1,0) < 0)
 			goto end;
 		last_totalIncoming = totalIncoming;
 	}
@@ -7036,7 +7036,7 @@ static int icon_communicator_idle(void *arg)
 	end: {}
 	error_simple(0,"Icon_communicator failed after successful connection");
 	if(sockfd > 0)
-		close(sockfd);
+		evutil_closesocket(sockfd);
 	icon_failure_idle(arg);
 	return FALSE;
 }
@@ -7046,19 +7046,19 @@ static void *icon_communicator(void* arg)
 	pusher(zero_pthread,(void*)&thrd_start_tor)
 	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
-	int sockfd;
+	evutil_socket_t sockfd;
 	struct sockaddr_in servaddr;
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+	if ((sockfd = SOCKET_CAST_IN socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		goto end;
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(icon_port);
 	if (inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr) <= 0)
 		goto end;
-	int ret = -1;
+	evutil_socket_t ret = {0};
 	for (uint8_t attempts = ICON_COMMUNICATION_ATTEMPTS; attempts ; attempts--)
 	{
-		if ((ret = connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) == 0)
+		if ((ret = connect(SOCKET_CAST_OUT sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr))) == 0)
 			break;
 		if(attempts - 1) // don't sleep after last attempt
 			sleep(1);
@@ -7066,13 +7066,13 @@ static void *icon_communicator(void* arg)
 	if(!ret)
 	{ // Succssfully connected
 		appindicator_functioning = 1; // yes, set here. safe to set despite threaded. no need idle or locks because icon_communicator_idle isn't started yet.
-		g_timeout_add(500,icon_communicator_idle,itovp(sockfd));
+		g_timeout_add(500,icon_communicator_idle,(void*)(intptr_t)sockfd);
 		return 0;
 	}
 	end: {}
 	error_simple(0,"Icon_communicator failed before successful connection");
 	if(sockfd > 0)
-		close(sockfd);
+		evutil_closesocket(sockfd);
 	g_idle_add(icon_failure_idle,arg); // XXX
 	if(tray_pid > 0)
 	{
@@ -7084,6 +7084,28 @@ static void *icon_communicator(void* arg)
 		#endif
 	}
 	pthread_exit(NULL);
+	return NULL;
+}
+
+static inline char *path_generator(const char *directory,const char *partial_or_full_path)
+{ // Tested on Windows, GDB (full arg0 is full path), normal (arg0 is relative path)
+	size_t len_dir,len_path;
+	if(!directory || !partial_or_full_path || (len_dir = strlen(directory)) < 2 || (len_path = strlen(partial_or_full_path)) < 2)
+	{
+		error_simple(-1,"Null directory or partial_or_full_path passed to path_generator");
+		return NULL;
+	}
+	char tmp[PATH_MAX];
+	if(partial_or_full_path[0] == '.' && partial_or_full_path[1] == platform_slash) // partial, needs to be stripped
+		snprintf(tmp,sizeof(tmp),"%s%s",directory,&partial_or_full_path[1]);
+	else if((platform_slash == '/' && /*!strstr(partial_or_full_path,"/")*/partial_or_full_path[0] != '/') || (platform_slash == '\\' && !strstr(partial_or_full_path,"\\") && !strstr(partial_or_full_path,":"))) // must append to dir directly, after a platform_slash
+		snprintf(tmp,sizeof(tmp),"%s%c%s",directory,platform_slash,partial_or_full_path);
+	else // should be complete?
+		snprintf(tmp,sizeof(tmp),"%s",partial_or_full_path);
+	const size_t final_len = strlen(tmp);
+	char *final = malloc(final_len+1);
+	memcpy(final,tmp,final_len+1);
+	return final;
 }
 
 //static void activate (GtkApplication* app, gpointer user_data)
@@ -7101,6 +7123,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 	running = 1;
 
 	getcwd(starting_dir,sizeof(starting_dir));
+	binary_path = path_generator(starting_dir,argv_0);
+printf("Checkpoint binary_path: %s %s\n",starting_dir,binary_path);
 	/* Options configurable by client */
 	debug = 0;
 	reduced_memory = 2; // TODO probably remove before release
@@ -7333,24 +7357,24 @@ static void ui_activate(GtkApplication *application,void *arg)
  */
 
 
-
+	char appindicator_path[PATH_MAX];
+	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
 	#ifdef WIN32
-	PROCESS_INFORMATION pi;
-	if(!CreateProcess(NULL,"torx-tray",NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
+	PROCESS_INFORMATION process_info;
+	if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&process_info))
 	{ // after checking PATH, assuming this isn't running in GDB
 		char binary_path_copy[PATH_MAX];
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-		char appindicator_path[PATH_MAX];
 		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray",starting_dir,current_binary_directory);
-		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
+		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&process_info))
 		{ // try for GDB
 			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray",current_binary_directory);
-			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&pi))
+			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,NULL,&process_info))
 				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 		}
 	}
-	tray_fd_stdout = pi.hProcess;
+	tray_fd_stdout = process_info.hProcess;
 	#else
 	if((tray_pid = fork()) == -1)
 		error_simple(-1,"fork");
@@ -7361,7 +7385,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 			char binary_path_copy[PATH_MAX];
 			snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 			char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-			char appindicator_path[PATH_MAX];
 			snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
 			if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
 			{ // try for GDB
@@ -7413,8 +7436,7 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 
 int main(int argc,char **argv)
 { // XXX WARNING: Do not use error_* before initial or SEVERE memory errors will occur that are VERY hard to diagnose XXX
-	binary_path = argv[0];
-	binary_name = argv[1];
+	argv_0 = argv[0];
 
 	gtk_application_gtk4 = gtk_application_new (DBUS_TITLE, G_APPLICATION_DEFAULT_FLAGS);
 	#pragma GCC diagnostic push

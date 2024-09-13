@@ -16,11 +16,13 @@ if(WIN32)
 target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 	${GTK3_LIBRARIES}
+	event_core
 	Ws2_32
 )
 else()
 target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 	${GTK3_LIBRARIES}
+	event_core
 )
 endif()
