@@ -7167,8 +7167,12 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
-	snowflake_location = which("snowflake-client"); // TODO move to initial_keyed?
-	obfs4proxy_location = which("obfs4proxy"); // TODO move to initial_keyed?
+
+	// XXX Cannot move to initial_keyed because we need this info to build the initial UI (whether to display switch). For this reason, if we store this in a database, it'll have to be in cleartext so that it can be loaded by initial(); XXX
+	if(snowflake_location == NULL)
+		snowflake_location = which("snowflake-client");
+	if(obfs4proxy_location == NULL)
+		obfs4proxy_location = which("obfs4proxy");
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
@@ -7304,7 +7308,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	t_main.textbuffer_torrc = gtk_text_buffer_new(NULL);
 
 	const int8_t lockout_local = threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout);
-	if(no_password && !lockout_local) // UI setting, relevant to first_run only
+	if(tor_location && no_password && !lockout_local) // UI setting, relevant to first_run only
 		login_start("");
 
 	if(lockout_local)
