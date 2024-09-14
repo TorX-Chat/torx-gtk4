@@ -7124,7 +7124,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	getcwd(starting_dir,sizeof(starting_dir));
 	binary_path = path_generator(starting_dir,argv_0);
-printf("Checkpoint binary_path: %s %s\n",starting_dir,binary_path);
+
 	/* Options configurable by client */
 	debug = 0;
 	reduced_memory = 2; // TODO probably remove before release
@@ -7359,7 +7359,7 @@ printf("Checkpoint binary_path: %s %s\n",starting_dir,binary_path);
 
 	char appindicator_path[PATH_MAX];
 	#ifdef WIN32
-	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray.exe");
+	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray.exe -p %s -P %s",port_array,binary_path);
 	STARTUPINFO siStartInfo;
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
 	siStartInfo.cb = sizeof(STARTUPINFO);
@@ -7369,10 +7369,10 @@ printf("Checkpoint binary_path: %s %s\n",starting_dir,binary_path);
 		char binary_path_copy[PATH_MAX];
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe",starting_dir,current_binary_directory);
+		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe -p %s -P %s",starting_dir,current_binary_directory,port_array,binary_path);
 		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 		{ // try for GDB
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe",current_binary_directory);
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
 			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 		}
