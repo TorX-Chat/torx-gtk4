@@ -270,7 +270,10 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 		rebuild(data);
 	}
 	#ifdef WIN32
-	CreateProcess(NULL,data->path,NULL,NULL,TRUE,0,NULL,NULL,NULL,NULL);
+	STARTUPINFO siStartInfo;
+	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
+	siStartInfo.cb = sizeof(STARTUPINFO);
+	CreateProcess(NULL,data->path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,NULL);
 	#else
 	if(fork() == 0)
 	{
