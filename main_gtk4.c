@@ -555,7 +555,10 @@ static const char *text_set_onionid_or_torxid = {0};
 static const char *text_set_global_log = {0};
 static const char *text_set_auto_resume_inbound = {0};
 static const char *text_set_download_directory = {0};
-static const char *text_set_tor = {0};
+static const char *text_tor = {0};
+static const char *text_snowflake = {0};
+static const char *text_obfs4proxy = {0};
+static const char *text_binary_location = {0};
 static const char *text_set_cpu = {0};
 static const char *text_set_suffix = {0};
 static const char *text_set_validity_sing = {0};
@@ -604,6 +607,7 @@ static void ui_show_settings(void);
 static int ui_populate_peers(void *arg);
 GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
 GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unused_result));
+GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *label_text)__attribute__((warn_unused_result));
 static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unused_result));
 static void ui_print_message(const int n,const int i,const int scroll);
 
@@ -1655,29 +1659,37 @@ static int ui_sticker_register(const unsigned char *data,const size_t data_len)
 	return s;
 }
 
+static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,char **global_location,const char *name)
+{ // TODO consider having a option to unset / reset default path
+	char *path = g_file_get_path(file); // free'd
+	if(!path)
+		return;
+	gtk_button_set_label ( GTK_BUTTON(button),path);
+	const size_t len = strlen(path);
+	pthread_rwlock_wrlock(&mutex_global_variable);
+	torx_free((void*)global_location);
+	*global_location = torx_insecure_malloc(len+1);
+	snprintf(*global_location,len+1,"%s",path);
+	pthread_rwlock_unlock(&mutex_global_variable);
+	sql_setting(1,-1,name,path,len);
+	if(tor_running && !strncmp(name,"tor_location",12)) // restart if running
+		start_tor();
+	g_free(path); path = NULL;
+}
+
 static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget *button)
 { // For selecting a file for reasons other than file sharing
 	GFile *file = gtk_file_dialog_open_finish (dialog,res,NULL);
 	if(file)
 	{
-		if(!strncmp(gtk_widget_get_name(button),"tor_location",12))
-		{ // TODO consider having a option to unset / reset default path
-			char *path = g_file_get_path(file); // free'd
-			if(!path)
-				return;
-			gtk_button_set_label ( GTK_BUTTON(button),path);
-			const size_t len = strlen(path);
-			pthread_rwlock_wrlock(&mutex_global_variable);
-			torx_free((void*)&tor_location);
-			tor_location = torx_secure_malloc(len+1);
-			snprintf(tor_location,len+1,"%s",path);
-			pthread_rwlock_unlock(&mutex_global_variable);
-			sql_setting(0,-1,"tor_location",path,strlen(path));
-			// TODO free path somehow? gtk allocated
-			start_tor();
-			g_free(path); path = NULL;
-		}
-		else if(!strncmp(gtk_widget_get_name(button),"custom_input_location",21))
+		const char *name = gtk_widget_get_name(button);
+		if(!strncmp(name,"tor_location",12))
+			handle_chosen_file_and_restart_tor(button,file,&tor_location,name);
+		else if(!strncmp(name,"snowflake_location",18))
+			handle_chosen_file_and_restart_tor(button,file,&snowflake_location,name);
+		else if(!strncmp(name,"obfs4proxy_location",19))
+			handle_chosen_file_and_restart_tor(button,file,&obfs4proxy_location,name);
+		else if(!strncmp(name,"custom_input_location",21))
 		{
 			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
 			char *path = g_file_get_path(file); // free'd
@@ -1686,7 +1698,7 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			torx_free((void*)&privkey);
 			g_free(path); path = NULL;
 		}
-		else if(!strncmp(gtk_widget_get_name(button),"button_add_sticker",18))
+		else if(!strncmp(name,"button_add_sticker",18))
 		{
 			char *path = g_file_get_path(file); // free'd
 			if(!path)
@@ -1973,38 +1985,6 @@ static void ui_choose_emoji(GtkWidget *parent,const gpointer arg)
 //	g_signal_connect(chooser,"notify::destroy", G_CALLBACK(ui_kill_children), NULL);
 	g_signal_connect(chooser, "closed", G_CALLBACK (gtk_widget_unparent), chooser); // XXX necessary or a warning occurs
 	gtk_popover_popup(GTK_POPOVER(chooser));
-}
-
-static void ui_choose_file(GtkWidget *button,const gpointer arg)
-{ /* Opens a dialog for choosing which file to send */
-	GtkFileDialog *dialog = gtk_file_dialog_new();
-	gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
-	int n = global_n;
-	if(t_peer[global_n].pm_n > -1)
-		n = t_peer[global_n].pm_n;
-	const int int_arg = vptoi(arg);
-	if(int_arg == 2) // For adding stickers only
-	{ // TODO could support jpeg/png for static stickers... would have to limit size... and metadata is a bigger concern. Probably not a good idea.
-		if(t_main.popover_sticker && GTK_IS_WIDGET(t_main.popover_sticker))
-			gtk_popover_popdown(GTK_POPOVER(t_main.popover_sticker));
-		GtkFileFilter *filter = gtk_file_filter_new();
-		gtk_file_filter_add_mime_type(filter,"image/gif"); // works!
-	//	gtk_file_filter_add_suffix (filter,".gif"); // works!
-		GListStore *filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
-		g_list_store_append (filters, filter);
-		gtk_file_dialog_set_filters(dialog,G_LIST_MODEL(filters));
-		gtk_file_dialog_set_default_filter (dialog,filter);
-	}
-	if(int_arg == 1) // For file_send only
-	{  // For file_send only, select multiple
-		gtk_file_dialog_set_title(dialog,text_choose_files); // also: gtk_file_dialog_set_filters
-		gtk_file_dialog_open_multiple (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_files,itovp(n));
-	}
-	else
-	{  // For selecting a file for reasons other than file sharing
-		gtk_file_dialog_set_title(dialog,text_choose_file); // also: gtk_file_dialog_set_filters
-		gtk_file_dialog_open (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_file,button);
-	}
 }
 
 static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
@@ -3025,7 +3005,10 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_global_log = "Message Logging (Global Default)";
 		text_set_auto_resume_inbound = "Auto-Resume Inbound Transfers";
 		text_set_download_directory = "Select Download Directory";
-		text_set_tor = "Select Custom Tor binary location (effective immediately)";
+		text_tor = "Tor"; // part B
+		text_snowflake = "Snowflake"; // part B
+		text_obfs4proxy = "obfs4proxy"; // part B
+		text_binary_location = "binary location (effective immediately)"; // part C
 		text_set_cpu = "Maximum CPU threads for TorX-ID generation";
 		text_set_suffix = "Minimum Suffix Length for TorX-ID generation";
 		text_set_validity_sing = "Single-Use TorX-ID expiration time (days)";
@@ -3258,11 +3241,7 @@ static void ui_submit_custom_input(const void *arg)
 
 static GtkWidget *ui_combobox(const char *description,void (*callback)(void *const),const guint active_iter,...)
 { // Usage: = ui_combobox(description,&callback,active_iter,string1,string2,NULL);
-	GtkWidget *outer_box = {0};
-	if(vertical_mode)
-		outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
-	else
-		outer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *outer_box = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	GtkWidget *label = gtk_label_new(description);
 	gtk_widget_set_halign(label, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label, TRUE);	// works, do not remove
@@ -3292,11 +3271,7 @@ static GtkWidget *ui_combobox(const char *description,void (*callback)(void *con
 
 static GtkWidget *ui_spinbutton(const char *description,const int spinner,const int value,const int min, const int max)
 {
-	GtkWidget *outer_box = {0};
-	if(vertical_mode)
-		outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
-	else
-		outer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *outer_box = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	GtkWidget *label = gtk_label_new(description);
 	gtk_widget_set_halign(label, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label, TRUE);	// works, do not remove
@@ -3318,6 +3293,61 @@ static void ui_choose_folder(GtkWidget *button,const gpointer arg)
 	gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
 	gtk_file_dialog_set_title(dialog,text_choose_folder); // also: gtk_file_dialog_set_filters
 	gtk_file_dialog_select_folder (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_download_dir,button);
+}
+
+static void ui_choose_file(GtkWidget *button,const gpointer arg)
+{ /* Opens a dialog for choosing which file to send */
+	GtkFileDialog *dialog = gtk_file_dialog_new();
+	gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
+	int n = global_n;
+	if(t_peer[global_n].pm_n > -1)
+		n = t_peer[global_n].pm_n;
+	const int int_arg = vptoi(arg);
+	if(int_arg == 2) // For adding stickers only
+	{ // TODO could support jpeg/png for static stickers... would have to limit size... and metadata is a bigger concern. Probably not a good idea.
+		if(t_main.popover_sticker && GTK_IS_WIDGET(t_main.popover_sticker))
+			gtk_popover_popdown(GTK_POPOVER(t_main.popover_sticker));
+		GtkFileFilter *filter = gtk_file_filter_new();
+		gtk_file_filter_add_mime_type(filter,"image/gif"); // works!
+	//	gtk_file_filter_add_suffix (filter,".gif"); // works!
+		GListStore *filters = g_list_store_new (GTK_TYPE_FILE_FILTER);
+		g_list_store_append (filters, filter);
+		gtk_file_dialog_set_filters(dialog,G_LIST_MODEL(filters));
+		gtk_file_dialog_set_default_filter (dialog,filter);
+	}
+	if(int_arg == 1) // For file_send only
+	{  // For file_send only, select multiple
+		gtk_file_dialog_set_title(dialog,text_choose_files); // also: gtk_file_dialog_set_filters
+		gtk_file_dialog_open_multiple (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_files,itovp(n));
+	}
+	else
+	{  // For selecting a file for reasons other than file sharing
+		gtk_file_dialog_set_title(dialog,text_choose_file); // also: gtk_file_dialog_set_filters
+		gtk_file_dialog_open (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_file,button);
+	}
+}
+
+GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *name)
+{
+	if(!location || !widget_name || !name)
+		return NULL;
+	GtkWidget *box = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	char label_text[512]; // size is arbitrary
+	snprintf(label_text,sizeof(label_text),"%s %s %s",text_select,name,text_binary_location);
+	GtkWidget *label = gtk_label_new(label_text);
+	gtk_widget_set_halign(label, GTK_ALIGN_START);
+	gtk_widget_set_hexpand(label, TRUE); // works, do not remove
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	GtkWidget *button = gtk_button_new_with_label (*location);
+	pthread_rwlock_unlock(&mutex_global_variable);
+	GtkWidget *inner_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	gtk_widget_set_halign(inner_box, GTK_ALIGN_END);
+	gtk_box_append (GTK_BOX (inner_box), button);
+	gtk_widget_set_name(button,widget_name);
+	g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_file), itovp(0));
+	gtk_box_append (GTK_BOX (box), label);
+	gtk_box_append (GTK_BOX (box), inner_box);
+	return box;
 }
 
 static void ui_show_settings(void)
@@ -3342,11 +3372,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.chat_headerbar_right), button_change_pass);
 
 	// Language Combobox
-	GtkWidget *box_language;
-	if(vertical_mode)
-		box_language = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
-	else
-		box_language = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *box_language = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	GtkWidget *label_language = gtk_label_new(text_set_select_language);
 	gtk_widget_set_halign(label_language, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label_language, TRUE);	// works, do not remove
@@ -3381,11 +3407,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_resume_inbound,&ui_change_resume,threadsafe_read_uint8(&mutex_global_variable,&auto_resume_inbound),text_disable,text_enable,NULL));
 
 	// Downloads Folder
-	GtkWidget *box0;
-	if(vertical_mode)
-		box0 = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
-	else
-		box0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *box0 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	GtkWidget *label0 = gtk_label_new(text_set_download_directory);
 	gtk_widget_set_halign(label0, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label0, TRUE);	// works, do not remove
@@ -3401,25 +3423,13 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), box0);
 
 	// Tor binary location
-	GtkWidget *box1;
-	if(vertical_mode)
-		box1 = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
-	else
-		box1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
-	GtkWidget *label1 = gtk_label_new(text_set_tor);
-	gtk_widget_set_halign(label1, GTK_ALIGN_START);
-	gtk_widget_set_hexpand(label1, TRUE);	// works, do not remove
-	pthread_rwlock_rdlock(&mutex_global_variable);
-	GtkWidget *button_tor_location = gtk_button_new_with_label (tor_location);
-	GtkWidget *inner_box2  = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
-	gtk_widget_set_halign(inner_box2, GTK_ALIGN_END);
-	gtk_box_append (GTK_BOX (inner_box2), button_tor_location);
-	pthread_rwlock_unlock(&mutex_global_variable);
-	gtk_widget_set_name(button_tor_location,"tor_location");
-	g_signal_connect(button_tor_location, "clicked", G_CALLBACK(ui_choose_file), itovp(0));
-	gtk_box_append (GTK_BOX (box1), label1);
-	gtk_box_append (GTK_BOX (box1 ), inner_box2);
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), box1);
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&tor_location,"tor_location",text_tor));
+
+	// Snowflake binary location
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
+
+	// obfs4proxy binary location
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&obfs4proxy_location,"obfs4proxy_location",text_obfs4proxy));
 
 	// Maximum CPU threads
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_cpu,ENUM_SPIN_CPU_THREADS,(int)threadsafe_read_uint32(&mutex_global_variable,&global_threads),1,(int)threadsafe_read_uint32(&mutex_global_variable,&threads_max)));
@@ -3437,11 +3447,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_mult,&ui_change_auto_accept_mult,auto_accept_mult,text_no,text_yes,NULL));
 
 	// Custom Input
-	GtkWidget *box8;
-	if(vertical_mode)
-		box8 = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_ten);
-	else
-		box8 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
+	GtkWidget *box8 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
 	GtkWidget *label8 = gtk_label_new(text_set_externally_generated);
 	gtk_widget_set_halign(label8, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label8, TRUE);	// works, do not remove
@@ -4022,11 +4028,7 @@ static void ui_show_home(void)
 	g_signal_connect(button_log_torx, "clicked", G_CALLBACK (ui_show_log_torx), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_box_append (GTK_BOX (t_main.chat_headerbar_right), button_log_torx);
 
-	GtkWidget *button_kill_global;
-	if(vertical_mode)
-		button_kill_global = gtk_button_new_with_label (text_vertical_emit_global_kill);
-	else
-		button_kill_global = gtk_button_new_with_label (text_emit_global_kill);
+	GtkWidget *button_kill_global = gtk_button_new_with_label (vertical_mode ? text_vertical_emit_global_kill : text_emit_global_kill);
 	g_signal_connect(button_kill_global, "clicked", G_CALLBACK (ui_show_global_killcode), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_box_append (GTK_BOX (t_main.chat_headerbar_right), button_kill_global);
 
@@ -4144,12 +4146,7 @@ static void ui_show_home(void)
 	gtk_stack_add_titled (GTK_STACK (stack), scrolled_window_sing, "6",text_active_sing);
 	t_main.stack_current = gtk_stack_get_visible_child_name(GTK_STACK(stack)); // set a default
 //	GtkWidget* stack_switcher = gtk_stack_switcher_new();
-	GtkWidget *custom_switcher;
-	if(vertical_mode)
-		custom_switcher = gtk_custom_switcher_new(GTK_STACK (stack),GTK_ORIENTATION_VERTICAL,1);
-		//gtk_orientable_set_orientation(GTK_ORIENTABLE(stack_switcher),GTK_ORIENTATION_VERTICAL);
-	else
-		custom_switcher = gtk_custom_switcher_new(GTK_STACK (stack),GTK_ORIENTATION_HORIZONTAL,1);
+	GtkWidget *custom_switcher = gtk_custom_switcher_new(GTK_STACK (stack),vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL,1);
 //	gtk_stack_switcher_set_stack (GTK_STACK_SWITCHER(stack_switcher),GTK_STACK (stack));
 	g_signal_connect(stack, "notify::visible-child", G_CALLBACK(ui_stack_switched), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 
@@ -6910,6 +6907,11 @@ static gboolean switch_state_set(GtkSwitch *self,gboolean state,gpointer data)
 
 static void ui_show_auth_screen(void)
 {
+	if(!tor_location)
+	{
+		error_simple(0,"Must set Tor location.");
+		return;
+	}
 	t_main.window = window_auth; // Auth
 
 //	t_main.auth_entry_pass = GTK_PASSWORD_ENTRY(gtk_password_entry_new());	// WORKS 
@@ -6996,6 +6998,36 @@ static void ui_show_auth_screen(void)
 		gtk_box_append (GTK_BOX(auth_box_censored_region), t_main.switch_censored_region);
 		gtk_box_append (GTK_BOX(auth_background), auth_box_censored_region);
 	}
+	gtk_window_set_child (GTK_WINDOW(t_main.main_window),auth_background);
+}
+
+static void ui_show_missing_binaries(void)
+{ // Shows on startup if tor_location is unset
+	t_main.window = window_auth; // Auth
+	gtk_widget_add_css_class(t_main.main_window, "window_auth");
+
+	GtkWidget *auth_background = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_five);
+	gtk_widget_set_halign(auth_background, GTK_ALIGN_CENTER);
+	gtk_widget_set_valign(auth_background, GTK_ALIGN_CENTER);
+	gtk_widget_add_css_class(auth_background, "main_box");
+
+	GtkWidget *title = gtk_label_new(text_settings);
+	gtk_widget_add_css_class(title, "page_title");
+	gtk_box_append(GTK_BOX(auth_background), title);
+
+	ui_determine_orientation();
+
+	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&tor_location,"tor_location",text_tor));
+	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
+	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&obfs4proxy_location,"obfs4proxy_location",text_obfs4proxy));
+
+	GtkWidget *button = gtk_button_new_with_label (text_enter);
+	gtk_widget_set_size_request(button, size_button_auth_width, size_button_auth_height);
+	gtk_widget_set_margin_top(button, size_margin_fifteen);
+	g_signal_connect(button, "clicked", G_CALLBACK (ui_show_auth_screen), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	gtk_widget_add_css_class(button,"auth_button");
+	gtk_box_append (GTK_BOX(auth_background), button);
+
 	gtk_window_set_child (GTK_WINDOW(t_main.main_window),auth_background);
 }
 
@@ -7103,7 +7135,7 @@ static inline char *path_generator(const char *directory,const char *partial_or_
 	else // should be complete?
 		snprintf(tmp,sizeof(tmp),"%s",partial_or_full_path);
 	const size_t final_len = strlen(tmp);
-	char *final = malloc(final_len+1);
+	char *final = torx_insecure_malloc(final_len+1);
 	memcpy(final,tmp,final_len+1);
 	return final;
 }
@@ -7160,19 +7192,20 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
 
+	// XXX Cannot move to initial_keyed because we need this info to build the initial UI (whether to display switch). For this reason, if we store this in a database, it'll have to be in cleartext so that it can be loaded by initial(); XXX
+	// Note: Will be over-written by stored settings, if applicable.
+	tor_location = which("tor");
+	snowflake_location = which("snowflake-client");
+	obfs4proxy_location = which("obfs4proxy");
+
 	initial();
+
 //	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
-
-	// XXX Cannot move to initial_keyed because we need this info to build the initial UI (whether to display switch). For this reason, if we store this in a database, it'll have to be in cleartext so that it can be loaded by initial(); XXX
-	if(snowflake_location == NULL)
-		snowflake_location = which("snowflake-client");
-	if(obfs4proxy_location == NULL)
-		obfs4proxy_location = which("obfs4proxy");
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
@@ -7288,7 +7321,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 	attach_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/attach_img_light.png");
 	attach_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/attach_img_dark.png");
 
-	ui_show_auth_screen();
+	if(tor_location) // shouldn't need mutex
+		ui_show_auth_screen();
+	else // missing a required binary
+		ui_show_missing_binaries();
+
 	ui_decorate_headerbar(); // XXX commenting this line disables custom headerbar
 
 	if(start_maximized) // can be before gtk_window_present
@@ -7308,7 +7345,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	t_main.textbuffer_torrc = gtk_text_buffer_new(NULL);
 
 	const int8_t lockout_local = threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout);
-	if(tor_location && no_password && !lockout_local) // UI setting, relevant to first_run only
+	if(tor_location && no_password && !lockout_local) // shouldn't need mutex // UI setting, relevant to first_run only because otherwise login_start is called by sql_populate_setting
 		login_start("");
 
 	if(lockout_local)
@@ -7318,8 +7355,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 	const uint16_t icon_port = randport(0);
 	char port_array[6];
 	snprintf(port_array,sizeof(port_array),"%u",icon_port);
-
-
 /*
 // The following CANNOT be used because run_binary hangs due to limitations.
 // If we want to use the following, we have to read tray_fd_stdout for FAILURE_STRING, but that could be subject to race conditions
@@ -7359,8 +7394,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 		}
 	}
  */
-
-
 	char appindicator_path[PATH_MAX];
 	#ifdef WIN32
 	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray.exe -p %s -P %s",port_array,binary_path);
@@ -7404,9 +7437,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 		exit(0);
 	}
 	#endif
-
-
-
 	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
 		error_simple(0,"Failed to create thread");
 	#endif
