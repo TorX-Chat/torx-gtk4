@@ -7192,12 +7192,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
 
-	// XXX Cannot move to initial_keyed because we need this info to build the initial UI (whether to display switch). For this reason, if we store this in a database, it'll have to be in cleartext so that it can be loaded by initial(); XXX
-	// Note: Will be over-written by stored settings, if applicable.
-	tor_location = which("tor");
-	snowflake_location = which("snowflake-client");
-	obfs4proxy_location = which("obfs4proxy");
-
 	initial();
 
 //	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
