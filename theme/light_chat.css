@@ -75,6 +75,7 @@ scrolledwindow{
 }
 
 .main_box{
+	color: rgb(48,48,48);
 	background-color: rgb(255,255,255);
 	background-size: 50px 50px;
 	border-radius: 15px;
