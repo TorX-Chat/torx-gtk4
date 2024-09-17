@@ -7383,17 +7383,14 @@ static void ui_activate(GtkApplication *application,void *arg)
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
 	siStartInfo.cb = sizeof(STARTUPINFO);
 	PROCESS_INFORMATION process_info;
-printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 	if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 	{ // after checking PATH, assuming this isn't running in GDB
-printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 		char binary_path_copy[PATH_MAX];
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe -p %s -P %s",starting_dir,current_binary_directory,port_array,binary_path);
 		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 		{ // try for GDB
-printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
 			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
