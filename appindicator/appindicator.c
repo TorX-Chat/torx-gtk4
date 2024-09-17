@@ -228,6 +228,7 @@ static void *start_listener(void *arg)
 	char buffer[256];
 	while (1)
 	{
+	//	fprintf(stderr,"Checkpoint status icon: Starting to recv\n");
 		const ssize_t bytes_recieved = recv(SOCKET_CAST_OUT newsockfd, buffer, sizeof(buffer)-1,0);
 		if(bytes_recieved < 1)
 			break; // parent closed
@@ -273,7 +274,20 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 	STARTUPINFO siStartInfo;
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
 	siStartInfo.cb = sizeof(STARTUPINFO);
-	CreateProcess(NULL,data->path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,NULL);
+	PROCESS_INFORMATION process_info;
+	if(!CreateProcess(NULL,data->path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
+	{
+		fprintf(stderr,"Failed to activate parent program. Possibly a bad path: %s\n",data->path);
+	/*	char swapping_slashes[PATH_MAX];
+		snprintf(swapping_slashes,sizeof(swapping_slashes),"%s",data->path);
+		for(int i = 0; swapping_slashes[i] != '\0'; i++)
+			if(swapping_slashes[i] == '\\')
+				swapping_slashes[i] = '/';
+			else if(swapping_slashes[i] == '/')
+				swapping_slashes[i] = '\\';
+		if(!CreateProcess(NULL,swapping_slashes,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
+			fprintf(stderr,"Failed to activate parent program. Possibly a bad path: %s\n",swapping_slashes); */
+	}
 	#else
 	if(fork() == 0)
 	{

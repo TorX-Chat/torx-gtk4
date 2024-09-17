@@ -95,11 +95,6 @@ static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will b
 #else
 	#define ENABLE_APPINDICATOR 1
 #endif*/
-#ifdef WIN32
-HANDLE tray_fd_stdout = {0};
-/*#else
-int tray_fd_stdout;*/
-#endif
 
 /* Global Variables */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 static char language[5+1] = {0};
@@ -7107,14 +7102,7 @@ static void *icon_communicator(void* arg)
 		evutil_closesocket(sockfd);
 	g_idle_add(icon_failure_idle,arg); // XXX
 	if(tray_pid > 0)
-	{
-		#ifdef WIN32
-		if(tray_fd_stdout)
-			TerminateProcess(tray_fd_stdout,0);
-		#else
-		kill(tray_pid,SIGTERM);
-		#endif
-	}
+		pid_kill(tray_pid,SIGTERM);
 	pthread_exit(NULL);
 	return NULL;
 }
@@ -7395,20 +7383,22 @@ static void ui_activate(GtkApplication *application,void *arg)
 	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
 	siStartInfo.cb = sizeof(STARTUPINFO);
 	PROCESS_INFORMATION process_info;
+printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 	if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 	{ // after checking PATH, assuming this isn't running in GDB
+printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 		char binary_path_copy[PATH_MAX];
 		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
 		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe -p %s -P %s",starting_dir,current_binary_directory,port_array,binary_path);
 		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 		{ // try for GDB
+printf("Checkpoint CreateProcess: %s\n",appindicator_path);
 			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
 			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 		}
 	}
-	tray_fd_stdout = process_info.hProcess;
 	#else
 	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
 	if((tray_pid = fork()) == -1)
