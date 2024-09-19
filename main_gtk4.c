@@ -714,6 +714,13 @@ struct progress { // XXX Do not sodium_malloc structs unless they contain sensit
 	uint64_t transferred;
 };
 
+struct stream_data { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+	int n;
+	int p_iter;
+	char *data;
+	uint32_t data_len;
+};
+
 G_DECLARE_FINAL_TYPE(IntPair, int_pair, G, INT_PAIR, GObject)
 
 struct _IntPair {
@@ -5577,8 +5584,13 @@ void message_deleted_cb_ui(const int n,const int i)
 	g_idle_add(print_message_idle,printing);
 }
 
-void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len)
-{ // XXX WARNING: Not _idle function, DO NOT do UI things here // torx_secure_free required XXX
+static int stream_idle(void *arg)
+{
+	struct stream_data *stream_data = (struct stream_data*) arg; // Casting passed struct
+	const int n = stream_data->n;
+	const int p_iter = stream_data->p_iter;
+	char *data = stream_data->data;
+	const uint32_t data_len = stream_data->data_len;
 	if(data == NULL || data_len == 0 || n < 0 || p_iter < 0)
 		goto end;
 	pthread_rwlock_rdlock(&mutex_protocols);
@@ -5683,10 +5695,23 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 	else
 		error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
 	torx_free((void*)&data);
-	return;
+	torx_free((void*)&arg);
+	return 0;
 	end: {}
 	error_simple(0,"Potential issue in stream_cb.");
 	torx_free((void*)&data);
+	torx_free((void*)&arg);
+	return 0;
+}
+
+void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len)
+{ // XXX WARNING: Not _idle function, DO NOT do UI things here // torx_secure_free required XXX
+	struct stream_data *stream_data = torx_insecure_malloc(sizeof(struct stream_data));
+	stream_data->n = n;
+	stream_data->p_iter = p_iter;
+	stream_data->data = data;
+	stream_data->data_len = data_len;
+	g_idle_add(stream_idle,stream_data);
 }
 
 static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data)
