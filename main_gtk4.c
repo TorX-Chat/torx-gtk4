@@ -5734,6 +5734,8 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		{ // Strip Trailing Newline, if applicable
 			message[buf_len-1] = '\0';
 			buf_len--;
+			if(!buf_len)
+				return;
 		}
 		else if((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))
 			return; // enter press but not at end of line, do not send yet
