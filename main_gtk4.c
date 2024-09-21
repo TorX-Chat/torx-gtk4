@@ -605,6 +605,7 @@ GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unu
 GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *label_text)__attribute__((warn_unused_result));
 static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unused_result));
 static void ui_print_message(const int n,const int i,const int scroll);
+int print_message_idle(void *arg);
 
 static GtkApplication	*gtk_application_gtk4;
 
@@ -803,7 +804,7 @@ static int initialize_n_idle(void *arg)
 
 void initialize_n_cb_ui(const int n)
 {
-	g_idle_add(initialize_n_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_n_idle,itovp(n),NULL);
 }
 
 static int initialize_i_idle(void *arg)
@@ -825,7 +826,7 @@ void initialize_i_cb_ui(const int n,const int i)
 	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
 	int_int->n = n;
 	int_int->i = i;
-	g_idle_add(initialize_i_idle,int_int);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_i_idle,int_int,NULL);
 }
 
 static int initialize_f_idle(void *arg)
@@ -847,7 +848,7 @@ void initialize_f_cb_ui(const int n,const int f)
 	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
 	file_nf->n = n;
 	file_nf->f = f;
-	g_idle_add(initialize_f_idle,file_nf);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_f_idle,file_nf,NULL);
 }
 
 void initialize_g_cb_ui(const int g)
@@ -871,7 +872,7 @@ void expand_file_struc_cb_ui(const int n,const int f)
 	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
 	file_nf->n = n;
 	file_nf->f = f;
-	g_idle_add(expand_file_struc_idle,file_nf);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_file_struc_idle,file_nf,NULL);
 }
 
 static int expand_message_struc_idle(void *arg)
@@ -898,7 +899,7 @@ void expand_message_struc_cb_ui(const int n,const int i)
 	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
 	int_int->n = n; // XXX DO NOT DELETE XXX
 	int_int->i = i;
-	g_idle_add(expand_message_struc_idle,int_int);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_message_struc_idle,int_int,NULL);
 }
 
 static int expand_peer_struc_idle(void *arg)
@@ -911,7 +912,7 @@ static int expand_peer_struc_idle(void *arg)
 
 void expand_peer_struc_cb_ui(const int n)
 {
-	g_idle_add(expand_peer_struc_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_peer_struc_idle,itovp(n),NULL);
 }
 
 void expand_group_struc_cb_ui(const int g)
@@ -934,7 +935,7 @@ static gboolean write_test(const char *path)
 	return TRUE; // writable
 }
 
-static inline int display_notification_idle(void *arg) // g_idle_add() functions must return int
+static inline int display_notification_idle(void *arg)
 {
 	struct notification *notification = (struct notification*) arg;
 	GNotification *gnotification;
@@ -1018,10 +1019,10 @@ static void ui_notify(const char *heading, const char *message)
 	}
 	else
 		notification->message = NULL;
-	g_idle_add(display_notification_idle,notification);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,display_notification_idle,notification,NULL);
 }
 
-static int ui_populate_list(void *arg) // g_idle_add() functions must return int
+static int ui_populate_list(void *arg)
 { // Note: since we already have arranged lists of n provided by refined_list, we might not need treestore ? TODO XXX (its being depreciated anyway, need to replace it)
 	const uint8_t list = (uint8_t)vptoi(arg);
 	treeview_n = -1;
@@ -1117,7 +1118,7 @@ void transfer_progress_cb_ui(const int n,const int f,const uint64_t transferred)
 	progress->n = n;
 	progress->f = f;
 	progress->transferred = transferred;
-	g_idle_add(transfer_progress_idle,progress);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,transfer_progress_idle,progress,NULL);
 }
 
 static int change_password_idle(void *arg)
@@ -1263,7 +1264,7 @@ static void ui_set_last_seen(const int n)
 
 void change_password_cb_ui(const int value)
 { // GUI Callb	char *heading = "redrawing";//peer [n]. peernick;
-	g_idle_add(change_password_idle,itovp(value));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,change_password_idle,itovp(value),NULL);
 }
 
 static int incoming_friend_request_idle(void *arg)
@@ -1280,7 +1281,7 @@ void incoming_friend_request_cb_ui(const int n)
 	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
 	ui_notify(peernick,text_new_friend);
 	sodium_memzero(peernick,sizeof(peernick));
-	g_idle_add(incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
 }
 
 static int onion_deleted_idle(void *arg)
@@ -1342,7 +1343,7 @@ void onion_deleted_cb_ui(const uint8_t owner,const int n)
 	int_int->n = n;
 	int_int->i = owner;
 	error_printf(0,"Checkpoint onion_deleted_cb owner: %d\n",owner);
-	g_idle_add(onion_deleted_idle,int_int);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_deleted_idle,int_int,NULL);
 }
 
 static int peer_online_idle(void *arg)
@@ -1388,7 +1389,7 @@ static int peer_online_idle(void *arg)
 
 void peer_online_cb_ui(const int n)
 { // GUI Callback from socks.c (successful send_init)
-	g_idle_add(peer_online_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,peer_online_idle,itovp(n),NULL);
 }
 
 static int peer_offline_idle(void *arg)
@@ -1398,7 +1399,7 @@ static int peer_offline_idle(void *arg)
 
 void peer_offline_cb_ui(const int n)
 { // GUI Callback from socks.c (successful send_init)
-	g_idle_add(peer_offline_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,peer_offline_idle,itovp(n),NULL);
 }
 
 static int peer_new_idle(void *arg)
@@ -1417,18 +1418,18 @@ static int peer_new_idle(void *arg)
 
 void peer_new_cb_ui(const int n)
 { // GUI Callback from from client_init.c and libevent.c ( new friend, it seems )
-	g_idle_add(peer_new_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,peer_new_idle,itovp(n),NULL);
 }
 
 void peer_loaded_cb_ui(const int n)
 { // NOTE: this runs frequently on startup
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
-		g_idle_add(ui_populate_peers,itovp(ENUM_STATUS_GROUP_CTRL));
+		g_idle_add_full(G_PRIORITY_HIGH_IDLE,ui_populate_peers,itovp(ENUM_STATUS_GROUP_CTRL),NULL);
 	else
 	{
 		const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
-		g_idle_add(ui_populate_peers,itovp(status));
+		g_idle_add_full(G_PRIORITY_HIGH_IDLE,ui_populate_peers,itovp(status),NULL);
 	}
 }
 
@@ -1579,7 +1580,7 @@ static int onion_ready_idle(void *arg)
 
 void onion_ready_cb_ui(const int n)
 { // GUI Callback. Should provide the nick and onion that is ready.
-	g_idle_add(onion_ready_idle,itovp(n));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_ready_idle,itovp(n),NULL);
 }
 
 static GdkPaintable *gif_static_new_from_data(const unsigned char *data,const size_t data_len)
@@ -2255,10 +2256,9 @@ static void ui_delete_log(GtkWidget *button,const gpointer data)
 	}
 	// TODO re-draw scroll window?
 }
-
-
+/* PENGUIN */
 static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const GtkPositionType pos,const gpointer data)
-{ // Do not delete this function.
+{
 	(void) scrolled_window;
 	const int n = vptoi(data); // DO NOT FREE ARG
 	if((INVERSION_TEST && pos == GTK_POS_TOP) || (!INVERSION_TEST && pos == GTK_POS_BOTTOM)) // GTK_POS_BOTTOM
@@ -2269,16 +2269,30 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 	if(loaded)
 	{ // Need to re-sort messages
 		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+		int g = -1;
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 		{
-			const int g = set_g(n,NULL);
+			g = set_g(n,NULL);
 			message_sort(g);
 		}
+		const int min_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,min_i));
+		int loaded_array[loaded];
+		for(int i = min_i, discovered = 0; discovered < loaded ; i++)
+		{
+			const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
+			if(p_iter > -1)
+				loaded_array[discovered++] = i;
+		}
+		for(int current = loaded-1; current >= 0 ; current--)
+		{ // TODO replace with _splice // TODO do not use loaded because in some circumstances it'll be less than show_log_messages
+			struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
+			printing->n = n;
+			printing->i = loaded_array[current];
+			printing->scroll = -1;
+			g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL); // XXX XXX XXX WARNING: MUST BE _IDLE, despite being in UI thread, because sql_populate_message triggers callbacks that need to execute first (expansions and initializations)s
+		}
 	}
-	fprintf(stderr,"Checkpoint load_more_messages() \"unlimited scroll\" of %d of requested %u\n",loaded,local_show_log_messages);
 }
-
-/* Other */
 
 static void ui_input_new(GtkWidget *entry)
 { // New input has occured (do not call this, it should only be called from key-released in ui_input_bad)
@@ -2405,7 +2419,7 @@ static int cleanup_idle(void *arg)
 
 void cleanup_cb_ui(const int sig_num)
 { // callback to UI to inform it that we are closing and it should save settings
-	g_idle_add(cleanup_idle,itovp(sig_num));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,cleanup_idle,itovp(sig_num),NULL);
 }
 
 static void ui_decorate_headerbar(void)
@@ -3554,7 +3568,7 @@ static int tor_log_idle(void *data)
 		gtk_text_buffer_get_end_iter(t_main.tor_log_buffer,&end);
 		gtk_text_buffer_insert(t_main.tor_log_buffer,&end,data,(int)len);
 		if(t_main.window == window_log_tor)
-			g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 		torx_free((void*)&data);
 	}
 /*	if(t_main.window == window_log_tor)
@@ -3568,7 +3582,7 @@ void tor_log_cb_ui(char *message)
 {
 	if(!message)
 		return;
-	g_idle_add(tor_log_idle,message); // frees pointer*
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
 static void beep(void)
@@ -3603,7 +3617,7 @@ static int error_idle(void *arg)
 		gtk_text_buffer_get_end_iter(t_main.torx_log_buffer,&end);
 		gtk_text_buffer_insert(t_main.torx_log_buffer,&end,error_message,-1);
 		if(t_main.window == window_log_torx)
-			g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 	}
 	torx_free(&arg);
 	return 0;
@@ -3615,14 +3629,14 @@ void error_cb_ui(char *error_message)
 		return;
 	if(ALPHA_VERSION)
 		fprintf(stderr,"Err: %s",error_message); // TODO remove prior to release
-	g_idle_add(error_idle,error_message); // frees pointer*
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,error_idle,error_message,NULL); // frees pointer*
 }
 
 void fatal_cb_ui(char *error_message)
 {
 	ui_notify(text_fatal_error,error_message);
 	fprintf(stderr,"%s: %s\n",text_fatal_error,error_message);
-	g_idle_add(error_idle,error_message); // frees pointer*
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,error_idle,error_message,NULL); // frees pointer*
 }
 
 static void ui_show_log_tor(void)
@@ -4671,7 +4685,7 @@ void custom_setting_cb_ui(const int n,char *setting_name,char *setting_value,con
 	custom_setting->setting_value = setting_value;
 	custom_setting->setting_value_len = setting_value_len;
 	custom_setting->plaintext = plaintext;
-	g_idle_add(custom_setting_idle,custom_setting);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,custom_setting_idle,custom_setting,NULL);
 }
 
 static void ui_message_copy(const gpointer data)
@@ -4812,7 +4826,7 @@ static void ui_activity_cancel(const gpointer data)
 	{
 		gtk_widget_set_visible(t_main.button_activity,FALSE);
 		if(!INVERSION_TEST)
-			g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL);
+			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL);
 	}
 }
 
@@ -5398,7 +5412,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		const int s = ui_sticker_set((unsigned char*)message);
 		int iter = 0;
 		while(iter < MAX_PEERS && sticker[s].peers[iter] != n && sticker[s].peers[iter] > -1)
-			iter++;
+/* PENGUIN */		iter++;
 		if(iter < MAX_PEERS && sticker[s].peers[iter] < 0) // Register a new recipient of sticker so that they can request data
 			sticker[s].peers[iter] = n;
 	}
@@ -5407,9 +5421,9 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(n == global_n && scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
 		{
 			if(INVERSION_TEST)
-				g_idle_add_full(301,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
+				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
 			else
-				g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 		}
 		torx_free((void*)&message);
 		return; // do not display
@@ -5486,9 +5500,9 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
 			{
 				if(INVERSION_TEST)
-					g_idle_add_full(301,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
+					g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
 				else
-					g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+					g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 			}
 			torx_free((void*)&message);
 			return; // do not display other types of files messages
@@ -5510,29 +5524,45 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			return;
 		}
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
-		if(INVERSION_TEST)
+		if(scroll < 0)
 		{
-		/*	IntPair *pair = int_pair_new(n,i,f,g);
-			g_list_store_splice(t_main.list_store_chat, 0, 0, (void**)&pair,1); */ // This is the same as g_list_store_insert
-			g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
-			t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
+			if(INVERSION_TEST)
+			{
+				g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
+				t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
+			}
+			else
+			{
+				g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
+				t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
+			}
 		}
 		else
 		{
-			g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
-			t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
+			if(INVERSION_TEST)
+			{
+			/*	IntPair *pair = int_pair_new(n,i,f,g);
+				g_list_store_splice(t_main.list_store_chat, 0, 0, (void**)&pair,1); */ // This is the same as g_list_store_insert
+				g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
+				t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
+			}
+			else
+			{
+				g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
+				t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
+			}
 		}
 		if(scroll == 1 || scroll == 3) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
 		{
 			if(INVERSION_TEST)
-				g_idle_add_full(301,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
+				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
 			else
-				g_idle_add_full(301,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
 		}
 	}
 	torx_free((void*)&message);
 	skip_printing: {}
-	if(scroll)
+	if(scroll > 0)
 	{ // == 1 or == 2 or == 3
 		const int max_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
 		if(scroll == 1 || i >= max_i) // TODO 2024/02/22 Minor bug: when deleting the last message (max_i), this if statement is not activated. A bad work-ardound would be to pass scroll==1, but a better one would be to check the validity of max_i and look lower.
@@ -5549,7 +5579,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 
 }
 
-static int print_message_idle(void *arg)
+int print_message_idle(void *arg)
 { // this step is necessary
 	struct printing *printing = (struct printing*) arg; // Casting passed struct
 	ui_print_message(printing->n,printing->i,printing->scroll);
@@ -5563,7 +5593,7 @@ void message_new_cb_ui(const int n,const int i)
 	printing->n = n;
 	printing->i = i;
 	printing->scroll = 1;
-	g_idle_add(print_message_idle,printing);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL);
 }
 
 void message_modified_cb_ui(const int n,const int i)
@@ -5572,7 +5602,7 @@ void message_modified_cb_ui(const int n,const int i)
 	printing->n = n;
 	printing->i = i;
 	printing->scroll = 2;
-	g_idle_add(print_message_idle,printing);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL);
 }
 
 void message_deleted_cb_ui(const int n,const int i)
@@ -5581,7 +5611,7 @@ void message_deleted_cb_ui(const int n,const int i)
 	printing->n = n;
 	printing->i = i;
 	printing->scroll = 3;
-	g_idle_add(print_message_idle,printing);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL);
 }
 
 static int stream_idle(void *arg)
@@ -5711,7 +5741,7 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 	stream_data->p_iter = p_iter;
 	stream_data->data = data;
 	stream_data->data_len = data_len;
-	g_idle_add(stream_idle,stream_data);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,stream_idle,stream_data,NULL);
 }
 
 static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data)
@@ -5863,7 +5893,7 @@ static void chat_builder(GtkListItemFactory *factory, GtkListItem *list_item,voi
 	}
 }
 
-static int ui_populate_peers(void *arg) // g_idle_add() functions must return int
+static int ui_populate_peers(void *arg)
 { /* Search Letters Entered */ // Takes 0 or ENUM_STATUS_BLOCKED / ENUM_STATUS_FRIEND as argument
 // TODO should probably save the scroll point, or not scroll if not at bottom, since this will be triggered on every message in/out
 	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
@@ -6870,7 +6900,7 @@ static void ui_show_main_screen(GtkWidget *window)
 //		gtk_window_present(GTK_WINDOW(window));
 }
 
-static int login_act_idle(void *arg) // g_idle_add() functions must return int
+static int login_act_idle(void *arg)
 {
 	const int value = vptoi(arg);
 	if(value == 0)
@@ -6888,7 +6918,7 @@ static int login_act_idle(void *arg) // g_idle_add() functions must return int
 
 void login_cb_ui(const int value)
 { // GUI Callback
-	g_idle_add(login_act_idle,itovp(value));
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,login_act_idle,itovp(value),NULL);
 }
 
 static void ui_send_login(GtkWidget *widget, gpointer data)
@@ -7096,7 +7126,7 @@ static int icon_communicator_idle(void *arg)
 }
 
 static void *icon_communicator(void* arg)
-{ // NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly
+{ // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
 	pusher(zero_pthread,(void*)&thrd_start_tor)
 	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
@@ -7127,7 +7157,7 @@ static void *icon_communicator(void* arg)
 	error_simple(0,"Icon_communicator failed before successful connection");
 	if(sockfd > 0)
 		evutil_closesocket(sockfd);
-	g_idle_add(icon_failure_idle,arg); // XXX
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,icon_failure_idle,arg,NULL); // XXX
 	if(tray_pid > 0)
 		pid_kill(tray_pid,SIGTERM);
 	pthread_exit(NULL);
