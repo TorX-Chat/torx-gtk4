@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.12 2024/07/29 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.13 2024/09/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2260,38 +2260,20 @@ static void ui_delete_log(GtkWidget *button,const gpointer data)
 static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const GtkPositionType pos,const gpointer data)
 {
 	(void) scrolled_window;
-	const int n = vptoi(data); // DO NOT FREE ARG
 	if((INVERSION_TEST && pos == GTK_POS_TOP) || (!INVERSION_TEST && pos == GTK_POS_BOTTOM)) // GTK_POS_BOTTOM
 		return;
-	const int peer_index = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
-	const uint32_t local_show_log_messages = threadsafe_read_uint32(&mutex_global_variable,&show_log_messages);
-	const int loaded = sql_populate_message(peer_index,0,local_show_log_messages);
-	if(loaded)
-	{ // Need to re-sort messages
-		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
-		int g = -1;
-		if(owner == ENUM_OWNER_GROUP_CTRL)
-		{
-			g = set_g(n,NULL);
-			message_sort(g);
-		}
-		const int min_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,min_i));
-		int loaded_array[loaded];
-		for(int i = min_i, discovered = 0; discovered < loaded ; i++)
-		{
-			const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
-			if(p_iter > -1)
-				loaded_array[discovered++] = i;
-		}
-		for(int current = loaded-1; current >= 0 ; current--)
-		{ // TODO replace with _splice // TODO do not use loaded because in some circumstances it'll be less than show_log_messages
-			struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
-			printing->n = n;
-			printing->i = loaded_array[current];
-			printing->scroll = -1;
-			g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL); // XXX XXX XXX WARNING: MUST BE _IDLE, despite being in UI thread, because sql_populate_message triggers callbacks that need to execute first (expansions and initializations)s
-		}
+	const int n = vptoi(data); // DO NOT FREE ARG
+	int count = 0;
+	int *loaded_array = message_load_more(&count,n);
+	for(int current = count-1; current >= 0 ; current--)
+	{ // TODO replace with _splice // TODO do not use loaded because in some circumstances it'll be less than show_log_messages
+		struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
+		printing->n = n;
+		printing->i = loaded_array[current];
+		printing->scroll = -1;
+		g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL); // XXX XXX XXX WARNING: MUST BE _IDLE, despite being in UI thread, because sql_populate_message triggers callbacks that need to execute first (expansions and initializations)s
 	}
+	torx_free((void*)&loaded_array);
 }
 
 static void ui_input_new(GtkWidget *entry)

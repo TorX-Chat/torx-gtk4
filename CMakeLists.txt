@@ -31,7 +31,6 @@ else()
 	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
 endif()
 
-#set(${CMAKE_C_COMPILER} "clang") # cc / gcc / clang / TODO x86_64-w64-mingw32-gcc / TODO i686-w64-mingw32-gcc
 	#### C90 crap: -Wvla -Wdeclaration-after-statement
 	#### Unimportant: -Waggregate-return
 	#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
