@@ -2256,7 +2256,7 @@ static void ui_delete_log(GtkWidget *button,const gpointer data)
 	}
 	// TODO re-draw scroll window?
 }
-/* PENGUIN */
+
 static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const GtkPositionType pos,const gpointer data)
 {
 	(void) scrolled_window;
@@ -5394,7 +5394,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		const int s = ui_sticker_set((unsigned char*)message);
 		int iter = 0;
 		while(iter < MAX_PEERS && sticker[s].peers[iter] != n && sticker[s].peers[iter] > -1)
-/* PENGUIN */		iter++;
+			iter++;
 		if(iter < MAX_PEERS && sticker[s].peers[iter] < 0) // Register a new recipient of sticker so that they can request data
 			sticker[s].peers[iter] = n;
 	}
