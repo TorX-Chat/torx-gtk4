@@ -108,7 +108,7 @@ static int global_theme = -1;
 static int log_unread = 1;
 static int vertical_mode = 0; // see ui_determine_orientation()
 static int8_t force_sign = 0; // TODO Should be 0. Global value for testing only. This should be per-peer. can add timestamp to message (as a salt to prevent relay attacks in groups), Tor project does this with all signed messages.
-static uint8_t save_all_stickers = 0; // TODO handle saving manually
+static uint8_t save_all_stickers = 0; // Do not default to 1 for legal reasons
 static uint8_t send_sticker_data = 1; // not really that useful because if we don't send stickers, people can't request stickers.
 static uint8_t close_to_tray = 0; // works well but currently not offered as UI option, in favor of minimize_to_tray
 static uint8_t minimize_to_tray = 1;
@@ -549,6 +549,7 @@ static const char *text_set_select_language = {0};
 static const char *text_set_onionid_or_torxid = {0};
 static const char *text_set_global_log = {0};
 static const char *text_set_auto_resume_inbound = {0};
+static const char *text_set_save_all_stickers = {0};
 static const char *text_set_download_directory = {0};
 static const char *text_tor = {0};
 static const char *text_snowflake = {0};
@@ -1648,7 +1649,10 @@ static int ui_sticker_register(const unsigned char *data,const size_t data_len)
 { // If utilizing, be sure to check return for if(s > -1 && sticker[s].paintable_animated != NULL)
 	unsigned char checksum[CHECKSUM_BIN_LEN];
 	if(!data || !data_len || b3sum_bin(checksum,NULL,data,0,data_len) != data_len)
+	{
+		sodium_memzero(checksum,sizeof(checksum));
 		return -1; // bug
+	}
 	const int s = ui_sticker_set(checksum);
 	if(s > -1 && sticker[s].paintable_animated == NULL)
 	{ // Register new sticker
@@ -3002,6 +3006,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_onionid_or_torxid = "TorX-ID (<=52 char) or OnionID (56 char with checksum)";
 		text_set_global_log = "Message Logging (Global Default)";
 		text_set_auto_resume_inbound = "Auto-Resume Inbound Transfers";
+		text_set_save_all_stickers = "Save All Stickers";
 		text_set_download_directory = "Select Download Directory";
 		text_tor = "Tor"; // part B
 		text_snowflake = "Snowflake"; // part B
@@ -3094,27 +3099,27 @@ static void ui_change_resume(const gpointer combobox)
 	sql_setting(0,-1,"auto_resume_inbound",p1,strlen(p1));
 }
 
-static void ui_change_daemonize(const gpointer combobox)
+static void ui_change_save_all_stickers(const gpointer combobox)
 { // Setting
-	int8_t local_setting = 0;
 	if(gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox)) == 1)
-		local_setting = 1;
-	threadsafe_write(&mutex_global_variable,&minimize_to_tray,&local_setting,sizeof(local_setting));
+		save_all_stickers = 1; // NOTE: is in UI thread already, no need to use locks
+	else
+		save_all_stickers = 0; // NOTE: is in UI thread already, no need to use locks
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"minimize_to_tray",p1,strlen(p1));
+	snprintf(p1,sizeof(p1),"%u",save_all_stickers);
+	sql_setting(0,-1,"save_all_stickers",p1,strlen(p1));
 }
 
-/*static void ui_change_full_duplex(const gpointer combobox)
+static void ui_change_daemonize(const gpointer combobox)
 { // Setting
-	int8_t local_setting = 0;
 	if(gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox)) == 1)
-		local_setting = 1;
-	threadsafe_write(&mutex_global_variable,&full_duplex_requests,&local_setting,sizeof(local_setting));
+		minimize_to_tray = 1; // NOTE: is in UI thread already, no need to use locks
+	else
+		minimize_to_tray = 0; // NOTE: is in UI thread already, no need to use locks
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"full_duplex_requests",p1,strlen(p1));
-}*/
+	snprintf(p1,sizeof(p1),"%u",minimize_to_tray);
+	sql_setting(0,-1,"minimize_to_tray",p1,strlen(p1));
+}
 
 static void ui_change_auto_accept_mult(const gpointer combobox)
 { // Setting
@@ -3403,6 +3408,9 @@ static void ui_show_settings(void)
 
 	// Automatically resume inbound transfers (toggle)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_resume_inbound,&ui_change_resume,threadsafe_read_uint8(&mutex_global_variable,&auto_resume_inbound),text_disable,text_enable,NULL));
+
+	// Save all stickers (toggle)
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_save_all_stickers,&ui_change_save_all_stickers,save_all_stickers,text_disable,text_enable,NULL));
 
 	// Downloads Folder
 	GtkWidget *box0 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
@@ -4630,8 +4638,10 @@ static int custom_setting_idle(void *arg)
 		size_window_default_width = (int)strtoll(setting_value, NULL, 10);
 	else if(!strncmp(setting_name,"gtk4-height",11))
 		size_window_default_height = (int)strtoll(setting_value, NULL, 10);
-	else if(!strncmp(setting_name,"minimize_to_tray",20))
+	else if(!strncmp(setting_name,"minimize_to_tray",16))
 		minimize_to_tray = (uint8_t)strtoull(setting_value, NULL, 10);
+	else if(!strncmp(setting_name,"save_all_stickers",17))
+		save_all_stickers = (uint8_t)strtoull(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"mute",4))
 		t_peer[n].mute = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"unread",6))
@@ -5676,31 +5686,37 @@ static int stream_idle(void *arg)
 		}
 		else
 		{ // Fresh sticker data. Save it and print it
-			const int s = ui_sticker_register((unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
-			sticker[s].data = torx_secure_malloc(data_len - CHECKSUM_BIN_LEN);
-			memcpy(sticker[s].data,(unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
-			sticker[s].data_len = data_len - CHECKSUM_BIN_LEN;
-			if(save_all_stickers)
-				ui_sticker_save(itovp(s));
-			torx_read(n) // XXX
-			for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
-			{ // Rebuild any messages that had this sticker (NOTE: may not be functioning)
-				const int p_iter_local = peer[n].message[i].p_iter;
-				if(p_iter_local > -1)
-				{
-					const uint16_t protocol_local = protocols[p_iter_local].protocol;
-					if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
-					&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
-					{ // Find the first relevant message and update it TODO this might not work in groups
-						torx_unlock(n) // XXX
-						printf("Checkpoint should be rebuilding a sticker??\n");
-						ui_print_message(n,i,2);
-						torx_read(n) // XXX
-						break;
+			unsigned char checksum[CHECKSUM_BIN_LEN];
+			if(b3sum_bin(checksum,NULL,(unsigned char*)&data[CHECKSUM_BIN_LEN],0,data_len - CHECKSUM_BIN_LEN) != data_len - CHECKSUM_BIN_LEN || memcmp(checksum,data,sizeof(checksum)))
+				error_simple(0,"Received bunk sticker data from peer. Checksum failed. Disgarding sticker.");
+			else
+			{
+				const int s = ui_sticker_register((unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
+				sticker[s].data = torx_secure_malloc(data_len - CHECKSUM_BIN_LEN);
+				memcpy(sticker[s].data,(unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
+				sticker[s].data_len = data_len - CHECKSUM_BIN_LEN;
+				if(save_all_stickers)
+					ui_sticker_save(itovp(s));
+				torx_read(n) // XXX
+				for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
+				{ // Rebuild any messages that had this sticker (NOTE: may not be functioning)
+					const int p_iter_local = peer[n].message[i].p_iter;
+					if(p_iter_local > -1)
+					{
+						const uint16_t protocol_local = protocols[p_iter_local].protocol;
+						if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
+						&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
+						{ // Find the first relevant message and update it TODO this might not work in groups
+							torx_unlock(n) // XXX
+							printf("Checkpoint should be rebuilding a sticker??\n");
+							ui_print_message(n,i,2);
+							torx_read(n) // XXX
+							break;
+						}
 					}
 				}
+				torx_unlock(n) // XXX
 			}
-			torx_unlock(n) // XXX
 		}
 	}
 /*	else if(protocol == ENUM_PROTOCOL_TEST_STREAM && data_len)
