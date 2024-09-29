@@ -3769,7 +3769,6 @@ static void ui_n_from_treeview(gpointer data)
 		treeview_n = n;
 	else
 		treeview_n = -1; // should not occur. could remove this check and else, for brevity
-//	fprintf(stderr,"Checkpoint n_from_treeview: %d %d\nOnion in table: %s\nOnion in struct: %s\n",n,treeview_n,onion,peer[n].onion);
 }
 
 static void ui_rename(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
@@ -3809,6 +3808,11 @@ static void ui_delete(void)
 {
 	if(treeview_n < 0)
 		return;
+	gtk_widget_set_visible(t_main.button_accept,FALSE);
+	gtk_widget_set_visible(t_main.button_reject,FALSE);
+	gtk_widget_set_visible(t_main.button_copy,FALSE);
+	gtk_widget_set_visible(t_main.button_show_qr,FALSE);
+	gtk_widget_set_visible(t_main.button_delete,FALSE);
 	const uint8_t owner = getter_uint8(treeview_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner)); // in case of delete
 	const int peer_index = getter_int(treeview_n,INT_MIN,-1,-1,offsetof(struct peer_list,peer_index));
 	if(owner == ENUM_OWNER_CTRL)
@@ -3829,7 +3833,10 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 	else
 		n = treeview_n;
 	if(n < 0)
+	{
+		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),"");
 		return;
+	}
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
