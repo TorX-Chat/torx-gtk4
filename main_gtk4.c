@@ -137,6 +137,7 @@ static pthread_t thread_icon_communicator = {0};
 const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".svg"}; // case insensitive
 
 #define MAX_PEERS 4096 // TODO this isnt ideal because library has no such limitation. this is just laziness.
+#define MAX_STICKER_REQUESTS 15 // Concurrent number, per peer. keep it low for RAM reasons and to avoid spamming people. this is just laziness.
 #define STICKERS_LIST_SIZE 500
 
 #define ENUM_STATUS_GROUP_CTRL 4
@@ -171,6 +172,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		int n; // The peer iter that progress_bar is in, for rebuilds upon completion
 		int i; // The message iter that progress_bar is in, for rebuilds upon completion
 	} *t_file;
+	unsigned char stickers_requested[MAX_STICKER_REQUESTS][CHECKSUM_BIN_LEN];
 } *t_peer; // TODO do not initialize automatically, but upon use
 
 #define create_button(text,callback,vp)\
@@ -800,6 +802,7 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
 	t_peer[n].t_file = torx_insecure_malloc(sizeof(struct t_file_list) *11);
+	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	return 0;
 }
 
@@ -1615,7 +1618,7 @@ static int ui_sticker_set(const unsigned char checksum[CHECKSUM_BIN_LEN])
 		return -1;
 	}
 	int s = 0;
-	while(sticker[s].paintable_static && memcmp(sticker[s].checksum,checksum,CHECKSUM_BIN_LEN) && s < STICKERS_LIST_SIZE)
+	while(s < STICKERS_LIST_SIZE && sticker[s].paintable_static && memcmp(sticker[s].checksum,checksum,CHECKSUM_BIN_LEN))
 		s++;
 	if(s == STICKERS_LIST_SIZE)
 	{
@@ -5159,7 +5162,24 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			if(s < 0 || sticker[s].paintable_animated == NULL || !(msg = ui_sticker_box(sticker[s].paintable_animated,size_sticker_large)))
 			{
 				if(stat == ENUM_MESSAGE_RECV)
-					message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,message,CHECKSUM_BIN_LEN);
+				{
+					int y = 0;
+					while (y < MAX_STICKER_REQUESTS && memcmp(t_peer[n].stickers_requested[y], message, CHECKSUM_BIN_LEN))
+						y++;
+					if (y == MAX_STICKER_REQUESTS)
+					{
+						y = 0; // necessary
+						while(y < MAX_STICKER_REQUESTS && !is_null(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN))
+							y++;
+						if (y < MAX_STICKER_REQUESTS)
+						{
+							memcpy(t_peer[n].stickers_requested[y],message,CHECKSUM_BIN_LEN);
+							message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
+						}
+						else
+							error_simple(0,"Requested MAX_STICKER_REQUESTS stickers already. Not requesting more.");
+					}
+				}
 				if(stat == ENUM_MESSAGE_RECV && ENABLE_SPINNERS)
 				{
 					msg = gtk_spinner_new();
@@ -5697,6 +5717,11 @@ static int stream_idle(void *arg)
 				sticker[s].data_len = data_len - CHECKSUM_BIN_LEN;
 				if(save_all_stickers)
 					ui_sticker_save(itovp(s));
+				int y = 0;
+				while (y < MAX_STICKER_REQUESTS && memcmp(t_peer[n].stickers_requested[y],checksum,sizeof(checksum)))
+					y++;
+				if (y < MAX_STICKER_REQUESTS)
+					sodium_memzero(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
 				torx_read(n) // XXX
 				for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
 				{ // Rebuild any messages that had this sticker (NOTE: may not be functioning)
