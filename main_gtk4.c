@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.13 2024/09/25 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.14 2024/10/04 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -5603,17 +5603,17 @@ int print_message_idle(void *arg)
 	{ // New message coming in
 		const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
 		if(stat == ENUM_MESSAGE_RECV)
-		{
+		{ // XXX Put as little here as possible before checking the protocol XXX
 			const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 			pthread_rwlock_rdlock(&mutex_protocols);
 			const uint16_t protocol = protocols[p_iter].protocol;
 			pthread_rwlock_unlock(&mutex_protocols);
 			if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
-			{
+			{ // Received sticker
 				uint32_t message_len;
 				char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 				if(message && message_len >= CHECKSUM_BIN_LEN)
-				{ // Handle sticker requests
+				{
 					const int s = ui_sticker_set((unsigned char*)message);
 					if(s < 0)
 					{ // Don't have sticker, consider requesting it, if we haven't already
@@ -5637,8 +5637,64 @@ int print_message_idle(void *arg)
 							error_simple(0,"Requested this sticker already. Not requesting again."); // TODO delete
 					}
 				}
-				else
-					error_simple(0,"Sticker message is null or undersized. Possible coding error. Report this.");
+				torx_free((void*)&message);
+			}
+			else if(protocol == ENUM_PROTOCOL_STICKER_REQUEST && send_sticker_data)
+			{ // Recieved sticker request
+				uint32_t message_len;
+				char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
+				if(message && message_len)
+				{
+					const int s = ui_sticker_set((unsigned char*)message);
+					if(s > -1)
+					{
+						int relevant_n = n; // For groups, this should be group_n
+						for(int cycle = 0; cycle < 2; cycle++)
+						{
+							const uint8_t owner = getter_uint8(relevant_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+							int iter = 0;
+							while(iter < MAX_PEERS && sticker[s].peers[iter] != relevant_n && sticker[s].peers[iter] > -1)
+								iter++;
+							if(iter < MAX_PEERS && relevant_n != sticker[s].peers[iter])
+							{
+							//	printf("Checkpoint TRYING s=%d owner=%u\n",s,owner); // FINGERPRINTING
+								if(owner == ENUM_OWNER_GROUP_PEER)
+								{ // if not on peer_n(pm), try group_n (public)
+									const int g = set_g(n,NULL);
+									relevant_n = getter_group_int(g,offsetof(struct group_list,n));
+									continue;
+								}
+								else
+									error_simple(0,"Peer requested a sticker they dont have access to (either they are buggy or malicious, or our MAX_PEERS is too small). Report this.");
+							}
+							else
+							{ // Peer requested a sticker we have
+								if(sticker[s].data && sticker[s].data_len) // Peer requested an unsaved sticker we have
+									message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,sticker[s].data,(uint32_t)sticker[s].data_len);
+								else
+								{ // Peer requested a saved sticker we have
+									char *p = b64_encode(message,CHECKSUM_BIN_LEN);
+									char query[256]; // somewhat arbitrary size
+									snprintf(query,sizeof(query),"sticker-gif-%s",p);
+									torx_free((void*)&p);
+									size_t setting_value_len;
+									unsigned char *setting_value = sql_retrieve(&setting_value_len,0,query);
+									sodium_memzero(query,sizeof(query));
+								//	printf("Checkpoint setting_value_len: %lu\n",setting_value_len);
+									unsigned char *data = torx_secure_malloc(CHECKSUM_BIN_LEN + setting_value_len);
+									memcpy(data,message,CHECKSUM_BIN_LEN);
+									memcpy(&data[CHECKSUM_BIN_LEN],setting_value,setting_value_len);
+									torx_free((void*)&setting_value);
+									message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,data,CHECKSUM_BIN_LEN + (uint32_t)setting_value_len); // TODO TODO TODO get it from sql_setting
+									torx_free((void*)&data);
+								}
+							}
+							break;
+						}
+					}
+					else
+						error_simple(0,"Peer requested sticker we do not have. Maybe we deleted it.");
+				}
 				torx_free((void*)&message);
 			}
 		}
@@ -5691,58 +5747,7 @@ static int stream_idle(void *arg)
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,status));
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
 		goto end; // ignored or blocked
-	if(data_len >= CHECKSUM_BIN_LEN && protocol == ENUM_PROTOCOL_STICKER_REQUEST)
-	{
-		if(send_sticker_data == 0)
-			goto end;
-		const int s = ui_sticker_set((unsigned char*)data);
-		if(s > -1)
-		{
-			int relevant_n = n; // For groups, this should be group_n
-			try_group_n: {}
-			int iter = 0;
-			while(iter < MAX_PEERS && sticker[s].peers[iter] != relevant_n && sticker[s].peers[iter] > -1)
-				iter++;
-			if(iter < MAX_PEERS && relevant_n != sticker[s].peers[iter])
-			{
-			//	printf("Checkpoint TRYING s=%d owner=%u\n",s,owner); // FINGERPRINTING
-				if(owner == ENUM_OWNER_GROUP_PEER)
-				{ // if not on peer_n(pm), try group_n (public)
-					const int g = set_g(n,NULL);
-					relevant_n = getter_group_int(g,offsetof(struct group_list,n));
-					owner = getter_uint8(relevant_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
-					goto try_group_n;
-				}
-				else
-					error_simple(0,"Peer requested a sticker they dont have access to (either they are buggy or malicious, or our MAX_PEERS is too small). Report this.");
-			}
-			else
-			{ // Peer requested a sticker we have
-				if(sticker[s].data && sticker[s].data_len) // Peer requested an unsaved sticker we have
-					message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,sticker[s].data,(uint32_t)sticker[s].data_len);
-				else
-				{ // Peer requested a saved sticker we have
-					char *p = b64_encode(data,CHECKSUM_BIN_LEN);
-					char query[256]; // somewhat arbitrary size
-					snprintf(query,sizeof(query),"sticker-gif-%s",p);
-					torx_free((void*)&p);
-					size_t setting_value_len;
-					unsigned char *setting_value = sql_retrieve(&setting_value_len,0,query);
-					sodium_memzero(query,sizeof(query));
-				//	printf("Checkpoint setting_value_len: %lu\n",setting_value_len);
-					unsigned char *message = torx_secure_malloc(CHECKSUM_BIN_LEN + setting_value_len);
-					memcpy(message,data,CHECKSUM_BIN_LEN);
-					memcpy(&message[CHECKSUM_BIN_LEN],setting_value,setting_value_len);
-					torx_free((void*)&setting_value);
-					message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,message,CHECKSUM_BIN_LEN + (uint32_t)setting_value_len); // TODO TODO TODO get it from sql_setting
-					torx_free((void*)&message);
-				}
-			}
-		}
-		else
-			error_simple(0,"Peer requested sticker we do not have. Maybe we deleted it.");
-	}
-	else if(data_len >= CHECKSUM_BIN_LEN && protocol == ENUM_PROTOCOL_STICKER_DATA_GIF)
+	if(data_len >= CHECKSUM_BIN_LEN && protocol == ENUM_PROTOCOL_STICKER_DATA_GIF)
 	{
 		int s = ui_sticker_set((unsigned char*)data);
 		if(s > -1)
@@ -7316,8 +7321,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
-	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,1); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
+	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,0);
+	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,ENUM_STREAM_NON_DISCARDABLE); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
