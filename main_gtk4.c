@@ -67,7 +67,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.14 2024/10/04 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.15 2024/10/06 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -139,6 +139,7 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 #define MAX_PEERS 4096 // TODO this isnt ideal because library has no such limitation. this is just laziness.
 #define MAX_STICKER_REQUESTS 15 // Concurrent number, per peer. keep it low for RAM reasons and to avoid spamming people. this is just laziness.
 #define STICKERS_LIST_SIZE 500
+#define ARBITRARY_ARRAY_SIZE 512
 
 #define ENUM_STATUS_GROUP_CTRL 4
 
@@ -555,7 +556,8 @@ static const char *text_set_save_all_stickers = {0};
 static const char *text_set_download_directory = {0};
 static const char *text_tor = {0};
 static const char *text_snowflake = {0};
-static const char *text_obfs4proxy = {0};
+static const char *text_lyrebird = {0};
+static const char *text_conjure = {0};
 static const char *text_binary_location = {0};
 static const char *text_set_cpu = {0};
 static const char *text_set_suffix = {0};
@@ -1082,21 +1084,20 @@ static int transfer_progress_idle(void *arg)
 	if(transferred == size)
 	{ // Notify of completion
 		const uint8_t status = getter_uint8(n,INT_MIN,f,-1,offsetof(struct file_list,status));
-		char peernick[56+1];
-		getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-		char heading[256] = {0}; // zero'd
+		char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+		char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
 		if(status == ENUM_FILE_OUTBOUND_COMPLETED)
 			snprintf(heading,sizeof(heading),"%s %s",text_transfer_completed_to,peernick);
 		else if(status == ENUM_FILE_INBOUND_COMPLETED)
 			snprintf(heading,sizeof(heading),"%s %s",text_transfer_completed_from,peernick);
 		else
 		{ // probably something full of zeroes. this should never occur. Its a bug.
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			error_printf(0,"Unhandled file status in transfer_progress_cb: %u transferred: %lu [f].size %lu",status,transferred,size);
 			torx_free((void*)&file_path);
 			return 0;
 		}
-		sodium_memzero(peernick,sizeof(peernick));
+		torx_free((void*)&peernick);
 		ui_notify(heading,file_path);
 		sodium_memzero(heading,sizeof(heading));
 	}
@@ -1281,10 +1282,9 @@ static int incoming_friend_request_idle(void *arg)
 
 void incoming_friend_request_cb_ui(const int n)
 { // GUI Callback
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	ui_notify(peernick,text_new_friend);
-	sodium_memzero(peernick,sizeof(peernick));
+	torx_free((void*)&peernick);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
 }
 
@@ -1382,10 +1382,9 @@ static int peer_online_idle(void *arg)
 		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,recvfd_connected));
 		if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0 && sendfd_connected > 0 && recvfd_connected > 0)
 		{
-			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			ui_notify(peernick,text_online);
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 		}
 	}
 	return 0;
@@ -1708,8 +1707,10 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			handle_chosen_file_and_restart_tor(button,file,&tor_location,name);
 		else if(!strncmp(name,"snowflake_location",18))
 			handle_chosen_file_and_restart_tor(button,file,&snowflake_location,name);
-		else if(!strncmp(name,"obfs4proxy_location",19))
-			handle_chosen_file_and_restart_tor(button,file,&obfs4proxy_location,name);
+		else if(!strncmp(name,"lyrebird_location",17))
+			handle_chosen_file_and_restart_tor(button,file,&lyrebird_location,name);
+		else if(!strncmp(name,"conjure_location",16))
+			handle_chosen_file_and_restart_tor(button,file,&conjure_location,name);
 		else if(!strncmp(name,"custom_input_location",21))
 		{
 			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
@@ -2903,10 +2904,10 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_accepted_file = "Accepted a file";
 		text_spoiled = "A single-use onion was spoiled";
 		text_placeholder_privkey = "Onion Private Key (base64, 88 characters including trailing ==, or select from file)";
-		text_placeholder_identifier = "Peer Nick or Mult Identifier (56 character max)";
-		text_placeholder_add_identifier = "Peer Nick (56 characters max)";
+		text_placeholder_identifier = "Peer Nickname or Mult Identifier";
+		text_placeholder_add_identifier = "Peer Nickname";
 		text_placeholder_add_onion = "Peer TorX-ID or OnionID (provided by peer)";
-		text_placeholder_add_group_identifier = "Group Nick (56 characters max)";
+		text_placeholder_add_group_identifier = "Group Nickname";
 		text_placeholder_add_group_id = "Public Group ID (provided by peer)";
 		text_placeholder_search = "Search";
 		text_dark = "Dark";
@@ -3024,7 +3025,8 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_download_directory = "Select Download Directory";
 		text_tor = "Tor"; // part B
 		text_snowflake = "Snowflake"; // part B
-		text_obfs4proxy = "obfs4proxy"; // part B
+		text_lyrebird = "Lyrebird"; // part B
+		text_conjure = "Conjure"; // part B
 		text_binary_location = "binary location (effective immediately)"; // part C
 		text_set_cpu = "Maximum CPU threads for TorX-ID generation";
 		text_set_suffix = "Minimum Suffix Length for TorX-ID generation";
@@ -3448,8 +3450,11 @@ static void ui_show_settings(void)
 	// Snowflake binary location
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
 
-	// obfs4proxy binary location
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&obfs4proxy_location,"obfs4proxy_location",text_obfs4proxy));
+	// Lyrebird binary location
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&lyrebird_location,"lyrebird_location",text_lyrebird));
+
+	// Conjure binary location
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&conjure_location,"conjure_location",text_conjure));
 
 	// Maximum CPU threads
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_cpu,ENUM_SPIN_CPU_THREADS,(int)threadsafe_read_uint32(&mutex_global_variable,&global_threads),1,(int)threadsafe_read_uint32(&mutex_global_variable,&threads_max)));
@@ -3799,16 +3804,12 @@ static void ui_rename(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
 	const int n = vptoi(data);
 	if(!gtk_editable_label_get_editing(GTK_EDITABLE_LABEL(self)))
 	{
-		char freshpeernick[56+1]; // zero'd
 		char *p = gtk_editable_get_chars(GTK_EDITABLE(self),0,56);
 		if(p && strlen(p) && p[0] != ' ')
 		{
-			snprintf(freshpeernick,sizeof(freshpeernick),"%s",p);
-			sodium_memzero(p,strlen(p));
+			change_nick(n,p);
 			g_free(p);
 			p = NULL;
-			change_nick(n,freshpeernick);
-			sodium_memzero(freshpeernick,sizeof(freshpeernick));
 			const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 			ui_populate_list(itovp(owner));
 		}
@@ -3980,11 +3981,10 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 		if(column_number == 0)
 		{
-			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_editable_label_new(peernick);
 			g_signal_connect(label, "notify::editing", G_CALLBACK(ui_rename),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			gtk_box_append(GTK_BOX(box), label);
 		}
 		if(column_number == 1)
@@ -4824,11 +4824,11 @@ static void ui_activity_cancel(const gpointer data)
 		gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send); // redundant, doing later in all cases
 		if(t_peer[global_n].pm_n > -1)
 		{ // PM was active before edit, restore it
-			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),t_peer[global_n].pm_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[256];
+			uint32_t len;
+			char *peernick = getter_string(&len,t_peer[global_n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char cancel_message[ARBITRARY_ARRAY_SIZE];
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
 			sodium_memzero(cancel_message,sizeof(cancel_message));
 		}
@@ -4855,10 +4855,10 @@ static void ui_activity_rename(const gpointer data)
 	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
 		gtk_popover_set_autohide(GTK_POPOVER(t_main.popover_group_peerlist),TRUE); // WORKS!!! gtk_popover_set_cascade_popdown / gtk_popover_popdown do NOT work
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),t_peer[global_n].edit_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-	gtk_text_buffer_set_text(buffer,peernick,(int)strlen(peernick));
-	sodium_memzero(peernick,sizeof(peernick));
+	uint32_t len;
+	char *peernick = getter_string(&len,t_peer[global_n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	gtk_text_buffer_set_text(buffer,peernick,(int)len - 1);
+	torx_free((void*)&peernick);
 }
 
 static void ui_establish_pm(const int n,void *popover)
@@ -4870,11 +4870,11 @@ static void ui_establish_pm(const int n,void *popover)
 		t_peer[global_n].edit_i = INT_MIN;
 	}
 	t_peer[global_n].pm_n = n;
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-	char cancel_message[256];
+	uint32_t len;
+	char *peernick = getter_string(&len,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char cancel_message[ARBITRARY_ARRAY_SIZE];
 	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-	sodium_memzero(peernick,sizeof(peernick));
+	torx_free((void*)&peernick);
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
 	sodium_memzero(cancel_message,sizeof(cancel_message));
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),NULL);
@@ -5039,10 +5039,9 @@ static GtkWidget *ui_message_info(const int n,const int i)
 	gtk_widget_add_css_class(message_time, "message_info_time");
 	torx_free((void*)&timebuffer);
 
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *peernick_widget = gtk_label_new(peernick);
-	sodium_memzero(peernick,sizeof(peernick));
+	torx_free((void*)&peernick);
 	gtk_widget_add_css_class(peernick_widget, "message_info_peernick");
 
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
@@ -5146,11 +5145,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				group_type = text_group_private;
 			else
 				group_type = text_group_public;
-			char peernick[56+1];
+			char *peernick = NULL;
+			uint32_t peernick_len = 0;
 			if(group_n > -1)
-				getter_array(&peernick,sizeof(peernick),group_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-			char group_message[256];
-			if(group_n > -1 && strlen(peernick))
+				peernick = getter_string(&peernick_len,group_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char group_message[ARBITRARY_ARRAY_SIZE];
+			if(group_n > -1 && peernick && peernick_len)
 				snprintf(group_message,sizeof(group_message),"%s\n%s %u\n%s",group_type,text_current_members,peercount,peernick);
 			else
 			{ // We have not joined yet, so no name. Use encoded GroupID instead
@@ -5163,7 +5163,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				snprintf(group_message,sizeof(group_message),"%s\n%s %u\n%s",group_type,text_current_members,peercount,group_encoded);
 				torx_free((void*)&group_encoded);
 			}
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			msg = gtk_label_new(group_message);
 			sodium_memzero(group_message,sizeof(group_message));
 		}
@@ -5471,8 +5471,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		ui_decorate_panel_left_top();
 		if(t_peer[nn].mute == 0 && t_peer[n].mute == 0)
 		{ // Notification + beep
-			char peernick[56+1];
-			getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			if(null_terminated_len == 1)
 				ui_notify(peernick,message);
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
@@ -5484,7 +5483,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
-				getter_array(&peernick,sizeof(peernick),nn,INT_MIN,-1,-1,offsetof(struct peer_list,peernick)); // XXX
+				torx_free((void*)&peernick);
+				peernick = getter_string(NULL,nn,INT_MIN,-1,offsetof(struct peer_list,peernick)); // XXX
 				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN);
 				char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
 				ui_notify(peernick,filename);
@@ -5498,7 +5498,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				ui_notify(peernick,text_sticker);
 			else
 				error_printf(0,"A notifiable message was received that we don't know how to print: %u",protocol);
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			beep();
 		}
 	}
@@ -5906,32 +5906,23 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 	if(!gtk_editable_label_get_editing(GTK_EDITABLE_LABEL(self)))
 	{
 		const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
-		char freshpeernick[56+1]; // zero'd
 		char *p = gtk_editable_get_chars(GTK_EDITABLE(self),0,56);
-		if(p)
-		{
-			snprintf(freshpeernick,sizeof(freshpeernick),"%s",p);
-			sodium_memzero(p,strlen(p));
-			g_free(p);
-			p = NULL;
-		}
-		char peernick[56+1];
-		getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-		if(strlen(freshpeernick) == 0 || !strncmp(freshpeernick," ",1))
+		char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+		if(p == NULL || strlen(p) == 0 || !strncmp(p," ",1))
 		{
 			gtk_editable_set_text(GTK_EDITABLE(self),peernick);
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			return;
 		}
-		else if(!strncmp(freshpeernick,peernick,56))
+		else if(!strncmp(p,peernick,56))
 		{
-			sodium_memzero(peernick,sizeof(peernick));
+			torx_free((void*)&peernick);
 			return;
 		}
 		else
 		{
-			sodium_memzero(peernick,sizeof(peernick));
-			change_nick(n,freshpeernick);
+			torx_free((void*)&peernick);
+			change_nick(n,p);
 			if(owner == ENUM_OWNER_GROUP_CTRL)
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 			else
@@ -5940,7 +5931,9 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 				ui_populate_peers(itovp(status));
 			}
 		}
-		sodium_memzero(freshpeernick,sizeof(freshpeernick));
+		sodium_memzero(p,strlen(p));
+		g_free(p);
+		p = NULL;
 	}
 }
 
@@ -6418,10 +6411,9 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_halign(info_box, GTK_ALIGN_START);
 	gtk_widget_set_valign(info_box, GTK_ALIGN_CENTER);
 	gtk_widget_set_margin_start(info_box,size_margin_ten);
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *group_or_user_name = gtk_editable_label_new(peernick);
-	sodium_memzero(peernick,sizeof(peernick));
+	torx_free((void*)&peernick);
 	gtk_widget_set_tooltip_text(group_or_user_name,text_tooltip_group_or_user_name);
 	t_main.last_online = gtk_label_new(NULL);
 	gtk_widget_set_halign(group_or_user_name, GTK_ALIGN_START);
@@ -6540,11 +6532,11 @@ static void ui_select_changed(const void *arg)
 	{
 		if(t_peer[n].pm_n > -1)
 		{
-			char peernick_local[56+1];
-			getter_array(&peernick_local,sizeof(peernick_local),t_peer[n].pm_n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[256];
+			uint32_t len;
+			char *peernick_local = getter_string(&len,t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char cancel_message[ARBITRARY_ARRAY_SIZE];
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
-			sodium_memzero(peernick_local,sizeof(peernick_local));
+			torx_free((void*)&peernick_local);
 			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
 			sodium_memzero(cancel_message,sizeof(cancel_message));
 		}
@@ -6766,10 +6758,9 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 	gtk_box_append (GTK_BOX(chat_info), overlay); // For groups, we'll probably do 3 dots in a triangle. 1 Green for each Green user.
 
 	/* Build Peernick Label */
-	char peernick[56+1];
-	getter_array(&peernick,sizeof(peernick),n,INT_MIN,-1,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *chat_name = gtk_label_new(peernick);
-	sodium_memzero(peernick,sizeof(peernick));
+	torx_free((void*)&peernick);
 	gtk_widget_add_css_class(chat_name, "chat_name");
 	gtk_widget_set_halign(chat_name, GTK_ALIGN_START);
 	gtk_widget_set_valign(chat_name, GTK_ALIGN_CENTER);
@@ -7149,7 +7140,8 @@ static void ui_show_missing_binaries(void)
 
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&tor_location,"tor_location",text_tor));
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
-	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&obfs4proxy_location,"obfs4proxy_location",text_obfs4proxy));
+	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&lyrebird_location,"lyrebird_location",text_lyrebird));
+	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&conjure_location,"conjure_location",text_conjure));
 
 	GtkWidget *button = gtk_button_new_with_label (text_enter);
 	gtk_widget_set_size_request(button, size_button_auth_width, size_button_auth_height);
