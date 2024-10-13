@@ -64,10 +64,11 @@ XXX ERRORS XXX
 #include <torx.h> 		// TorX core
 #include "torx-gtk4.c"		// gresource
 #include "gif_animation.c" // XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
+#include "audio.c"
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.15 2024/10/06 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.15 2024/10/14 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -80,7 +81,7 @@ XXX ERRORS XXX
 #define QR_IS_PNG 1
 /* XXX NOTE: Bundled files are the two below, the .desktop, and /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png XXX */
 #define FILENAME_ICON "icon.svg" // .png/.svg
-#define FILENAME_BEEP "beep.wav" // .wav files only, on linux and windows
+//#define FILENAME_BEEP "beep.wav" // .wav files only, on linux and windows
 #define MAX_STICKER_COLUMNS 5
 #define MAX_STICKER_ROWS 6
 #define ENABLE_SPINNERS 0 // this should only be enabled if people have a GPU.
@@ -394,8 +395,11 @@ enum ui_protocols {
 	ENUM_PROTOCOL_STICKER_HASH_PRIVATE = 40505,
 	ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED = 1891,
 	ENUM_PROTOCOL_STICKER_REQUEST = 24931,		// hash
-	ENUM_PROTOCOL_STICKER_DATA_GIF = 46093		// hash + data
+	ENUM_PROTOCOL_STICKER_DATA_GIF = 46093,		// hash + data
 	// TODO vibration... but do it only in flutter as a UI specific protocol
+	ENUM_PROTOCOL_AAC_AUDIO_MSG = 28792,
+	ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE = 33751,
+	ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED = 36310
 };
 
 void initialize_n_cb_ui(const int n);
@@ -461,6 +465,7 @@ static const char *text_vertical_emit_global_kill = {0};
 static const char *text_peer = {0};
 static const char *text_group = {0};
 static const char *text_group_offer = {0};
+static const char *text_audio_message = {0};
 static const char *text_sticker = {0};
 static const char *text_current_members = {0};
 static const char *text_group_public = {0};
@@ -2929,6 +2934,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_peer = "Peer";
 		text_group = "Group";
 		text_group_offer = "Group Offer";
+		text_audio_message = "Audio Message";
 		text_sticker = "Sticker";
 		text_current_members = "Current Members: ";
 		text_group_private = "Private Group";
@@ -3594,9 +3600,48 @@ void tor_log_cb_ui(char *message)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
+static void *playback_threaded(void* arg)
+{ // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
+	pusher(zero_pthread,(void*)&thrd_start_tor)
+	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+	struct rec_info *rec_info = (struct rec_info *)arg;
+	playback(rec_info->buffer,rec_info->buffer_len);
+	torx_free((void*)&rec_info->buffer);
+	torx_free((void*)&rec_info);
+	pthread_exit(NULL);
+	return NULL;
+}
+
+static void playback_async(const unsigned char *data, const size_t data_len)
+{ // Play audio in a pthread.
+	pthread_t thread_playback = {0};
+	struct rec_info *rec_info = torx_insecure_malloc(sizeof(struct rec_info));
+	rec_info->buffer = torx_secure_malloc(data_len);
+	memcpy(rec_info->buffer,data,data_len);
+	rec_info->buffer_len = data_len;
+	if(pthread_create(&thread_playback,&ATTR_DETACHED,&playback_threaded,rec_info))
+		error_simple(0,"Failed to create thread");
+}
+
+static void playback_message(void* arg)
+{
+	if(!arg)
+		error_simple(0,"Playback_message passed null. Coding error. Report this.");
+	const int n = vptoii_n(arg);
+	const int i = vptoii_i(arg);
+	uint32_t len;
+	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
+	playback_async((unsigned char *)message,len);
+	torx_free((void*)&message);
+}
+
 static void beep(void)
-{ // This function currently does not need to run in the UI thread, which is why it is not ui_prefixed // Probably bad idea but portable beeps: We can use GTKVideo to play a bundled .mp3 as a GResource. Company recommends .mp3 or .mkv/.webm with opus. we'd have to make it invisible.
-	#ifdef WIN32
+{ // This function currently does not need to run in the UI thread, which is why it is not ui_prefixed
+	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
+	size_t size = 0;
+	const void *data = g_bytes_get_data(bytes,&size);
+	playback_async(data,size);
+/*	#ifdef WIN32
 	{ // call PlaySound asyncronously to prevent having to CreateProcess
 		PlaySound(FILENAME_BEEP, NULL, SND_FILENAME | SND_ASYNC);
 	}
@@ -3615,6 +3660,7 @@ static void beep(void)
 		}
 	}
 	#endif
+*/
 }
 
 static int error_idle(void *arg)
@@ -5184,6 +5230,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				}
 			}				
 		}
+		else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+		{ // Audio message TODO need message length
+			char trash[64];
+			snprintf(trash,sizeof(trash),"%s",text_audio_message);
+			msg = gtk_label_new(trash);
+		}
 		else
 		{
 			char trash[64];
@@ -5312,6 +5364,18 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		gtk_grid_attach (GTK_GRID(grid),msg,1,0,1,1);
 	//	gtk_box_append(GTK_BOX(inner_message_box),file_icon);
 	//	gtk_box_append(GTK_BOX(inner_message_box),text_area);
+	}
+	else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+	{
+		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
+		gtk_widget_set_size_request(file_icon, size_file_icon/2, size_file_icon/2);
+
+		GtkGesture *gesture = gtk_gesture_click_new();
+		g_signal_connect_swapped(gesture, "pressed", G_CALLBACK(playback_message),iitovp(n,i)); // do not free
+		gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(gesture));
+
+		gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
+		gtk_grid_attach (GTK_GRID(grid),msg,1,0,1,1);
 	}
 	else
 		gtk_grid_attach (GTK_GRID(grid),msg,0,0,1,1);
@@ -5494,6 +5558,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				ui_notify(peernick,text_accepted_file);
 			else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 				ui_notify(peernick,text_group_offer);
+			else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+				ui_notify(peernick,text_audio_message);
 			else if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
 				ui_notify(peernick,text_sticker);
 			else
@@ -6826,6 +6892,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",message);
 					else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",text_group_offer);
+					else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",text_audio_message);
 					else if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",text_sticker);
 					else
@@ -7308,6 +7376,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
 
 	initial();
+	gst_init(NULL, NULL);
 
 //	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
@@ -7315,6 +7384,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,ENUM_STREAM_NON_DISCARDABLE); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 2 * 4, crypto_sign_BYTES, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, "AAC Audio Message Private", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, 0);
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
@@ -7336,13 +7408,13 @@ static void ui_activate(GtkApplication *application,void *arg)
 		const void *data = g_bytes_get_data(bytes,&size);
 		write_bytes(FILENAME_ICON,data,size);
 	}
-	if(!get_file_size(FILENAME_BEEP))
+/*	if(!get_file_size(FILENAME_BEEP))
 	{
 		GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 		size_t size = 0;
 		const void *data = g_bytes_get_data(bytes,&size);
 		write_bytes(FILENAME_BEEP,data,size);
-	}
+	}*/
 
 	/* Load all headerbar resources and resources required by Auth Screen */
 	texture_logo = gdk_texture_new_from_resource("/org/torx/gtk4/other/scalable/apps/logo-torx-symbolic.svg");

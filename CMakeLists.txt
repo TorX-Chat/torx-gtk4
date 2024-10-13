@@ -74,7 +74,7 @@ execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.greso
 
 find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
 #find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
-pkg_check_modules(GTK4 REQUIRED gtk4)
+pkg_check_modules(GTK4 REQUIRED gtk4 gstreamer-1.0 gstreamer-app-1.0)
 
 add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
 target_include_directories(gif_animation PRIVATE ${GTK4_INCLUDE_DIRS})
@@ -82,8 +82,8 @@ target_link_libraries(gif_animation ${GTK4_LIBRARIES}) # necessary on Windows, u
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
-target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
-target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER})
+target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
+target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_CFLAGS_OTHER})
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
 
 if(WIN32)
@@ -93,6 +93,7 @@ target_link_libraries(
 		Ws2_32
 		gif_animation
 		${GTK4_LIBRARIES}
+		${GSTREAMER_LIBRARY_DIRS}
 		sodium
 	#	event
 		event_core
@@ -105,6 +106,7 @@ target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		gif_animation
 		${GTK4_LIBRARIES}
+		${GSTREAMER_LIBRARY_DIRS}
 		sodium
 	#	event
 		event_core
