@@ -68,7 +68,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.15 2024/10/14 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.16 2024/10/27 by SymbioticFemale\n© Copyright 2024 SymbioticFemale.\nAttribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -103,6 +103,7 @@ static char starting_dir[PATH_MAX/2] = {0};
 static char *argv_0 = NULL;
 static char *binary_path = NULL; // current binary's full path
 static uint8_t running = 0;
+static uint8_t show_keyboard = 1;
 static int global_n = -1; // Always CTRL or GROUP_CTRL. Currently open chat window. Avoid using where possible. (except notifications perhaps)
 static int treeview_n = -1;
 static int global_theme = -1;
@@ -164,6 +165,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		guint pos;
 		uint8_t visible;
+		uint8_t unheard;
 		#if GTK_FACTORY_BUG
 		GtkWidget *message_box;
 		#endif
@@ -374,6 +376,7 @@ enum buttons { // for ui_button_generate
 	ENUM_BUTTON_KILL,
 	ENUM_BUTTON_DELETE_CTRL,
 	ENUM_BUTTON_DELETE_LOG,
+	ENUM_BUTTON_KEYBOARD_MICROPHONE,
 	ENUM_BUTTON_EMOJI,
 	ENUM_BUTTON_STICKER,
 	ENUM_BUTTON_ATTACH,
@@ -428,6 +431,7 @@ void message_new_cb_ui(const int n,const int i);
 void message_modified_cb_ui(const int n,const int i);
 void message_deleted_cb_ui(const int n,const int i);
 void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len);
+void message_extra_cb_ui(const int n,const int i,unsigned char *data,const uint32_t data_len);
 void login_cb_ui(const int value);
 
 /* Global Text Declarations for ui_initialize_language() */
@@ -503,6 +507,7 @@ static const char *text_delete = {0};
 static const char *text_delete_log = {0};
 static const char *text_button_send = {0};
 static const char *text_done = {0};
+static const char *text_hold_to_talk = {0};
 static const char *text_cancel_editing = {0};
 static const char *text_private_messaging = {0};
 static const char *text_rename = {0};
@@ -617,7 +622,7 @@ static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unu
 static void ui_print_message(const int n,const int i,const int scroll);
 int print_message_idle(void *arg);
 
-static GtkApplication	*gtk_application_gtk4;
+static GtkApplication *gtk_application_gtk4;
 
 static GdkTexture *texture_logo;
 static GdkTexture *texture_headerbar_button1;
@@ -627,6 +632,7 @@ static GdkTexture *texture_headerbar_button_leave1;
 static GdkTexture *texture_headerbar_button_leave2;
 static GdkTexture *texture_headerbar_button_leave3;
 static GdkTexture *fail_ico;
+static GdkTexture *unheard_ico;
 static GdkTexture *add_active;
 static GdkTexture *add_inactive;
 static GdkTexture *add_inactive_light;
@@ -674,6 +680,10 @@ static GdkTexture *kill_inactive_light;
 static GdkTexture *delete_active;
 static GdkTexture *delete_inactive;
 static GdkTexture *delete_inactive_light;
+static GdkTexture *keyboard_dark;
+static GdkTexture *keyboard_light;
+static GdkTexture *microphone_dark;
+static GdkTexture *microphone_light;
 static GdkTexture *emoji_dark;
 static GdkTexture *emoji_light;
 //static GdkTexture *send_inactive;
@@ -826,6 +836,7 @@ static int initialize_i_idle(void *arg)
 	torx_free((void*)&int_int);
 	t_peer[n].t_message[i].pos = 0;
 	t_peer[n].t_message[i].visible = 0;
+	t_peer[n].t_message[i].unheard = 1;
 	#if GTK_FACTORY_BUG
 	t_peer[n].t_message[i].message_box = NULL;
 	#endif
@@ -2680,6 +2691,7 @@ static void ui_decorate_panel_left(const int n)
  // TODO lots of this is redundant. better to just gtk_image_set_ rather than remove and rebuild everything (these things are already built in show_main_screen() TODO
 	if(t_main.window != window_peer) // *** coundition could be || (n > -1), if we have more peer specific windows than 4 or other reasons as necessary
 		global_n = -1; // this is critical
+	show_keyboard = 1; // this is critical
 	ui_determine_orientation(); // check for changes since last click-about
 	ui_decorate_panel_left_top();
 
@@ -2972,6 +2984,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_delete_log = "Clear Log";
 		text_button_send = "Send";
 		text_done = "Done";
+		text_hold_to_talk = "Hold to Talk";
 		text_cancel_editing = "Cancel editing";
 		text_private_messaging = "Private Messaging";
 		text_rename = "Rename";	
@@ -3633,6 +3646,13 @@ static void playback_message(void* arg)
 	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
 	playback_async((unsigned char *)message,len);
 	torx_free((void*)&message);
+	if(t_peer[n].t_message[i].unheard && getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat)) == ENUM_MESSAGE_RECV)
+	{
+		t_peer[n].t_message[i].unheard = 0;
+		message_extra(n,i,&t_peer[n].t_message[i].unheard,sizeof(t_peer[n].t_message[i].unheard));
+printf("Checkpoint saving: n=%d i=%d unheard=%u\n",n,i,t_peer[n].t_message[i].unheard);
+		ui_print_message(n,i,2);
+	}
 }
 
 static void beep(void)
@@ -4867,7 +4887,7 @@ static void ui_activity_cancel(const gpointer data)
 	{ // Editing was active (of message or a GROUP_PEER peernick)
 		t_peer[global_n].edit_n = -1;
 		t_peer[global_n].edit_i = INT_MIN;
-		gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send); // redundant, doing later in all cases
+		gtk_label_set_label(GTK_LABEL(t_main.button_send),text_button_send); // redundant, doing later in all cases
 		if(t_peer[global_n].pm_n > -1)
 		{ // PM was active before edit, restore it
 			uint32_t len;
@@ -4895,7 +4915,7 @@ static void ui_activity_rename(const gpointer data)
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),NULL);
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_done);
+	gtk_label_set_label(GTK_LABEL(t_main.button_send),text_done);
 	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
 	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
@@ -4911,7 +4931,7 @@ static void ui_establish_pm(const int n,void *popover)
 {
 	if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > INT_MIN)
 	{
-		gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send); // cancel any ongoing edits first, without cleaning buffer
+		gtk_label_set_label(GTK_LABEL(t_main.button_send),text_button_send); // cancel any ongoing edits first, without cleaning buffer
 		t_peer[global_n].edit_n = -1;
 		t_peer[global_n].edit_i = INT_MIN;
 	}
@@ -4951,7 +4971,7 @@ static void ui_activity_edit(const gpointer data)
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),NULL);
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_done);
+	gtk_label_set_label(GTK_LABEL(t_main.button_send),text_done);
 	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
@@ -5376,6 +5396,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 
 		gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
 		gtk_grid_attach (GTK_GRID(grid),msg,1,0,1,1);
+		if(stat == ENUM_MESSAGE_RECV && t_peer[n].t_message[i].unheard) // TODO unheard
+			gtk_grid_attach (GTK_GRID(grid),gtk_image_new_from_paintable(GDK_PAINTABLE(unheard_ico)),2,0,1,1);
 	}
 	else
 		gtk_grid_attach (GTK_GRID(grid),msg,0,0,1,1);
@@ -5888,6 +5910,36 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,stream_idle,stream_data,NULL);
 }
 
+static int message_extra_idle(void *arg)
+{
+	struct stream_data *stream_data = (struct stream_data*) arg; // Casting passed struct
+	const int n = stream_data->n;
+	const int i = stream_data->p_iter;
+	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
+	pthread_rwlock_rdlock(&mutex_protocols);
+	const uint16_t protocol = protocols[p_iter].protocol;
+	pthread_rwlock_unlock(&mutex_protocols);
+	unsigned char *data = (unsigned char *)stream_data->data;
+	const uint32_t data_len = stream_data->data_len;
+	if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+		t_peer[n].t_message[i].unheard = *((uint8_t *)data);
+	else
+		error_printf(0,"message_extra_cb received %u unknown bytes on protocol %u",data_len,protocol);
+	torx_free((void*)&data);
+	torx_free((void*)&arg);
+	return 0;
+}
+
+void message_extra_cb_ui(const int n,const int i,unsigned char *data,const uint32_t data_len)
+{ // XXX WARNING: Not _idle function, DO NOT do UI things here // torx_secure_free required XXX
+	struct stream_data *stream_data = torx_insecure_malloc(sizeof(struct stream_data));
+	stream_data->n = n;
+	stream_data->p_iter = i;
+	stream_data->data = (char *)data;
+	stream_data->data_len = data_len;
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,message_extra_idle,stream_data,NULL);
+}
+
 static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data)
 { // Press key on message entry /* can pass NULL as arg */
 	(void) user_data;
@@ -5895,7 +5947,9 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 	(void) keycode;
 	(void) state;
 //	fprintf(stderr,"%d ",keyval); // TODO with the results of this, we can do ctrl+enter for send,etc (edit: nope, not viable. ctrl+k is same if held or not)
-	if(!keyval || ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))) // 0 == pressed enter
+	if(!show_keyboard)
+		error_simple(0,"Keypress occured while keyboard was hidden. Coding error. Report this to UI devs.");
+	else if(!keyval || ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))) // 0 == pressed enter
 	{
 		GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 		GtkTextIter start, end;
@@ -6259,6 +6313,33 @@ static void ui_choose_vertical(GtkWidget *button,const gpointer data)
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_block));
 }
 
+static void ui_toggle_keyboard(GtkWidget *button,const gpointer arg)
+{ // XXX normally we make popovers global but for emoji chooser it seems unnecessary because all children are local
+	(void)arg;
+	if(show_keyboard)
+	{
+		show_keyboard = 0;
+		gtk_widget_set_hexpand(t_main.button_send, TRUE);
+		gtk_widget_set_visible(t_main.write_message,FALSE);
+		if(global_theme == DARK_THEME)
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_dark)));
+		else
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_light)));
+		gtk_label_set_label(GTK_LABEL(t_main.button_send),text_hold_to_talk);
+	}
+	else
+	{
+		show_keyboard = 1;
+		gtk_widget_set_hexpand(t_main.button_send, TRUE);
+		gtk_widget_set_visible(t_main.write_message,TRUE);
+		if(global_theme == DARK_THEME)
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+		else
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+		gtk_label_set_label(GTK_LABEL(t_main.button_send),text_button_send);
+	}
+}
+
 GtkWidget *ui_button_generate(const int type,const int n)
 {
 	GtkWidget *button = gtk_button_new();
@@ -6353,6 +6434,25 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_vertical),itovp(n));
 	}
+	else if(type == ENUM_BUTTON_KEYBOARD_MICROPHONE)
+	{
+		if(show_keyboard)
+		{
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+		}
+		else
+		{
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_light)));
+		}
+		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
+		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_keyboard),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	}
 	else if(type == ENUM_BUTTON_EMOJI)
 	{
 		if(global_theme == DARK_THEME)
@@ -6440,6 +6540,56 @@ static inline void on_file_drop(GtkDropTarget *drop_target, const GValue *value,
 	char *file_path = g_file_get_path(file); // free'd
 	file_send(n,file_path);
 	g_free(file_path); file_path = NULL;
+}
+struct rec_info *current_recording = NULL;
+static void ui_send_pressed(GtkGestureClick *gesture, int n_press, double x, double y, gpointer *arg)
+{
+	(void)gesture;
+	(void)n_press;
+	(void)x;
+	(void)y;
+	(void)arg;
+	if(!show_keyboard)
+		current_recording = record_start(16000);
+}
+
+static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, double y, GtkWidget *button)
+{
+	(void)gesture;
+	(void)n_press;
+	if(show_keyboard)
+		ui_keypress(NULL, 0, 0, 0, NULL);
+	else if(button && global_n > -1 && current_recording)
+	{
+		if(gtk_widget_contains(button,x,y))
+		{ // TODO check minimum length also (1 second?)
+			size_t data_len;
+			unsigned char *data = record_stop(&data_len,current_recording);
+			const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
+			if (t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > INT_MIN)
+				error_simple(0,"Currently no support for modifying an audio message to another audio message. Replace it with text instead, or modify message_edit() to facilitate.");
+			else if (t_peer[global_n].edit_n > -1)
+				error_simple(0, "Cannot modify peernick to an audio message.");
+			else if (t_peer[global_n].pm_n > -1)
+				message_send(t_peer[global_n].pm_n, ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, data, (uint32_t)data_len);
+			else if (owner == ENUM_OWNER_GROUP_CTRL)
+			{
+				const int g = set_g(global_n, NULL);
+				const uint8_t g_invite_required = getter_group_uint8(g, offsetof(struct group_list, invite_required));
+				if (owner == ENUM_OWNER_GROUP_CTRL && g_invite_required != 0) // date && sign private group messages
+					message_send(global_n, ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, data, (uint32_t)data_len);
+				else
+					message_send(global_n, ENUM_PROTOCOL_AAC_AUDIO_MSG, data, (uint32_t)data_len);
+			}
+			else
+				message_send(global_n, ENUM_PROTOCOL_AAC_AUDIO_MSG, data, (uint32_t)data_len);
+		}
+		else
+		{
+			unsigned char *data = record_stop(NULL,current_recording);
+			torx_free((void*)&data);
+		}
+	}
 }
 
 static void ui_select_changed(const void *arg)
@@ -6567,19 +6717,23 @@ static void ui_select_changed(const void *arg)
 	gtk_box_append(GTK_BOX(write_box), write_message_scroll);
 
 	/* Send Button */ // TODO have a hover gesture too, 	g_signal_connect_after(ev_enter, "enter", G_CALLBACK(enter_mouse), box_arr); 
-	t_main.button_send = gtk_button_new();
+	t_main.button_send = gtk_label_new(text_button_send);
 //	if(global_theme == DARK_THEME)
 //		gtk_button_set_child(GTK_BUTTON(t_main.button_send),gtk_image_new_from_paintable(GDK_PAINTABLE(send_inactive)));
 //	else // TODO use "Enter Password" as a model instead of an image
 //		gtk_button_set_child(GTK_BUTTON(t_main.button_send),gtk_image_new_from_paintable(GDK_PAINTABLE(send_inactive)));
 	gtk_widget_set_size_request(t_main.button_send, size_icon_send_width, size_icon_bottom_right);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_button_send);
+//	gtk_button_set_label(GTK_BUTTON(t_main.button_send),);
 	gtk_widget_add_css_class(t_main.button_send,"auth_button");
 //	gtk_style_context_add_class(gtk_widget_get_style_context(t_main.button_send),"auth_button");	// XXX this is for the :hover functionality. Important.
 //	gtk_style_context_add_provider(gtk_widget_get_style_context(t_main.button_send), GTK_STYLE_PROVIDER(t_main.provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
-	g_signal_connect(t_main.button_send, "clicked", G_CALLBACK(ui_keypress),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	GtkGesture *press = gtk_gesture_click_new(); // NOTE: "cancelled" == single click, "pressed" == long press
+	g_signal_connect(press, "pressed", G_CALLBACK(ui_send_pressed),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	g_signal_connect(press, "released", G_CALLBACK(ui_send_released),t_main.button_send); // DO NOT FREE arg because this only gets passed ONCE.
+	gtk_widget_add_controller(t_main.button_send, GTK_EVENT_CONTROLLER(press));
 	gtk_box_append(GTK_BOX(write_box), t_main.button_send);
 
+	gtk_box_append(GTK_BOX(write_box), ui_button_generate(ENUM_BUTTON_KEYBOARD_MICROPHONE,n));
 	gtk_box_append(GTK_BOX(write_box), ui_button_generate(ENUM_BUTTON_EMOJI,n));
 	gtk_box_append(GTK_BOX(write_box), ui_button_generate(ENUM_BUTTON_STICKER,n));
 	gtk_box_append(GTK_BOX(write_box), ui_button_generate(ENUM_BUTTON_ATTACH,n));
@@ -6608,8 +6762,8 @@ static void ui_select_changed(const void *arg)
 		}
 		else if(t_peer[n].edit_n > -1)
 		{
-			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
-			gtk_button_set_label(GTK_BUTTON(t_main.button_send),text_done);
+			gtk_label_set_label(GTK_LABEL(t_main.button_activity),text_cancel_editing);
+			gtk_label_set_label(GTK_LABEL(t_main.button_send),text_done);
 		}
 		g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),NULL);
 		gtk_widget_set_visible(t_main.button_activity,TRUE);
@@ -7372,6 +7526,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	peer_loaded_setter(peer_loaded_cb_ui);
 	cleanup_setter(cleanup_cb_ui);
 	stream_setter(stream_cb_ui);
+	message_extra_setter(message_extra_cb_ui);
 
 	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
 
@@ -7448,6 +7603,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	gtk_style_context_add_provider_for_display(gdk_display_get_default(),GTK_STYLE_PROVIDER(t_main.provider),GTK_STYLE_PROVIDER_PRIORITY_USER);
 
 	/* Load All Globally defined icon and Image files that will be required for main window */
+	unheard_ico = gdk_texture_new_from_resource("/org/torx/gtk4/other/unheard.png");
 	fail_ico = gdk_texture_new_from_resource("/org/torx/gtk4/other/fail.png");
 	add_active = gdk_texture_new_from_resource("/org/torx/gtk4/other/add_active.png");
 	add_inactive = gdk_texture_new_from_resource("/org/torx/gtk4/other/add.png");
@@ -7496,6 +7652,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	delete_active = gdk_texture_new_from_resource("/org/torx/gtk4/other/delete_active.png");
 	delete_inactive = gdk_texture_new_from_resource("/org/torx/gtk4/other/delete.png");
 	delete_inactive_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/delete_light.png");
+	keyboard_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_dark.png");
+	keyboard_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_light.png");
+	microphone_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_dark.png");
+	microphone_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_light.png");
 	emoji_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_light.png");
 	emoji_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/sticker_dark.png");
 //	send_inactive = gdk_texture_new_from_resource("/org/torx/gtk4/other/send_inactive.png");
