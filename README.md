@@ -43,7 +43,7 @@ See Linux instructions, then modify as appropriate. CMakeLists.txt may need modi
 <br><a href="https://www.msys2.org/">Install MSYS2</a> then open a terminal by clicking "MSYS2 MINGW64"
 ```
 pacman -Syu && exit
-pacman -S git mingw-w64-x86_64-gcc mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsodium mingw-w64-x86_64-libevent mingw-w64-x86_64-sqlcipher mingw-w64-x86_64-cmake mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtk4 base-devel
+pacman -S git mingw-w64-x86_64-gcc mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsodium mingw-w64-x86_64-libevent mingw-w64-x86_64-sqlcipher mingw-w64-x86_64-cmake mingw-w64-x86_64-toolchain mingw-w64-x86_64-gtk3 mingw-w64-x86_64-gtk4 base-devel mingw-w64-x86_64-gstreamer mingw-w64-x86_64-gst-plugins-base
 git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4
 cmake -G "Unix Makefiles" -D TORX_TAG=main -B build/ && cd build && make clean && make
 GSK_RENDERER=cairo build/torx-gtk4.exe
