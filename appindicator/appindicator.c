@@ -291,7 +291,8 @@ static void status_icon_activate(GtkStatusIcon *tray_icon, void *arg)
 	#else
 	if(fork() == 0)
 	{
-		execl(data->path,basename(data->path),NULL); // note: different memory space, safe to call basename without copying here
+		if(execl(data->path,basename(data->path),NULL)) // note: different memory space, safe to call basename without copying here
+			fprintf(stderr,"Failed to activate parent program. Possibly a bad path: %s\n",data->path);
 		exit(EXIT_SUCCESS);
 	}
 	#endif

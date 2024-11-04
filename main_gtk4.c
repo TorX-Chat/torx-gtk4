@@ -7553,9 +7553,21 @@ static inline char *path_generator(const char *directory,const char *partial_or_
 		snprintf(tmp,sizeof(tmp),"%s%c%s",directory,platform_slash,partial_or_full_path);
 	else // should be complete?
 		snprintf(tmp,sizeof(tmp),"%s",partial_or_full_path);
-	const size_t final_len = strlen(tmp);
+	char *p;
+	if(!get_file_size(tmp))
+	{ // XXX NOTE: We are prioritizing our own relative path over which. We only fall-back to which.
+		p = which(basename(tmp)); // fine to call basename here, despite possibility for modification
+		if(!p || !get_file_size(p))
+		{
+			error_simple(0,"Path generator ultimately failed to generate a valid path. Minimize to tray unavailable. Coding error. Report this to UI Devs.");
+			return NULL;
+		}
+	}
+	else
+		p = tmp;
+	const size_t final_len = strlen(p);
 	char *final = torx_insecure_malloc(final_len+1);
-	memcpy(final,tmp,final_len+1);
+	memcpy(final,p,final_len+1);
 	return final;
 }
 
@@ -7786,93 +7798,96 @@ static void ui_activate(GtkApplication *application,void *arg)
 		gtk_button_set_label(GTK_BUTTON(t_main.auth_button),text_wait);
 
 	#ifdef ENABLE_APPINDICATOR
-	const uint16_t icon_port = randport(0);
-	char port_array[6];
-	snprintf(port_array,sizeof(port_array),"%u",icon_port);
-/*
-// The following CANNOT be used because run_binary hangs due to limitations.
-// If we want to use the following, we have to read tray_fd_stdout for FAILURE_STRING, but that could be subject to race conditions
-	char appindicator_path[PATH_MAX];
-	char small_p[3];
-	char large_p[3];
-	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
-	snprintf(small_p,sizeof(small_p),"-p");
-	snprintf(large_p,sizeof(large_p),"-P");
-	char* const args_cmd[] = {appindicator_path,small_p,port_array,large_p,binary_path,NULL};
-	#ifdef WIN32
-	run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
-	#else
-	run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
-	#endif
-	if(tray_pid < 0)
+	if(binary_path)
 	{
-		char binary_path_copy[PATH_MAX];
-		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
-		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-		snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
+		const uint16_t icon_port = randport(0);
+		char port_array[6];
+		snprintf(port_array,sizeof(port_array),"%u",icon_port);
+	/*
+	// The following CANNOT be used because run_binary hangs due to limitations.
+	// If we want to use the following, we have to read tray_fd_stdout for FAILURE_STRING, but that could be subject to race conditions
+		char appindicator_path[PATH_MAX];
+		char small_p[3];
+		char large_p[3];
+		snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
+		snprintf(small_p,sizeof(small_p),"-p");
+		snprintf(large_p,sizeof(large_p),"-P");
+		char* const args_cmd[] = {appindicator_path,small_p,port_array,large_p,binary_path,NULL};
 		#ifdef WIN32
 		run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
 		#else
 		run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
 		#endif
-		if(tray_pid < 0 && )
-		{ // try for GDB
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
+		if(tray_pid < 0)
+		{
+			char binary_path_copy[PATH_MAX];
+			snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
+			char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
 			#ifdef WIN32
 			run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
 			#else
 			run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
 			#endif
 			if(tray_pid < 0 && )
-				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+			{ // try for GDB
+				snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
+				#ifdef WIN32
+				run_binary(&tray_pid,NULL,tray_fd_stdout,args_cmd,NULL);
+				#else
+				run_binary(&tray_pid,NULL,&tray_fd_stdout,args_cmd,NULL);
+				#endif
+				if(tray_pid < 0 && )
+					error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+			}
 		}
-	}
- */
-	char appindicator_path[PATH_MAX];
-	#ifdef WIN32
-	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray.exe -p %s -P %s",port_array,binary_path);
-	STARTUPINFO siStartInfo;
-	ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
-	siStartInfo.cb = sizeof(STARTUPINFO);
-	PROCESS_INFORMATION process_info;
-	if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
-	{ // after checking PATH, assuming this isn't running in GDB
-		char binary_path_copy[PATH_MAX];
-		snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
-		char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-		snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe -p %s -P %s",starting_dir,current_binary_directory,port_array,binary_path);
+	 */
+		char appindicator_path[PATH_MAX];
+		#ifdef WIN32
+		snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray.exe -p %s -P %s",port_array,binary_path);
+		STARTUPINFO siStartInfo;
+		ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
+		siStartInfo.cb = sizeof(STARTUPINFO);
+		PROCESS_INFORMATION process_info;
 		if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
-		{ // try for GDB
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
-			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
-				error_printf(0,"Failed to start appindicator on port %s\n",port_array);
-		}
-	}
-	#else
-	snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
-	if((tray_pid = fork()) == -1)
-		error_simple(-1,"fork");
-	if(tray_pid == 0)
-	{ // Check in path before attempting to check from directory we run from
-		if(execlp("torx-tray","torx-tray","-p",port_array,"-P",binary_path,NULL))
 		{ // after checking PATH, assuming this isn't running in GDB
 			char binary_path_copy[PATH_MAX];
 			snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
 			char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
-			snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
-			if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+			snprintf(appindicator_path,sizeof(appindicator_path),"%s\\%s\\torx-tray.exe -p %s -P %s",starting_dir,current_binary_directory,port_array,binary_path);
+			if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 			{ // try for GDB
-				snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
-				if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+				snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
+				if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
 					error_printf(0,"Failed to start appindicator on port %s\n",port_array);
 			}
 		}
-		exit(0);
+		#else
+		snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
+		if((tray_pid = fork()) == -1)
+			error_simple(-1,"fork");
+		if(tray_pid == 0)
+		{ // Check in path before attempting to check from directory we run from
+			if(execlp("torx-tray","torx-tray","-p",port_array,"-P",binary_path,NULL))
+			{ // after checking PATH, assuming this isn't running in GDB
+				char binary_path_copy[PATH_MAX];
+				snprintf(binary_path_copy,sizeof(binary_path_copy),"%s",binary_path);
+				char *current_binary_directory = dirname(binary_path_copy); // NECESSARY TO COPY
+				snprintf(appindicator_path,sizeof(appindicator_path),"%s%c%s%ctorx-tray",starting_dir,platform_slash,current_binary_directory,platform_slash);
+				if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+				{ // try for GDB
+					snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
+					if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
+						error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+				}
+			}
+			exit(0);
+		}
+		#endif
+		if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
+			error_simple(0,"Failed to create thread");
+		#endif
 	}
-	#endif
-	if(pthread_create(&thread_icon_communicator,&ATTR_DETACHED,&icon_communicator,itovp(icon_port)))
-		error_simple(0,"Failed to create thread");
-	#endif
 }
 
 static gboolean option_handler(const gchar* option_name,const gchar* value,gpointer data,GError** error)
