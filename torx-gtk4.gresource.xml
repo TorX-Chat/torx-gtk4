@@ -1,72 +1,100 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
 	<gresource prefix="/org/torx/gtk4">
+	<!--
+	Green	:	27ff00
+	Red	:	ff0000
+	Yellow	:	f5ff00
+	Orange	:	ffa500
+	Grey	:	919191
+
+	_light	:	474747
+	_dark	:	d2d2d2
+	_active	:	ecb365
+
+	 -->
+		<file>other/add_200dp_474747.svg</file>
+		<file>other/add_200dp_D2D2D2.svg</file>
+		<file>other/add_200dp_ECB365.svg</file>
+		<file>other/article_200dp_474747.svg</file>
+		<file>other/article_200dp_D2D2D2.svg</file>
+		<file>other/article_200dp_ECB365.svg</file>
+		<file>other/attach_file_200dp_474747.svg</file>
+		<file>other/attach_file_200dp_D2D2D2.svg</file>
+		<file>other/block_200dp_474747.svg</file>
+		<file>other/block_200dp_D2D2D2.svg</file>
+		<file>other/block_200dp_FF0000.svg</file>
+		<file>other/cancel_200dp_FF0000.svg</file>
+		<file>other/circle_200dp_27FF00.svg</file>
+		<file>other/circle_200dp_919191.svg</file>
+		<file>other/circle_200dp_F5FF00.svg</file>
+		<file>other/circle_200dp_FF0000.svg</file>
+		<file>other/circle_200dp_FFA500.svg</file>
+		<file>other/clear_200dp_474747.svg</file>
+		<file>other/clear_200dp_D2D2D2.svg</file>
+		<file>other/clear_all_200dp_474747.svg</file>
+		<file>other/clear_all_200dp_D2D2D2.svg</file>
+		<file>other/delete_forever_200dp_474747.svg</file>
+		<file>other/delete_forever_200dp_D2D2D2.svg</file>
+		<file>other/delete_forever_200dp_ECB365.svg</file>
+		<file>other/emoji_emotions_200dp_474747.svg</file>
+		<file>other/emoji_emotions_200dp_D2D2D2.svg</file>
+		<file>other/gif_box_200dp_474747.svg</file>
+		<file>other/gif_box_200dp_D2D2D2.svg</file>
+		<file>other/home_200dp_474747.svg</file>
+		<file>other/home_200dp_D2D2D2.svg</file>
+		<file>other/home_200dp_ECB365.svg</file>
+		<file>other/keyboard_200dp_474747.svg</file>
+		<file>other/keyboard_200dp_D2D2D2.svg</file>
+		<file>other/language_200dp_474747.svg</file>
+		<file>other/language_200dp_D2D2D2.svg</file>
+		<file>other/language_200dp_ECB365.svg</file>
+		<file>other/local_fire_department_200dp_474747.svg</file>
+		<file>other/local_fire_department_200dp_D2D2D2.svg</file>
+		<file>other/local_fire_department_200dp_ECB365.svg</file>
+		<file>other/lock_200dp_27FF00.svg</file>
+		<file>other/lock_200dp_919191.svg</file>
+		<file>other/lock_200dp_F5FF00.svg</file>
+		<file>other/lock_200dp_FF0000.svg</file>
+		<file>other/lock_200dp_FFA500.svg</file>
+		<file>other/lock_open_200dp_27FF00.svg</file>
+		<file>other/lock_open_200dp_919191.svg</file>
+		<file>other/lock_open_200dp_F5FF00.svg</file>
+		<file>other/lock_open_200dp_FF0000.svg</file>
+		<file>other/lock_open_200dp_FFA500.svg</file>
+		<file>other/mic_200dp_474747.svg</file>
+		<file>other/mic_200dp_D2D2D2.svg</file>
+		<file>other/more_vert_200dp_474747.svg</file>
+		<file>other/more_vert_200dp_D2D2D2.svg</file>
+		<file>other/notifications_active_200dp_ECB365.svg</file>
+		<file>other/notifications_off_200dp_474747.svg</file>
+		<file>other/notifications_off_200dp_D2D2D2.svg</file>
+		<file>other/search_200dp_474747.svg</file>
+		<file>other/search_200dp_D2D2D2.svg</file>
+		<file>other/send_200dp_474747.svg</file>
+		<file>other/send_200dp_D2D2D2.svg</file>
+		<file>other/settings_200dp_474747.svg</file>
+		<file>other/settings_200dp_D2D2D2.svg</file>
+		<file>other/settings_200dp_ECB365.svg</file>
+
 		<file compressed="true">theme/dark_chat.css</file>
 		<file compressed="true">theme/light_chat.css</file>
 		<file compressed="true">other/scalable/apps/logo-torx-symbolic.svg</file>
 		<file>other/beep.wav</file>
-		<file>other/256x256/apps/icon_round.png</file>
+	 	<file>other/256x256/apps/icon_round.png</file>
 		<file>other/256x256/apps/icon_square.png</file>
-		<file>other/unheard.png</file>
-		<file>other/fail.png</file>
-		<file>other/red.png</file>
-		<file>other/yellow.png</file>
-		<file>other/orange.png</file>
-		<file>other/green.png</file>
-		<file>other/grey.png</file>
-		<file>other/unlock_green.png</file>
-		<file>other/unlock_red.png</file>
-		<file>other/unlock_grey.png</file>
-		<file>other/unlock_yellow.png</file>
-		<file>other/unlock_orange.png</file>
-		<file>other/lock_green.png</file>
-		<file>other/lock_red.png</file>
-		<file>other/lock_grey.png</file>
-		<file>other/lock_yellow.png</file>
-		<file>other/lock_orange.png</file>
-		<file>other/logging_active.png</file>
-		<file>other/logging.png</file>
-		<file>other/logging_light.png</file>
-		<file>other/globe_active.png</file>
-		<file>other/globe.png</file>
-		<file>other/globe_light.png</file>
-		<file>other/bell_active.png</file>
-		<file>other/bell.png</file>
-		<file>other/bell_light.png</file>
-		<file>other/block_active.png</file>
-		<file>other/block.png</file>
-		<file>other/block_light.png</file>
-		<file>other/kill_active.png</file>
-		<file>other/kill.png</file>
-		<file>other/kill_light.png</file>
-		<file>other/delete_active.png</file>
-		<file>other/delete.png</file>
-		<file>other/delete_light.png</file>
-		<file>other/add_active.png</file>
-		<file>other/add.png</file>
-		<file>other/add_light.png</file>
-		<file>other/home_active.png</file>
-		<file>other/home.png</file>
-		<file>other/home_light.png</file>
-		<file>other/setting_active.png</file>
-		<file>other/settings.png</file>
-		<file>other/setting_light.png</file>
+
 		<file>other/file.png</file>
 		<file>other/txt.png</file>
-		<file>other/music.png</file>
 		<file>other/image.png</file>
+		<file>other/music.png</file>
 		<file>other/zip.png</file>
-		<file>other/sticker_dark.png</file>
-		<file>other/sticker_light.png</file>
-		<file>other/attach_img_dark.png</file>
-		<file>other/attach_img_light.png</file>
+
 		<file>other/close.png</file>
 		<file>other/minimize.png</file>
 		<file>other/maximize.png</file>
 		<file>other/close_hover.png</file>
 		<file>other/minimize_hover.png</file>
 		<file>other/maximize_hover.png</file>
-		<file>other/inactive.png</file>
-		<file>other/search_ico.png</file>
 	</gresource>
 </gresources>

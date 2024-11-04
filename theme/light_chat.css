@@ -1,6 +1,9 @@
 /*
 Alternative to .css file:	gtk_css_provider_load_from_string (new) or gtk_css_provider_load_from_data (old, essentially same with len arg)
 
+https://docs.gtk.org/gtk4/css-overview.html
+https://docs.gtk.org/gtk4/css-properties.html
+
 Summary of Colors used:
 
 rgb(223,225,229);
@@ -19,7 +22,6 @@ rgb(144,0,128);
 
 for errors:
 rgb(200,70,70)
-
 */
 
 .invert-vertical {
@@ -113,6 +115,10 @@ scrolledwindow{
 
 .auth_button:hover{
 	background: rgb(237,168,74);
+}
+
+.button_record:active{
+	background: rgb(222,49,49);
 }
 
 /* Below from Main Window */
