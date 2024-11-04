@@ -88,6 +88,7 @@ static GtkWidget *popover_level_one = NULL; // XXX For working-around GTK bug on
 #define ENABLE_SPINNERS 0 // this should only be enabled if people have a GPU.
 #define LONG_PRESS_TIME 0.5 // 0.5 to 2.0 seconds, default is 1.0.
 #define MINIMUM_AUDIO_MESSAGE_LENGTH_IN_MILLISECONDS 500
+#define REALISTIC_MINIMUM_BINARY_SIZE 15360 // minimum realistic binary size... 10kb (this is smaller than hello-world... this is to prevent confusion between binaries and folders). Warning: SVG files and soft links can be less than this.
 
 #define ICON_COMMUNICATION_ATTEMPTS 3 // currently must be 1+
 #define ENABLE_APPINDICATOR 1 // DO NOT USE TO VERIFY FUNCTIONALITY
@@ -7554,10 +7555,10 @@ static inline char *path_generator(const char *directory,const char *partial_or_
 	else // should be complete?
 		snprintf(tmp,sizeof(tmp),"%s",partial_or_full_path);
 	char *p;
-	if(!get_file_size(tmp))
+	if(get_file_size(tmp) < REALISTIC_MINIMUM_BINARY_SIZE)
 	{ // XXX NOTE: We are prioritizing our own relative path over which. We only fall-back to which.
 		p = which(basename(tmp)); // fine to call basename here, despite possibility for modification
-		if(!p || !get_file_size(p))
+		if(!p || get_file_size(p) < REALISTIC_MINIMUM_BINARY_SIZE)
 		{
 			error_simple(0,"Path generator ultimately failed to generate a valid path. Minimize to tray unavailable. Coding error. Report this to UI Devs.");
 			return NULL;
