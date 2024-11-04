@@ -13,7 +13,7 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 <br>If you want to try on a LiveCD, <a href="https://get.debian.org/images/weekly-live-builds/amd64/iso-hybrid/">here are some Trixie liveCDs</a>
 
 ###### Install build dependencies:
-`sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential`
+`sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`
 
 ###### Install runtime dependencies:
 `sudo apt install tor snowflake-client obfs4proxy`
