@@ -49,8 +49,9 @@ cmake -G "Unix Makefiles" -D TORX_TAG=main -B build/ && cd build && make clean &
 GSK_RENDERER=cairo build/torx-gtk4.exe
 ```
 
-#### Contribution Agreement:
-All ideas, suggestions, issues, pull requests, contributions of any kind, etc, are gifted to the original TorX developer without condition nor consideration, for the purpose of improving the software, for the benefit of all users, current and future.
+#### Voluntary Contribution Licensing Agreement:
+Subject to implicit consent: Ownership of all ideas, suggestions, issues, pull requests, contributions of any kind, etc, are non-exclusively gifted to the original TorX developer without condition nor consideration, for the purpose of improving the software, for the benefit of all users, current and future. Any contributor who chooses not to apply this licensing agreement may make an opt-out statement when making their contribution.
+Note: The purpose of this statement is so that TorX can one day be re-licensed as GPLv2, GPLv4, AGPL, MIT, BSD, CC0, etc, in the future, if necessary. If you opt-out, your contributions will need to be stripped if we one day need to re-license and we're unable to contact you for your explicit consent. You may opt-out, but please don't.
 
 #### Screenshots:
 <a href="https://torx-chat.github.io/images/desktop_auth_screen.png"><img src="https://torx-chat.github.io/images/desktop_auth_screen.png" alt="Screenshot" style="max-height:400px;"></a>
