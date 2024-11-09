@@ -763,6 +763,7 @@ static GdkTexture *attach_dark;
 static GdkTexture *attach_light;
 static GdkTexture *clear_all_dark;
 static GdkTexture *clear_all_light;
+static GdkTexture *clear_all_active;
 static GdkTexture *gif_box_dark;
 static GdkTexture *gif_box_light;
 static GdkTexture *more_vert_dark;
@@ -2413,7 +2414,7 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 static void ui_delete_log(GtkWidget *button,const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
-	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
+	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_active)));
 	delete_log(n);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
@@ -7812,6 +7813,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	delete_inactive_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/delete_forever_200dp_474747.svg");
 	clear_all_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/clear_all_200dp_D2D2D2.svg");
 	clear_all_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/clear_all_200dp_474747.svg");
+	clear_all_active = gdk_texture_new_from_resource("/org/torx/gtk4/other/clear_all_200dp_ECB365.svg");
 	keyboard_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/keyboard_200dp_D2D2D2.svg");
 	keyboard_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/keyboard_200dp_474747.svg");
 	microphone_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/mic_200dp_D2D2D2.svg");
