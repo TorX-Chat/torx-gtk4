@@ -231,7 +231,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	int pointer_location;
 	GtkTextBuffer* buffer_write;
 	struct t_message_list { // XXX DO NOT DELETE XXX
-		guint pos;
+		int pos;
 		uint8_t visible;
 		uint8_t unheard;
 		#if GTK_FACTORY_BUG
@@ -283,7 +283,8 @@ static struct { // XXX Do not sodium_malloc structs unless they contain sensitiv
 
 	GListStore *list_store_chat;
 
-	guint global_pos;
+	int global_pos_max;
+	int global_pos_min;
 	int window;	// see enum windows{}
 //	GdkDisplay *display;
 
@@ -4172,7 +4173,7 @@ static gboolean ui_treeview_toggled(GtkSwitch *self,gboolean state,gpointer data
 }
 
 static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gpointer data)
-{
+{ // This is for Home page list items
 	(void) factory;
 	const int column_number = vptoi(data);
 	IntPair *pair = gtk_list_item_get_item(list_item);
@@ -5549,7 +5550,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 }
 
 static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item, gpointer data)
-{
+{ // This is for message bubbles
 	(void) factory;
 	(void) data;
 	gtk_list_item_set_activatable(list_item,FALSE); // XXX this changes whether hover is visible
@@ -5598,7 +5599,7 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 
 static void ui_print_message(const int n,const int i,const int scroll)
 { // use _idle or _cb unless in main thread // TODO TODO TODO XXX this function is too complex, theorize how to move most of it to library so we don't have to maintain it in UI
-	if(n < 0 || i == INT_MIN)
+	if(n < 0 || i == INT_MIN/* || i > getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i)) || i < getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,min_i))*/)
 	{
 		error_simple(0,"Sanity check failed in ui_print_message. Coding error. Report this.");
 		breakpoint();
@@ -5619,11 +5620,17 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(t_peer[n].t_message[i].visible)
 		{
 			t_peer[n].t_message[i].visible = 0;
-			IntPair *pair = int_pair_new(n,i,-1,-1);
-			if(INVERSION_TEST)
-				g_list_store_splice (t_main.list_store_chat,t_main.global_pos - t_peer[n].t_message[i].pos,1,(void**)&pair,1);
-			else
-				g_list_store_splice (t_main.list_store_chat,t_peer[n].t_message[i].pos,1,(void**)&pair,1);
+			if(n == global_n)
+			{
+				IntPair *pair = int_pair_new(n,i,-1,-1);
+				if(INVERSION_TEST)
+				{
+					const guint total = (guint)(t_main.global_pos_max - t_main.global_pos_min);
+					g_list_store_splice (t_main.list_store_chat,total - (guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+				}
+				else
+					g_list_store_splice (t_main.list_store_chat,(guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+			}
 		}
 		t_peer[n].t_message[i].pos = 0;
 		goto skip_printing;
@@ -5748,15 +5755,15 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		{ // Update but *do not* actually scroll
 		//	ui_message_info(n,i);
 			IntPair *pair = int_pair_new(n,i,f,g);
-			/* guint n_items = g_list_model_get_n_items(G_LIST_MODEL(t_main.list_store_chat));
-			printf("Checkpoint splice: pos=%u + rem=1 <=? n_items=%u\n",t_main.global_pos - t_peer[n].t_message[i].pos,n_items);
-			printf("Checkpoint splice: n=%d i=%d global_pos=%u message pos=%u\n",n,i,t_main.global_pos,t_peer[n].t_message[i].pos); */
+		//	guint n_items = g_list_model_get_n_items(G_LIST_MODEL(t_main.list_store_chat));
 			if(INVERSION_TEST)
-				g_list_store_splice (t_main.list_store_chat,t_main.global_pos - t_peer[n].t_message[i].pos,1,(void**)&pair,1);
+			{
+				const guint total = (guint)(t_main.global_pos_max - t_main.global_pos_min);
+				g_list_store_splice (t_main.list_store_chat,total - (guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+			}
 			else
-				g_list_store_splice (t_main.list_store_chat,t_peer[n].t_message[i].pos,1,(void**)&pair,1);
-			torx_free((void*)&message);
-			return;
+				g_list_store_splice (t_main.list_store_chat,(guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+			goto skip_printing;
 		}
 		t_peer[n].t_message[i].visible = 1; // goes before g_list_store_append
 		if(scroll < 0)
@@ -5764,12 +5771,12 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			if(INVERSION_TEST)
 			{
 				g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
-				t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
+				t_peer[n].t_message[i].pos = t_main.global_pos_min--; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
 			}
 			else
 			{
 				g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
-				t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
+				t_peer[n].t_message[i].pos = --t_main.global_pos_min; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
 			}
 		}
 		else
@@ -5779,15 +5786,15 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			/*	IntPair *pair = int_pair_new(n,i,f,g);
 				g_list_store_splice(t_main.list_store_chat, 0, 0, (void**)&pair,1); */ // This is the same as g_list_store_insert
 				g_list_store_insert(t_main.list_store_chat, 0, int_pair_new(n,i,f,g));
-				t_peer[n].t_message[i].pos = ++t_main.global_pos; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
+				t_peer[n].t_message[i].pos = ++t_main.global_pos_max; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ before
 			}
 			else
 			{
 				g_list_store_append(t_main.list_store_chat, int_pair_new(n,i,f,g));
-				t_peer[n].t_message[i].pos = t_main.global_pos++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
+				t_peer[n].t_message[i].pos = t_main.global_pos_max++; // goes after g_list_store_append and only here // XXX NOTE THE DIFFERENCE, ++ after
 			}
 		}
-		if(scroll == 1 || scroll == 3) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
+		if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
 		{
 			if(INVERSION_TEST)
 				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
@@ -5797,6 +5804,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	}
 	torx_free((void*)&message);
 	skip_printing: {}
+//printf("Checkpoint print n=%d i=%d p_iter=%d scroll=%d pos=%d msg=%s\n",n,i,p_iter,scroll,t_peer[n].t_message[i].pos,peer[n].message[i].message);
 	if(scroll > 0)
 	{ // == 1 or == 2 or == 3
 		const int max_i = getter_int(n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
@@ -6211,7 +6219,7 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 }
 
 static void chat_builder(GtkListItemFactory *factory, GtkListItem *list_item,void (*callback_click)(const void *))
-{
+{ // This is for peer list
 	(void) factory;
 	gtk_list_item_set_activatable(list_item,TRUE); // XXX this changes whether hover is visible
 	IntPair *pair = gtk_list_item_get_item(list_item);
@@ -6815,7 +6823,7 @@ static void ui_select_changed(const void *arg)
 //		g_list_store_remove_all(t_main.list_store_chat);
 //	else
 		t_main.list_store_chat = g_list_store_new(int_pair_get_type());
-	t_main.global_pos = 0;
+	t_main.global_pos_min = t_main.global_pos_max = 0;
 
 	/* Record Button */
 	t_main.button_record = gtk_label_new(text_hold_to_talk);
