@@ -4955,9 +4955,12 @@ static void ui_message_resend(const gpointer data)
 
 static int handle_stuff(const int n,const int i)
 {
-	torx_read(n)
-	const int p_iter = peer[n].message[i].p_iter;
-	torx_unlock(n)
+	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
+	if(p_iter < 0)
+	{
+		error_simple(0,"Negative p_iter in handle_stuff. Probably a deleted message. Possible coding error. Report this.");
+		return -1;
+	}
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols);
@@ -4976,6 +4979,8 @@ static void ui_message_pause(const gpointer data)
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
+	if(nnn < 0)
+		return;
 	const int f = set_f_from_i(n,i);
 	file_accept(nnn,f);
 }
@@ -4984,6 +4989,8 @@ static void ui_message_cancel(const gpointer data)
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
+	if(nnn < 0)
+		return;
 	const int f = set_f_from_i(n,i);
 	file_cancel(nnn,f);
 }
@@ -4997,6 +5004,8 @@ static void ui_open_folder(const gpointer data)
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
 	const int nnn = handle_stuff(n,i);
+	if(nnn < 0)
+		return;
 	const int f = set_f_from_i(n,i);
 	char *file_path = getter_string(NULL,nnn,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(file_path == NULL)
@@ -5279,6 +5288,11 @@ static inline uint8_t is_image_file(const char *filename)
 static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g)
 {
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
+	if(p_iter < 0)
+	{
+		error_simple(0,"ui_message_generator called on p_iter < 0. Coding error. Report this.");
+		return gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
+	}
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint16_t protocol = protocols[p_iter].protocol;
 	const uint8_t group_pm = protocols[p_iter].group_pm;
@@ -5615,7 +5629,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].message_box = NULL;
 	}
 	#endif
-	if(p_iter == -1)
+	if(p_iter < 0)
 	{ // hide or do not print (deleted message)
 		if(t_peer[n].t_message[i].visible)
 		{
@@ -5834,6 +5848,12 @@ int print_message_idle(void *arg)
 		if(stat == ENUM_MESSAGE_RECV)
 		{ // XXX Put as little here as possible before checking the protocol XXX
 			const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
+			if(p_iter < 0)
+			{
+				error_simple(0,"print_message_idle called on p_iter < 0. Coding error. Report this.");
+				torx_free((void*)&printing);
+				return 0;
+			}
 			pthread_rwlock_rdlock(&mutex_protocols);
 			const uint16_t protocol = protocols[p_iter].protocol;
 			pthread_rwlock_unlock(&mutex_protocols);
@@ -6057,16 +6077,21 @@ static int message_extra_idle(void *arg)
 	const int n = stream_data->n;
 	const int i = stream_data->p_iter;
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
-	pthread_rwlock_rdlock(&mutex_protocols);
-	const uint16_t protocol = protocols[p_iter].protocol;
-	pthread_rwlock_unlock(&mutex_protocols);
-	unsigned char *data = (unsigned char *)stream_data->data;
-	const uint32_t data_len = stream_data->data_len;
-	if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
-		t_peer[n].t_message[i].unheard = *((uint8_t *)data);
+	if(p_iter < 0)
+		error_simple(0,"message_extra_idle called on p_iter < 0. Coding error. Report this.");
 	else
-		error_printf(0,"message_extra_cb received %u unknown bytes on protocol %u",data_len,protocol);
-	torx_free((void*)&data);
+	{
+		pthread_rwlock_rdlock(&mutex_protocols);
+		const uint16_t protocol = protocols[p_iter].protocol;
+		pthread_rwlock_unlock(&mutex_protocols);
+		unsigned char *data = (unsigned char *)stream_data->data;
+		const uint32_t data_len = stream_data->data_len;
+		if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
+			t_peer[n].t_message[i].unheard = *((uint8_t *)data);
+		else
+			error_printf(0,"message_extra_cb received %u unknown bytes on protocol %u",data_len,protocol);
+	}
+	torx_free((void*)&stream_data->data);
 	torx_free((void*)&arg);
 	return 0;
 }
