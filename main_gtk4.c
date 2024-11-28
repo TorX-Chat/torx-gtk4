@@ -914,10 +914,8 @@ void initialize_n_cb_ui(const int n)
 
 static int initialize_i_idle(void *arg)
 { // XXX NOTICE: These also need to be carefully reset following message_deleted_cb (currently they are)
-	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
-	const int n = int_int->n; // XXX DO NOT DELETE XXX
-	const int i = int_int->i;
-	torx_free((void*)&int_int);
+	const int n = vptoii_n(arg);
+	const int i = vptoii_i(arg);
 	t_peer[n].t_message[i].pos = 0;
 	t_peer[n].t_message[i].visible = 0;
 	t_peer[n].t_message[i].unheard = 1;
@@ -929,10 +927,7 @@ static int initialize_i_idle(void *arg)
 
 void initialize_i_cb_ui(const int n,const int i)
 {
-	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
-	int_int->n = n;
-	int_int->i = i;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_i_idle,int_int,NULL);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_i_idle,iitovp(n,i),NULL);
 }
 
 static int initialize_f_idle(void *arg)
@@ -983,10 +978,8 @@ void expand_file_struc_cb_ui(const int n,const int f)
 
 static int expand_message_struc_idle(void *arg)
 { // XXX DO NOT DELETE XXX
-	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
-	const int n = int_int->n;
-	const int i = int_int->i;
-	torx_free((void*)&int_int);
+	const int n = vptoii_n(arg);
+	const int i = vptoii_i(arg);
 	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location);
 	int current_shift = 0;
 	if(i < 0)
@@ -1002,10 +995,7 @@ static int expand_message_struc_idle(void *arg)
 
 void expand_message_struc_cb_ui(const int n,const int i)
 {
-	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
-	int_int->n = n; // XXX DO NOT DELETE XXX
-	int_int->i = i;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_message_struc_idle,int_int,NULL);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_message_struc_idle,iitovp(n,i),NULL);
 }
 
 static int expand_peer_struc_idle(void *arg)
@@ -1390,10 +1380,8 @@ void incoming_friend_request_cb_ui(const int n)
 
 static int onion_deleted_idle(void *arg)
 {
-	struct int_int *int_int = (struct int_int*) arg; // Casting passed struct
-	const int n = int_int->n;
-	const int owner = int_int->i;
-	torx_free((void*)&arg);
+	const int n = vptoii_n(arg);
+	const int owner = vptoii_i(arg);
 	t_peer[n].unread = 0;
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
@@ -1443,11 +1431,8 @@ static int onion_deleted_idle(void *arg)
 
 void onion_deleted_cb_ui(const uint8_t owner,const int n)
 { // GUI Callback, // array necessary because owner about to be zero'd
-	struct int_int *int_int = torx_insecure_malloc(sizeof(struct int_int));
-	int_int->n = n;
-	int_int->i = owner;
 	error_printf(0,"Checkpoint onion_deleted_cb owner: %d\n",owner);
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_deleted_idle,int_int,NULL);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_deleted_idle,iitovp(n,owner),NULL);
 }
 
 static int peer_online_idle(void *arg)
@@ -4911,7 +4896,7 @@ static void ui_message_copy(const gpointer data)
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
-		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.");
+		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.4");
 		breakpoint();
 		return; // message is deleted or buggy
 	}
@@ -4935,7 +4920,7 @@ static void ui_message_resend(const gpointer data)
 /*	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
-		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.");
+		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.7");
 		breakpoint();
 		return; // message is deleted or buggy
 	}
@@ -5122,7 +5107,7 @@ static void ui_activity_edit(const gpointer data)
 	const int p_iter = getter_int(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
-		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.");
+		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.5");
 		breakpoint();
 		return; // message is deleted or buggy
 	}
@@ -5157,7 +5142,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
-		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.");
+		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.6");
 		breakpoint();
 		return; // message is deleted or buggy
 	}
@@ -5394,7 +5379,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 					msg = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
 					gtk_widget_set_size_request(msg,size_sticker_large,size_sticker_large);
 				}
-			}				
+			}
 		}
 		else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
 		{ // Audio message TODO need message length
