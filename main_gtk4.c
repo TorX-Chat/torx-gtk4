@@ -799,12 +799,6 @@ struct notification { // XXX Do not sodium_malloc structs unless they contain se
 //	size_t message_len;
 };
 
-struct file_nf { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
-	int n;
-	int f;
-//	int target_n;
-};
-
 struct custom_setting { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	char *setting_name;
@@ -932,11 +926,8 @@ void initialize_i_cb_ui(const int n,const int i)
 
 static int initialize_f_idle(void *arg)
 {
-	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
-	const int n = file_nf->n;
-	const int f = file_nf->f;
-	torx_free((void*)&file_nf);
-
+	const int n = vptoii_n(arg);
+	const int f = vptoii_i(arg);
 	t_peer[n].t_file[f].n = -1;
 	t_peer[n].t_file[f].i = INT_MIN;
 	t_peer[n].t_file[f].progress_bar = NULL;
@@ -946,10 +937,7 @@ static int initialize_f_idle(void *arg)
 
 void initialize_f_cb_ui(const int n,const int f)
 {
-	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-	file_nf->n = n;
-	file_nf->f = f;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_f_idle,file_nf,NULL);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,initialize_f_idle,iitovp(n,f),NULL);
 }
 
 void initialize_g_cb_ui(const int g)
@@ -959,10 +947,8 @@ void initialize_g_cb_ui(const int g)
 
 static int expand_file_struc_idle(void *arg)
 {
-	struct file_nf *file_nf = (struct file_nf*) arg; // Casting passed struct
-	const int n = file_nf->n;
-//	const int f = file_nf->f;
-	torx_free((void*)&file_nf);
+	const int n = vptoii_n(arg);
+//	const int f = vptoii_i(arg);
 	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_file);
 	t_peer[n].t_file = torx_realloc(t_peer[n].t_file,current_allocation_size + sizeof(struct t_file_list) *10);
 	return 0;
@@ -970,10 +956,7 @@ static int expand_file_struc_idle(void *arg)
 
 void expand_file_struc_cb_ui(const int n,const int f)
 {
-	struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-	file_nf->n = n;
-	file_nf->f = f;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_file_struc_idle,file_nf,NULL);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,expand_file_struc_idle,iitovp(n,f),NULL);
 }
 
 static int expand_message_struc_idle(void *arg)
@@ -1876,10 +1859,8 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 { // For selecting a folder for saving file
 	if(data)
 	{ // Choosing folder path
-		struct file_nf *file_nf = (struct file_nf*) data;
-		const int n = file_nf->n;
-		const int f = file_nf->f;
-		torx_free((void*)&data);
+		const int n = vptoii_n(data);
+		const int f = vptoii_i(data);
 		GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
 		if(folder)
 		{
@@ -2180,10 +2161,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 			GtkFileDialog *dialog = gtk_file_dialog_new();
 			gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
 			gtk_file_dialog_set_title(dialog,text_choose_folder); // also: gtk_file_dialog_set_filters
-			struct file_nf *file_nf = torx_insecure_malloc(sizeof(struct file_nf));
-			file_nf->n = n;
-			file_nf->f = f;
-			gtk_file_dialog_select_folder (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_folder,file_nf);
+			gtk_file_dialog_select_folder (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_folder,iitovp(n,f));
 		}
 		else
 		{
