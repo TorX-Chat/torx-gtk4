@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.16 2024/10/27 by TorX\n© Copyright 2024 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.18 2024/12/17 by TorX\n© Copyright 2024 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -818,6 +818,11 @@ struct stream_data { // XXX Do not sodium_malloc structs unless they contain sen
 	int p_iter;
 	char *data;
 	uint32_t data_len;
+};
+
+struct int_int { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+	int n;
+	int i;
 };
 
 G_DECLARE_FINAL_TYPE(IntPair, int_pair, G, INT_PAIR, GObject)
