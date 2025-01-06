@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.18 2024/12/17 by TorX\n© Copyright 2024 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.20 2025/01/06 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -1156,7 +1156,7 @@ static int transfer_progress_idle(void *arg)
 		group_n = getter_group_int(g,offsetof(struct group_list,n));
 	}
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
-		return 0; // should check if visible?
+		return 0; // should check if visible? TODO 2024/12/23 segfaulted here after deleting messages during an active transfer
 	const uint64_t size = getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,size));
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(transferred == size)
@@ -2145,8 +2145,13 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	const uint64_t transferred = calculate_transferred(n,f);
 	torx_unlock(n) // XXX
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
+	if(file_path == NULL)
+	{ // Probably a bad n,f pair
+		error_simple(0,"File path is NULL. Coding error. Report this.");
+		return;
+	}
 	printf("Checkpoint toggle_file: %u\n",status);
-	if(size > 0 && size == transferred && size == get_file_size(file_path))
+	if(file_path && size > 0 && size == transferred && size == get_file_size(file_path))
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 		GFile *file = g_file_new_for_path(file_path);
 		GtkFileLauncher *launcher = gtk_file_launcher_new (file);
@@ -3818,7 +3823,7 @@ void error_cb_ui(char *error_message)
 void fatal_cb_ui(char *error_message)
 {
 	ui_notify(text_fatal_error,error_message);
-	fprintf(stderr,"%s: %s\n",text_fatal_error,error_message);
+	fprintf(stderr,"%s: %s",text_fatal_error,error_message);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,error_idle,error_message,NULL); // frees pointer*
 }
 
@@ -4921,46 +4926,25 @@ static void ui_message_resend(const gpointer data)
 	message_resend(n,i);
 }
 
-static int handle_stuff(const int n,const int i)
-{
-	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
-	if(p_iter < 0)
-	{
-		error_simple(0,"Negative p_iter in handle_stuff. Probably a deleted message. Possible coding error. Report this.");
-		return -1;
-	}
-	pthread_rwlock_rdlock(&mutex_protocols);
-	const uint8_t group_msg = protocols[p_iter].group_msg;
-	pthread_rwlock_unlock(&mutex_protocols);
-	int nnn = n;
-	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
-	if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
-	{
-		const int g = set_g(n,NULL);
-		nnn = getter_group_int(g,offsetof(struct group_list,n));
-	}
-	return nnn;
-}
-
 static void ui_message_pause(const gpointer data)
 { // file_accept alternates between accept and pause
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
-	const int nnn = handle_stuff(n,i);
-	if(nnn < 0)
+	int file_n;
+	const int f = set_f_from_i(&file_n,n,i);
+	if(f < 0)
 		return;
-	const int f = set_f_from_i(n,i);
-	file_accept(nnn,f);
+	file_accept(file_n,f);
 }
 static void ui_message_cancel(const gpointer data)
 { // file_cancel() NOTE: this is for cancelling FILES not unsent messages.
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
-	const int nnn = handle_stuff(n,i);
-	if(nnn < 0)
+	int file_n;
+	const int f = set_f_from_i(&file_n,n,i);
+	if(f < 0)
 		return;
-	const int f = set_f_from_i(n,i);
-	file_cancel(nnn,f);
+	file_cancel(file_n,f);
 }
 static void ui_message_reject(const gpointer data)
 { // file_cancel() TODO NOTE: this should delete the related messages too.
@@ -4971,15 +4955,14 @@ static void ui_open_folder(const gpointer data)
 { // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
-	const int nnn = handle_stuff(n,i);
-	if(nnn < 0)
+	int file_n;
+	const int f = set_f_from_i(&file_n,n,i);
+	if(f < 0)
 		return;
-	const int f = set_f_from_i(n,i);
-	char *file_path = getter_string(NULL,nnn,INT_MIN,f,offsetof(struct file_list,file_path));
+	char *file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(file_path == NULL)
 	{
 		error_simple(0,"File path is NULL. Cannot open folder.");
-		torx_free((void*)&file_path);
 		return;
 	}
 	GFile *file = g_file_new_for_path(file_path);
@@ -5121,7 +5104,6 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	(void) y;
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
-	int f = -1;
 	const int p_iter = getter_int(n,i,-1,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
 	{
@@ -5137,29 +5119,33 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	const uint32_t date_len = protocols[p_iter].date_len;
 	const uint32_t signature_len = protocols[p_iter].signature_len;
 	pthread_rwlock_unlock(&mutex_protocols);
-	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
-	if(file_checksum == 1)
-		f = set_f(n,(const unsigned char*)message,CHECKSUM_BIN_LEN);
-	t_main.popover_message = custom_popover_new(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(self)));
 
 	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	gtk_widget_add_css_class(box, "popover_inner");
-	gtk_popover_set_child(GTK_POPOVER(t_main.popover_message),box);
+
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,-1,offsetof(struct peer_list,owner));
 	const uint8_t stat = getter_uint8(n,i,-1,-1,offsetof(struct message_list,stat));
-	if(f > -1)
+	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+	if(file_checksum)
 	{ // files:	start/pause,reject/cancel	text_start / text_pause, text_reject (in) / text_cancel (out) // TODO rebuild int_int struct and pass f along with n,i
-		int nnn = n;
+		int file_n = n;
 		if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
 		{
 			const int g = set_g(n,NULL);
-			nnn = getter_group_int(g,offsetof(struct group_list,n));
-			f = set_f(nnn,(const unsigned char*)message,CHECKSUM_BIN_LEN);
+			file_n = getter_group_int(g,offsetof(struct group_list,n));
 		}
-		const uint8_t status = getter_uint8(nnn,INT_MIN,f,-1,offsetof(struct file_list,status));
-		torx_read(nnn) // XXX
-		const char *file_path = peer[nnn].file[f].file_path;
-		torx_unlock(nnn) // XXX
+		const int f = set_f(file_n,(const unsigned char*)message,CHECKSUM_BIN_LEN-1);
+		if(f < 0)
+		{
+			torx_free((void*)&message);
+			error_simple(0,"ui_message_long_press with f=-1. Coding error. Report this.");
+			breakpoint();
+			return;
+		}
+		const uint8_t status = getter_uint8(file_n,INT_MIN,f,-1,offsetof(struct file_list,status));
+		torx_read(file_n) // XXX
+		const char *file_path = peer[file_n].file[f].file_path;
+		torx_unlock(file_n) // XXX
 		if(file_path)
 		{
 			if(/*status == ENUM_FILE_OUTBOUND_PENDING || */status == ENUM_FILE_INBOUND_PENDING)
@@ -5201,6 +5187,8 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	}
 	torx_free((void*)&message);
 	create_button(text_delete,ui_message_delete,data)
+	t_main.popover_message = custom_popover_new(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(self)));
+	gtk_popover_set_child(GTK_POPOVER(t_main.popover_message),box);
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_message));
 }
 
@@ -5290,15 +5278,13 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	uint64_t transferred = 0; // clang wants this initialized, but it doesn't need to be
 	if(f > -1) // File
 	{
-		int tmp_n;
+		int file_n = n;
 		if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
-			tmp_n = nn;
-		else
-			tmp_n = n;
-		filename = getter_string(NULL,tmp_n,INT_MIN,f,offsetof(struct file_list,filename));
-		file_path = getter_string(NULL,tmp_n,INT_MIN,f,offsetof(struct file_list,file_path));
-		const uint64_t size = getter_uint64(tmp_n,INT_MIN,f,-1,offsetof(struct file_list,size));
-		transferred = calculate_transferred(tmp_n,f);
+			file_n = nn; // group_n
+		filename = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,filename));
+		file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
+		const uint64_t size = getter_uint64(file_n,INT_MIN,f,-1,offsetof(struct file_list,size));
+		transferred = calculate_transferred(file_n,f);
 		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
 		{
 		//	finished_file = 1;
@@ -5422,16 +5408,16 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	/* Set up text area of message */
 	if(f > -1)
 	{
-		int nnn = n;
+		int file_n = n;
 		if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
-			nnn = nn; // group_n
+			file_n = nn; // group_n
 		if(!finished_image)
 		{
 			file_icon = ui_get_icon_from_filename(filename);
 			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
 		}
 		if(long_press)
-			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),iitovp(nnn,f)); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
+			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),iitovp(file_n,f)); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
 
 		if(finished_image)
 		{
@@ -5455,32 +5441,32 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		}
 		else
 		{
-		//	const uint64_t transferred = calculate_transferred(nnn,f);
-			char *file_size_text = file_progress_string(nnn,f);
-			t_peer[nnn].t_file[f].file_size = gtk_label_new(file_size_text);
+		//	const uint64_t transferred = calculate_transferred(file_n,f);
+			char *file_size_text = file_progress_string(file_n,f);
+			t_peer[file_n].t_file[f].file_size = gtk_label_new(file_size_text);
 			torx_free((void*)&file_size_text);
 			double fraction = 0;
-			const uint64_t size = getter_uint64(nnn,INT_MIN,f,-1,offsetof(struct file_list,size));
+			const uint64_t size = getter_uint64(file_n,INT_MIN,f,-1,offsetof(struct file_list,size));
 			if(size > 0)
 				fraction = (1.000 *(double)transferred / (double)size);
 
-			t_peer[nnn].t_file[f].progress_bar = gtk_progress_bar_new();
-			t_peer[nnn].t_file[f].n = n;
-			t_peer[nnn].t_file[f].i = i;
-			gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),TRUE);
-			gtk_progress_bar_set_text(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),NULL);
-			gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[nnn].t_file[f].progress_bar),fraction);
+			t_peer[file_n].t_file[f].progress_bar = gtk_progress_bar_new();
+			t_peer[file_n].t_file[f].n = n;
+			t_peer[file_n].t_file[f].i = i;
+			gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),TRUE);
+			gtk_progress_bar_set_text(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),NULL);
+			gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),fraction);
 			GtkWidget *text_area = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 			gtk_box_append(GTK_BOX(text_area),msg);
-			gtk_box_append(GTK_BOX(text_area),t_peer[nnn].t_file[f].file_size);
-			gtk_box_append(GTK_BOX(text_area),t_peer[nnn].t_file[f].progress_bar);
-			gtk_widget_set_visible(t_peer[nnn].t_file[f].progress_bar,FALSE);
+			gtk_box_append(GTK_BOX(text_area),t_peer[file_n].t_file[f].file_size);
+			gtk_box_append(GTK_BOX(text_area),t_peer[file_n].t_file[f].progress_bar);
+			gtk_widget_set_visible(t_peer[file_n].t_file[f].progress_bar,FALSE);
 
 			gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
 			gtk_grid_attach (GTK_GRID(grid),text_area,1,0,1,1);
 		//	gtk_box_append(GTK_BOX(inner_message_box),file_icon);
 		//	gtk_box_append(GTK_BOX(inner_message_box),text_area);
-		//	printf("Checkpoint ui_print_message nnn==%d f==%d\n",nnn,f);
+		//	printf("Checkpoint ui_print_message file_n==%d f==%d\n",file_n,f);
 		}
 		torx_free((void*)&filename);
 		torx_free((void*)&file_path);
@@ -5622,6 +5608,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	const uint8_t notifiable = protocols[p_iter].notifiable;
 	const uint8_t group_pm = protocols[p_iter].group_pm;
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
+	const uint8_t file_offer = protocols[p_iter].file_offer;
 //	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols);
 	uint32_t message_len;
@@ -5685,19 +5672,25 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				ui_notify(peernick,message);
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
 			{
-				const int f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN);
-				char *filename = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,filename));
-				ui_notify(peernick,filename);
-				torx_free((void*)&filename);
+				const int f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
+				if(f > -1)
+				{
+					char *filename = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,filename));
+					ui_notify(peernick,filename);
+					torx_free((void*)&filename);
+				}
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
 				torx_free((void*)&peernick);
 				peernick = getter_string(NULL,nn,INT_MIN,-1,offsetof(struct peer_list,peernick)); // XXX
-				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN);
-				char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
-				ui_notify(peernick,filename);
-				torx_free((void*)&filename);
+				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
+				if(f > -1)
+				{
+					char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
+					ui_notify(peernick,filename);
+					torx_free((void*)&filename);
+				}
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_REQUEST)
 				ui_notify(peernick,text_accepted_file);
@@ -5717,10 +5710,10 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	{ // Print it. DO NOT make this else if (needs to occur even if window not visible)
 		int f = -1;
 		if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
-			f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN);
+			f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
 		else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
-			f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN);
-		else if(protocol == ENUM_PROTOCOL_FILE_REQUEST)
+			f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
+		if(protocol == ENUM_PROTOCOL_FILE_REQUEST || (file_offer && f < 0))
 		{
 			if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
 			{
@@ -5989,16 +5982,18 @@ static int stream_idle(void *arg)
 					sodium_memzero(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
 				torx_read(n) // XXX
 				for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
-				{ // Rebuild any messages that had this sticker (NOTE: may not be functioning)
+				{ // Rebuild any messages that had this sticker
 					const int p_iter_local = peer[n].message[i].p_iter;
 					if(p_iter_local > -1)
 					{
+						pthread_rwlock_rdlock(&mutex_protocols);
 						const uint16_t protocol_local = protocols[p_iter_local].protocol;
+						pthread_rwlock_unlock(&mutex_protocols);
 						if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
 						&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
 						{ // Find the first relevant message and update it TODO this might not work in groups
 							torx_unlock(n) // XXX
-							printf("Checkpoint should be rebuilding a sticker?? n=%d i=%i\n",n,i);
+							printf("Checkpoint should be rebuilding a sticker n=%d i=%i (might not work in groups)\n",n,i);
 							ui_print_message(n,i,2);
 							torx_read(n) // XXX
 							break;
@@ -7148,30 +7143,30 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		}
 		else
 		{ // No draft
-			int nn;
+			int last_message_n;
 			int last_message_i = INT_MIN;
-			for(int count_back = 0; (last_message_i = set_last_message(&nn,n,count_back)) > INT_MIN ; count_back++)
+			for(int count_back = 0; (last_message_i = set_last_message(&last_message_n,n,count_back)) > INT_MIN ; count_back++)
 			{
-				if(t_peer[nn].mute && getter_uint8(nn,INT_MIN,-1,-1,offsetof(struct peer_list,owner)) == ENUM_OWNER_GROUP_PEER)
+				if(t_peer[last_message_n].mute && getter_uint8(last_message_n,INT_MIN,-1,-1,offsetof(struct peer_list,owner)) == ENUM_OWNER_GROUP_PEER)
 					continue; // do not print, these are hidden messages from ignored users
 				else
 					break;
 			}
 			int p_iter;
-			if(last_message_i > INT_MIN && (p_iter = getter_int(nn,last_message_i,-1,-1,offsetof(struct message_list,p_iter))) > -1)
+			if(last_message_i > INT_MIN && (p_iter = getter_int(last_message_n,last_message_i,-1,-1,offsetof(struct message_list,p_iter))) > -1)
 			{
-				const int max_i = getter_int(nn,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
+				const int max_i = getter_int(last_message_n,INT_MIN,-1,-1,offsetof(struct peer_list,max_i));
 				pthread_rwlock_rdlock(&mutex_protocols);
 				const uint16_t protocol = protocols[p_iter].protocol;
 				const uint8_t file_offer = protocols[p_iter].file_offer;
 				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 				pthread_rwlock_unlock(&mutex_protocols);
-				const char *message = getter_string(NULL,nn,last_message_i,-1,offsetof(struct message_list,message));
+				const char *message = getter_string(NULL,last_message_n,last_message_i,-1,offsetof(struct message_list,message));
 				if(max_i > INT_MIN/* && protocol > 0*/ && message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
-					const uint8_t stat = getter_uint8(nn,last_message_i,-1,-1,offsetof(struct message_list,stat));
-					if(stat == ENUM_MESSAGE_RECV && t_peer[n].unread > 0) // NOTE: This n needs to be n, not NN. n is the group_ctrl whereas nn is peer
+					const uint8_t stat = getter_uint8(last_message_n,last_message_i,-1,-1,offsetof(struct message_list,stat));
+					if(stat == ENUM_MESSAGE_RECV && t_peer[n].unread > 0) // NOTE: This n needs to be n, not last_message_n. n is the group_ctrl whereas last_message_n is peer
 					{}//	prefix = snprintf(last_message,sizeof(last_message),"🔔 "); // this bell is 4char
 					else if(stat == ENUM_MESSAGE_FAIL && owner != ENUM_OWNER_GROUP_CTRL)
 						prefix = snprintf(last_message,sizeof(last_message),"%s",text_queued);
@@ -7179,16 +7174,19 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 						prefix = snprintf(last_message,sizeof(last_message),"%s",text_you);
 					if(file_offer)
 					{ // Last message is file offer
-						int nnn = nn;
+						int file_n = last_message_n;
 						if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 						{
-							const int g = set_g(nn,NULL);
-							nnn = getter_group_int(g,offsetof(struct group_list,n));
+							const int g = set_g(last_message_n,NULL);
+							file_n = getter_group_int(g,offsetof(struct group_list,n));
 						}
-						const int f = set_f(nnn,(const unsigned char*)message,CHECKSUM_BIN_LEN);
-						torx_read(nnn) // XXX
-						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",peer[nnn].file[f].filename);
-						torx_unlock(nnn) // XXX
+						const int f = set_f(file_n,(const unsigned char*)message,CHECKSUM_BIN_LEN-1);
+						if(f > -1)
+						{
+							torx_read(file_n) // XXX
+							snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",peer[file_n].file[f].filename);
+							torx_unlock(file_n) // XXX
+						}
 					}
 					else if(null_terminated_len)
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",message);
