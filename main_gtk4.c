@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.20 2025/01/06 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.21 2025/01/07 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2139,17 +2139,10 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 		return;
 	const int n = vptoii_n(data);
 	const int f = vptoii_i(data);
-	torx_read(n) // XXX
-	const uint8_t status = peer[n].file[f].status;
-	const uint64_t size = peer[n].file[f].size;
+	const uint8_t status = getter_uint8(n,INT_MIN,f,-1,offsetof(struct file_list,status));
+	const uint64_t size = getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,size));
 	const uint64_t transferred = calculate_transferred(n,f);
-	torx_unlock(n) // XXX
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
-	if(file_path == NULL)
-	{ // Probably a bad n,f pair
-		error_simple(0,"File path is NULL. Coding error. Report this.");
-		return;
-	}
 	printf("Checkpoint toggle_file: %u\n",status);
 	if(file_path && size > 0 && size == transferred && size == get_file_size(file_path))
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
@@ -2158,10 +2151,8 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	//	gtk_file_launcher_set_always_ask (launcher,TRUE); // doesn't do shit
 	//	gtk_file_launcher_launch (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL); // not good, it opens in default without asking
 		gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
-		torx_free((void*)&file_path);
-		return;
 	}
-	if(status == ENUM_FILE_INBOUND_PENDING)
+	else if(status == ENUM_FILE_INBOUND_PENDING)
 	{
 		pthread_rwlock_rdlock(&mutex_global_variable);
 		const char *download_dir_local = download_dir;
@@ -3720,7 +3711,7 @@ void tor_log_cb_ui(char *message)
 static void *playback_threaded(void* arg)
 { // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
 	pusher(zero_pthread,(void*)&thrd_start_tor)
-	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	struct play_info *play_info = (struct play_info *)arg;
 	playback_start(play_info->pipeline,play_info->mutex,play_info->data,play_info->data_len);
 	torx_free((void*)&play_info->data);
@@ -7564,7 +7555,7 @@ static int icon_communicator_idle(void *arg)
 static void *icon_communicator(void* arg)
 { // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
 	pusher(zero_pthread,(void*)&thrd_start_tor)
-	setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
 	evutil_socket_t sockfd;
 	struct sockaddr_in servaddr;
