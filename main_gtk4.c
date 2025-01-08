@@ -3710,8 +3710,6 @@ void tor_log_cb_ui(char *message)
 
 static void *playback_threaded(void* arg)
 { // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
-	pusher(zero_pthread,(void*)&thrd_start_tor)
-	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	struct play_info *play_info = (struct play_info *)arg;
 	playback_start(play_info->pipeline,play_info->mutex,play_info->data,play_info->data_len);
 	torx_free((void*)&play_info->data);
@@ -7554,7 +7552,7 @@ static int icon_communicator_idle(void *arg)
 
 static void *icon_communicator(void* arg)
 { // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
-	pusher(zero_pthread,(void*)&thrd_start_tor)
+	pusher(zero_pthread,(void*)&thread_icon_communicator)
 	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
 	evutil_socket_t sockfd;
