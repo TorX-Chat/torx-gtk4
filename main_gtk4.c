@@ -1156,7 +1156,7 @@ static int transfer_progress_idle(void *arg)
 		group_n = getter_group_int(g,offsetof(struct group_list,n));
 	}
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
-		return 0; // should check if visible? TODO 2024/12/23 segfaulted here after deleting messages during an active transfer
+		return 0; // should check if visible? Note: We null progress_bar as mitigation to segfaults here. If segfault, null progress bar some more.
 	const uint64_t size = getter_uint64(n,INT_MIN,f,-1,offsetof(struct file_list,size));
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(transferred == size)
@@ -5279,7 +5279,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		//	finished_file = 1;
 			finished_image = is_image_file(file_path);
 		}
-		if(!finished_image)
+		if(!finished_image) // NOT else if
 			msg = gtk_label_new(filename);
 	}
 	else
@@ -5410,6 +5410,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 
 		if(finished_image)
 		{
+			t_peer[file_n].t_file[f].progress_bar = NULL; // Important to prevent segfaults in transfer_progress_idle. Do not remove.
 			GBytes *bytes_file;
 			if(extension_check(file_path,strlen(file_path),".gif") && (bytes_file = g_file_load_bytes(g_file_new_for_path(file_path),NULL,NULL,NULL)))
 			{ // We check if bytes_file exists because otherwise there can be issues once we reach g_bytes_get_data
