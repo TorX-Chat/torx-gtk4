@@ -243,6 +243,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		GtkWidget *file_size;
 		int n; // The peer iter that progress_bar is in, for rebuilds upon completion
 		int i; // The message iter that progress_bar is in, for rebuilds upon completion
+		uint8_t previously_completed; // We need to track this so we can limit complete notifications to once in group file transfers.
 	} *t_file;
 	unsigned char stickers_requested[MAX_STICKER_REQUESTS][CHECKSUM_BIN_LEN];
 } *t_peer; // TODO do not initialize automatically, but upon use
@@ -936,6 +937,7 @@ static int initialize_f_idle(void *arg)
 	t_peer[n].t_file[f].i = INT_MIN;
 	t_peer[n].t_file[f].progress_bar = NULL;
 	t_peer[n].t_file[f].file_size = NULL;
+	t_peer[n].t_file[f].previously_completed = 0;
 	return 0;
 }
 
@@ -1158,22 +1160,30 @@ static int transfer_progress_idle(void *arg)
 		return 0; // should check if visible? Note: We null progress_bar as mitigation to segfaults here. If segfault, null progress bar some more.
 	const uint64_t size = getter_uint64(n,INT_MIN,f,offsetof(struct file_list,size));
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
-	const int file_status = file_status_get(n,f);
-	if(file_status == ENUM_FILE_INACTIVE_COMPLETE)
-	{ // Notify of completion // TODO Consider abolishing this notification because we don't know whether this is inbound or outbound and we can't determine it with getter_uint8(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,-1,offsetof(struct message_list,stat)); because we could have just fufilled an inbound request for a file that didn't originate from us, in groups.
-		char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-		char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
-		snprintf(heading,sizeof(heading),"%s: %s",text_transfer_completed,peernick);
-		torx_free((void*)&peernick);
-		ui_notify(heading,file_path);
-		sodium_memzero(heading,sizeof(heading));
-	}
 	char *file_size_text = file_progress_string(n,f);
 	gtk_label_set_text(GTK_LABEL(t_peer[n].t_file[f].file_size),file_size_text);
 	torx_free((void*)&file_size_text);
 	double fraction = 0;
 	if(size > 0)
 		fraction = ((double)transferred*1.000/(double)size);
+	const int file_status = file_status_get(n,f);
+	if(t_peer[n].t_file[f].previously_completed == 0 && file_status == ENUM_FILE_INACTIVE_COMPLETE)
+	{ // Ensure that we didn't notify of completion already (relevant to GROUP_CTRL)
+		t_peer[n].t_file[f].previously_completed = 1;
+		if(t_peer[n].mute == 0)
+		{
+			const uint8_t stat = getter_uint8(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,-1,offsetof(struct message_list,stat));
+			if(stat == ENUM_MESSAGE_RECV)
+			{ // Notify of completion only if the file was originally inbound
+				char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+				char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
+				snprintf(heading,sizeof(heading),"%s: %s",text_transfer_completed,peernick);
+				torx_free((void*)&peernick);
+				ui_notify(heading,file_path);
+				sodium_memzero(heading,sizeof(heading));
+			}
+		}
+	}
 	if(t_peer[n].t_file[f].progress_bar)
 	{ // Sanity check
 		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[n].t_file[f].progress_bar),fraction);
@@ -1181,7 +1191,7 @@ static int transfer_progress_idle(void *arg)
 			gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
 	}
 	if(file_status == ENUM_FILE_INACTIVE_COMPLETE && is_image_file(file_path))
-		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image
+		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image. Do this last.
 	torx_free((void*)&file_path);
 	return 0;
 }
@@ -5242,7 +5252,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	}
 
 	GtkWidget *msg = NULL; // must be null intialized
-//	uint8_t finished_file = 0;
 	uint8_t finished_image = 0;
 	char *filename;
 	char *file_path;
@@ -5258,7 +5267,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		transferred = calculate_transferred(file_n,f);
 		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
 		{
-		//	finished_file = 1;
+			t_peer[file_n].t_file[f].previously_completed = 1;
 			finished_image = is_image_file(file_path);
 		}
 		if(!finished_image) // NOT else if
@@ -5382,14 +5391,10 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		int file_n = n;
 		if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
 			file_n = nn; // group_n
-		if(!finished_image)
-		{
-			file_icon = ui_get_icon_from_filename(filename);
-			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
-		}
 		if(long_press)
 			g_signal_connect(long_press, "cancelled", G_CALLBACK(ui_toggle_file),iitovp(file_n,f)); // clicked proper for buttons; this is proper for boxes  // DO NOT FREE arg because this only gets passed ONCE.
-
+		t_peer[file_n].t_file[f].n = n;
+		t_peer[file_n].t_file[f].i = i;
 		if(finished_image)
 		{
 			t_peer[file_n].t_file[f].progress_bar = NULL; // Important to prevent segfaults in transfer_progress_idle. Do not remove.
@@ -5413,6 +5418,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		}
 		else
 		{
+			file_icon = ui_get_icon_from_filename(filename);
+			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
 		//	const uint64_t transferred = calculate_transferred(file_n,f);
 			char *file_size_text = file_progress_string(file_n,f);
 			t_peer[file_n].t_file[f].file_size = gtk_label_new(file_size_text);
@@ -5423,8 +5430,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				fraction = (1.000 *(double)transferred / (double)size);
 
 			t_peer[file_n].t_file[f].progress_bar = gtk_progress_bar_new();
-			t_peer[file_n].t_file[f].n = n;
-			t_peer[file_n].t_file[f].i = i;
 			gtk_progress_bar_set_show_text(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),TRUE);
 			gtk_progress_bar_set_text(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),NULL);
 			gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[file_n].t_file[f].progress_bar),fraction);
