@@ -5420,7 +5420,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		{
 			file_icon = ui_get_icon_from_filename(filename);
 			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
-		//	const uint64_t transferred = calculate_transferred(file_n,f);
 			char *file_size_text = file_progress_string(file_n,f);
 			t_peer[file_n].t_file[f].file_size = gtk_label_new(file_size_text);
 			torx_free((void*)&file_size_text);
@@ -5979,6 +5978,7 @@ static int stream_idle(void *arg)
 				}
 				torx_unlock(n) // XXX
 			}
+			sodium_memzero(checksum,sizeof(checksum));
 		}
 	}
 /*	else if(protocol == ENUM_PROTOCOL_TEST_STREAM && data_len)
