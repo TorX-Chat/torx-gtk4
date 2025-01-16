@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.22 2025/01/15 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.23 2025/01/15 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -511,8 +511,7 @@ void login_cb_ui(const int value);
 /* Global Text Declarations for ui_initialize_language() */
 static const char *text_title = {0};
 static const char *text_welcome = {0};
-static const char *text_transfer_completed_to = {0};
-static const char *text_transfer_completed_from = {0};
+static const char *text_transfer_completed = {0};
 static const char *text_online = {0};
 static const char *text_new_friend = {0};
 static const char *text_accepted_file = {0};
@@ -1159,22 +1158,12 @@ static int transfer_progress_idle(void *arg)
 		return 0; // should check if visible? Note: We null progress_bar as mitigation to segfaults here. If segfault, null progress bar some more.
 	const uint64_t size = getter_uint64(n,INT_MIN,f,offsetof(struct file_list,size));
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
-	if(transferred == size)
-	{ // Notify of completion
-		const uint8_t status = getter_uint8(n,INT_MIN,f,offsetof(struct file_list,status)); // TODO DEPRECIATE FILE STATUS TODO
+	const int file_status = file_status_get(n,f);
+	if(file_status == ENUM_FILE_INACTIVE_COMPLETE)
+	{ // Notify of completion // TODO Consider abolishing this notification because we don't know whether this is inbound or outbound and we can't determine it with getter_uint8(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,-1,offsetof(struct message_list,stat)); because we could have just fufilled an inbound request for a file that didn't originate from us, in groups.
 		char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 		char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
-		if(status == ENUM_FILE_OUTBOUND_COMPLETED)
-			snprintf(heading,sizeof(heading),"%s %s",text_transfer_completed_to,peernick);
-		else if(status == ENUM_FILE_INBOUND_COMPLETED)
-			snprintf(heading,sizeof(heading),"%s %s",text_transfer_completed_from,peernick);
-		else
-		{ // probably something full of zeroes. this should never occur. Its a bug.
-			torx_free((void*)&peernick);
-			error_printf(0,"Unhandled file status in transfer_progress_cb: %u transferred: %lu [f].size %lu",status,transferred,size);
-			torx_free((void*)&file_path);
-			return 0;
-		}
+		snprintf(heading,sizeof(heading),"%s: %s",text_transfer_completed,peernick);
 		torx_free((void*)&peernick);
 		ui_notify(heading,file_path);
 		sodium_memzero(heading,sizeof(heading));
@@ -1184,12 +1173,14 @@ static int transfer_progress_idle(void *arg)
 	torx_free((void*)&file_size_text);
 	double fraction = 0;
 	if(size > 0)
-		fraction = ((double)(getter_uint64(n,INT_MIN,f,offsetof(struct file_list,last_transferred)))*1.000/(double)size);
-	gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[n].t_file[f].progress_bar),fraction);
-	const uint8_t status = getter_uint8(n,INT_MIN,f,offsetof(struct file_list,status)); // TODO DEPRECIATE FILE STATUS TODO
-	if(status == ENUM_FILE_INBOUND_ACCEPTED || status == ENUM_FILE_INBOUND_COMPLETED || status == ENUM_FILE_OUTBOUND_ACCEPTED || status == ENUM_FILE_OUTBOUND_COMPLETED)
-		gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
-	if(status == ENUM_FILE_INBOUND_COMPLETED && is_image_file(file_path))
+		fraction = ((double)transferred*1.000/(double)size);
+	if(t_peer[n].t_file[f].progress_bar)
+	{ // Sanity check
+		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[n].t_file[f].progress_bar),fraction);
+		if(file_status == ENUM_FILE_ACTIVE_IN || file_status == ENUM_FILE_ACTIVE_OUT || file_status == ENUM_FILE_ACTIVE_IN_OUT || file_status == ENUM_FILE_INACTIVE_COMPLETE)
+			gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
+	}
+	if(file_status == ENUM_FILE_INACTIVE_COMPLETE && is_image_file(file_path))
 		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image
 	torx_free((void*)&file_path);
 	return 0;
@@ -2139,11 +2130,11 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 		return;
 	const int n = vptoii_n(data);
 	const int f = vptoii_i(data);
-	const uint8_t status = getter_uint8(n,INT_MIN,f,offsetof(struct file_list,status)); // TODO DEPRECIATE FILE STATUS TODO
+	const int file_status = file_status_get(n,f);
 	const uint64_t size = getter_uint64(n,INT_MIN,f,offsetof(struct file_list,size));
 	const uint64_t transferred = calculate_transferred(n,f);
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
-	printf("Checkpoint toggle_file: %u\n",status);
+	printf("Checkpoint toggle_file: %d\n",file_status);
 	if(file_path && size > 0 && size == transferred && size == get_file_size(file_path))
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 		GFile *file = g_file_new_for_path(file_path);
@@ -2152,7 +2143,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	//	gtk_file_launcher_launch (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL); // not good, it opens in default without asking
 		gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
 	}
-	else if(status == ENUM_FILE_INBOUND_PENDING)
+	else if(file_status == ENUM_FILE_INACTIVE_AWAITING_ACCEPTANCE_INBOUND)
 	{
 		pthread_rwlock_rdlock(&mutex_global_variable);
 		const char *download_dir_local = download_dir;
@@ -3011,8 +3002,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 	{
 		text_title = "TorX";
 		text_welcome = "Welcome to TorX";
-		text_transfer_completed_to = "Transfer completed to";
-		text_transfer_completed_from = "Transfer completed from";
+		text_transfer_completed = "Transfer Completed";
 		text_online = "Has come online";
 		text_new_friend = "Has a new friend request";
 		text_accepted_file = "Accepted a file";
@@ -5131,29 +5121,21 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			breakpoint();
 			return;
 		}
-		const uint8_t status = getter_uint8(file_n,INT_MIN,f,offsetof(struct file_list,status)); // TODO DEPRECIATE FILE STATUS TODO
+		const int file_status = file_status_get(file_n,f);
 		torx_read(file_n) // XXX
 		const char *file_path = peer[file_n].file[f].file_path;
 		torx_unlock(file_n) // XXX
 		if(file_path)
 		{
-			if(/*status == ENUM_FILE_OUTBOUND_PENDING || */status == ENUM_FILE_INBOUND_PENDING)
+			if(file_status == ENUM_FILE_INACTIVE_ACCEPTED)
 				create_button(text_start,ui_message_pause,data)
-			else if(status == ENUM_FILE_OUTBOUND_ACCEPTED || status == ENUM_FILE_INBOUND_ACCEPTED)
+			else if(file_status == ENUM_FILE_ACTIVE_IN || file_status == ENUM_FILE_ACTIVE_OUT || file_status == ENUM_FILE_ACTIVE_IN_OUT)
 				create_button(text_pause,ui_message_pause,data)
 		}
-		if(status == ENUM_FILE_INBOUND_COMPLETED)
+		if(file_status != ENUM_FILE_INACTIVE_AWAITING_ACCEPTANCE_INBOUND && file_status != ENUM_FILE_INACTIVE_CANCELLED)
 			create_button(text_open_folder,ui_open_folder,data)
-		if(stat == ENUM_MESSAGE_RECV)
-		{
-			if(status != ENUM_FILE_INBOUND_REJECTED)
-				create_button(text_reject,ui_message_reject,data)
-		}
-		else
-		{
-			if(status != ENUM_FILE_OUTBOUND_CANCELLED)
-				create_button(text_cancel,ui_message_cancel,data)
-		}
+		if(file_status != ENUM_FILE_INACTIVE_CANCELLED)
+			create_button(stat == ENUM_MESSAGE_RECV ? text_reject : text_cancel,ui_message_reject,data)
 	}
 	else
 	{ // messages:		copy,edit,delete	text_copy, text_edit, text_delete
