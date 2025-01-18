@@ -1167,7 +1167,7 @@ static int transfer_progress_idle(void *arg)
 	if(size > 0)
 		fraction = ((double)transferred*1.000/(double)size);
 	const int file_status = file_status_get(n,f);
-	if(t_peer[n].t_file[f].previously_completed == 0 && file_status == ENUM_FILE_INACTIVE_COMPLETE)
+	if(t_peer[n].t_file[f].previously_completed == 0 && (fraction == ENUM_FILE_INACTIVE_COMPLETE || fraction == 1))
 	{ // Ensure that we didn't notify of completion already (relevant to GROUP_CTRL)
 		t_peer[n].t_file[f].previously_completed = 1;
 		if(t_peer[n].mute == 0)
@@ -2140,12 +2140,9 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 		return;
 	const int n = vptoii_n(data);
 	const int f = vptoii_i(data);
-	const int file_status = file_status_get(n,f);
-	const uint64_t size = getter_uint64(n,INT_MIN,f,offsetof(struct file_list,size));
-	const uint64_t transferred = calculate_transferred(n,f);
+	const int is_complete = file_is_complete(n,f);
 	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
-	printf("Checkpoint toggle_file: %d\n",file_status);
-	if(file_path && size > 0 && size == transferred && size == get_file_size(file_path))
+	if(is_complete)
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 		GFile *file = g_file_new_for_path(file_path);
 		GtkFileLauncher *launcher = gtk_file_launcher_new (file);
@@ -2153,7 +2150,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	//	gtk_file_launcher_launch (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL); // not good, it opens in default without asking
 		gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
 	}
-	else if(file_status == ENUM_FILE_INACTIVE_AWAITING_ACCEPTANCE_INBOUND)
+	else if(file_path == NULL)
 	{
 		pthread_rwlock_rdlock(&mutex_global_variable);
 		const char *download_dir_local = download_dir;
@@ -5243,7 +5240,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	uint32_t message_len;
 	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
-//	int g = -1;
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
 	{
 		const int group_n = getter_group_int(g,offsetof(struct group_list,n));
@@ -5255,7 +5251,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	uint8_t finished_image = 0;
 	char *filename;
 	char *file_path;
-	uint64_t transferred = 0; // clang wants this initialized, but it doesn't need to be
 	if(f > -1) // File
 	{
 		int file_n = n;
@@ -5263,9 +5258,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			file_n = nn; // group_n
 		filename = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,filename));
 		file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
-		const uint64_t size = getter_uint64(file_n,INT_MIN,f,offsetof(struct file_list,size));
-		transferred = calculate_transferred(file_n,f);
-		if(size > 0 && size == transferred && size == get_file_size(file_path)) // is finished file
+		if(t_peer[file_n].t_file[f].previously_completed || file_is_complete(file_n,f))
 		{
 			t_peer[file_n].t_file[f].previously_completed = 1;
 			finished_image = is_image_file(file_path);
@@ -5425,6 +5418,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			torx_free((void*)&file_size_text);
 			double fraction = 0;
 			const uint64_t size = getter_uint64(file_n,INT_MIN,f,offsetof(struct file_list,size));
+			const uint64_t transferred = calculate_transferred(file_n,f);
 			if(size > 0)
 				fraction = (1.000 *(double)transferred / (double)size);
 
