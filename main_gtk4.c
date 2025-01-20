@@ -1870,9 +1870,9 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 		GFile *folder = gtk_file_dialog_select_folder_finish(dialog,res,NULL);
 		if(folder)
 		{
-			torx_read(n) // XXX
+			torx_read(n) // 🟧🟧🟧
 			const char *filename = peer[n].file[f].filename;
-			torx_unlock(n) // XXX
+			torx_unlock(n) // 🟩🟩🟩
 			if(filename == NULL)
 			{
 				error_simple(0,"Null file name. Failed sanity check.");
@@ -1882,12 +1882,12 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 			char *folder_path = g_file_get_path(folder); // free'd (in most cases)
 			if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 				return;
-			torx_write(n) // XXX
+			torx_write(n) // 🟥🟥🟥
 			torx_free((void*)&peer[n].file[f].file_path);
 			const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
 			peer[n].file[f].file_path = torx_secure_malloc(maxlen);
 			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,platform_slash,peer[n].file[f].filename);
-			torx_unlock(n) // XXX
+			torx_unlock(n) // 🟩🟩🟩
 			file_accept(n,f);
 			g_free(folder_path); folder_path = NULL;
 		}
@@ -5129,9 +5129,9 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			return;
 		}
 		const int file_status = file_status_get(file_n,f);
-		torx_read(file_n) // XXX
+		torx_read(file_n) // 🟧🟧🟧
 		const char *file_path = peer[file_n].file[f].file_path;
-		torx_unlock(file_n) // XXX
+		torx_unlock(file_n) // 🟩🟩🟩
 		if(file_path)
 		{
 			if(file_status == ENUM_FILE_INACTIVE_ACCEPTED)
@@ -5233,10 +5233,10 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols);
-	torx_read(n) // XXX
+	torx_read(n) // 🟧🟧🟧
 	const uint8_t owner = peer[n].owner;
 	const uint8_t stat = peer[n].message[i].stat;
-	torx_unlock(n) // XXX
+	torx_unlock(n) // 🟩🟩🟩
 	uint32_t message_len;
 	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
@@ -5950,7 +5950,7 @@ static int stream_idle(void *arg)
 					y++;
 				if (y < MAX_STICKER_REQUESTS)
 					sodium_memzero(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
-				torx_read(n) // XXX
+				torx_read(n) // 🟧🟧🟧
 				for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
 				{ // Rebuild any messages that had this sticker
 					const int p_iter_local = peer[n].message[i].p_iter;
@@ -5962,15 +5962,15 @@ static int stream_idle(void *arg)
 						if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
 						&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
 						{ // Find the first relevant message and update it TODO this might not work in groups
-							torx_unlock(n) // XXX
+							torx_unlock(n) // 🟩🟩🟩
 							printf("Checkpoint should be rebuilding a sticker n=%d i=%i (might not work in groups)\n",n,i);
 							ui_print_message(n,i,2);
-							torx_read(n) // XXX
+							torx_read(n) // 🟧🟧🟧
 							break;
 						}
 					}
 				}
-				torx_unlock(n) // XXX
+				torx_unlock(n) // 🟩🟩🟩
 			}
 			sodium_memzero(checksum,sizeof(checksum));
 		}
@@ -7010,19 +7010,19 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		if(invite_required)
 		{
 			unsigned char verification_message[56+crypto_sign_PUBLICKEYBYTES];
-			torx_read(n) // XXX
+			torx_read(n) // 🟧🟧🟧
 			const unsigned char *invitation = peer[n].invitation;
 			memcpy(verification_message,peer[n].peeronion,56);
 			memcpy(&verification_message[56],peer[n].peer_sign_pk,crypto_sign_PUBLICKEYBYTES);
-			torx_unlock(n) // XXX
+			torx_unlock(n) // 🟩🟩🟩
 			invitor_n = group_check_sig(g,(char *)verification_message,sizeof(verification_message),0,invitation,NULL);
 			sodium_memzero(verification_message,sizeof(verification_message));
 		}
 		if(invitor_n > -1)
 		{
-			torx_read(invitor_n) // XXX
+			torx_read(invitor_n) // 🟧🟧🟧
 			snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",identifier,onion,text_invitor,peer[invitor_n].peernick);
-			torx_unlock(invitor_n) // XXX
+			torx_unlock(invitor_n) // 🟩🟩🟩
 		}
 		else
 			snprintf(tooltip,sizeof(tooltip),"%s: %s",identifier,onion);
@@ -7154,9 +7154,9 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 						const int f = set_f(file_n,(const unsigned char*)message,CHECKSUM_BIN_LEN-1);
 						if(f > -1)
 						{
-							torx_read(file_n) // XXX
+							torx_read(file_n) // 🟧🟧🟧
 							snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"%s",peer[file_n].file[f].filename);
-							torx_unlock(file_n) // XXX
+							torx_unlock(file_n) // 🟩🟩🟩
 						}
 					}
 					else if(null_terminated_len)
