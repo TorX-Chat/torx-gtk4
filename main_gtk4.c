@@ -1170,6 +1170,7 @@ static int transfer_progress_idle(void *arg)
 	if(t_peer[n].t_file[f].previously_completed == 0 && (fraction == ENUM_FILE_INACTIVE_COMPLETE || fraction == 1))
 	{ // Ensure that we didn't notify of completion already (relevant to GROUP_CTRL)
 		t_peer[n].t_file[f].previously_completed = 1;
+		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,2);
 		if(t_peer[n].mute == 0)
 		{
 			const uint8_t stat = getter_uint8(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,-1,offsetof(struct message_list,stat));
@@ -5246,7 +5247,6 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		if(group_n > -1)
 			nn = group_n;
 	}
-
 	GtkWidget *msg = NULL; // must be null intialized
 	uint8_t finished_image = 0;
 	char *filename;
