@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.23 2025/01/15 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.24 2025/02/20 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2376,19 +2376,31 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 }
 
 static void ui_delete_log(GtkWidget *button,const gpointer data)
-{
+{ // The logic here is complicated but efficient. We must set .visible = 0 before we g_list_store_remove_all.
 	const int n = vptoi(data); // DO NOT FREE ARG
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_active)));
-	delete_log(n);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
-		ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
+	{
+		const int g = set_g(n,NULL);
+		pthread_rwlock_rdlock(&mutex_expand_group);
+		struct msg_list *page = group[g].msg_first;
+		pthread_rwlock_unlock(&mutex_expand_group);
+		while(page)
+		{
+			t_peer[page->n].t_message[page->i].visible = 0;
+			page = page->message_next;
+		}
+	}
 	else
 	{
-		const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
-		ui_populate_peers(itovp(status));
+		const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
+		const int min_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,min_i));
+		for(int i = min_i; i <= max_i; i++)
+			t_peer[n].t_message[i].visible = 0;
 	}
-	// TODO re-draw scroll window?
+	delete_log(n);
+	g_list_store_remove_all(t_main.list_store_chat);
 }
 
 static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const GtkPositionType pos,const gpointer data)
@@ -5544,7 +5556,6 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		return;
 	}
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
-	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const int p_iter = getter_int(n,i,-1,offsetof(struct message_list,p_iter));
 	#if GTK_FACTORY_BUG
 	if((scroll == 2 || scroll == 3) && t_peer[n].t_message[i].message_box)
@@ -5609,6 +5620,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		return; // do not display
 	}
 	int g = -1;
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
 	{
 		if(!group_pm && stat != ENUM_MESSAGE_RECV)
@@ -6895,7 +6907,9 @@ static void ui_select_changed(const void *arg)
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		const int g = set_g(n,NULL);
+		pthread_rwlock_rdlock(&mutex_expand_group);
 		struct msg_list *page = group[g].msg_first;
+		pthread_rwlock_unlock(&mutex_expand_group);
 		while(page)
 		{
 			if(page->message_next)
@@ -6903,7 +6917,7 @@ static void ui_select_changed(const void *arg)
 			else
 				ui_print_message(page->n,page->i,1); // last message, scroll
 			page = page->message_next;
-		}	
+		}
 	}
 	else
 	{
