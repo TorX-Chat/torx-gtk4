@@ -937,7 +937,7 @@ static int initialize_f_idle(void *arg)
 	t_peer[n].t_file[f].i = INT_MIN;
 	t_peer[n].t_file[f].progress_bar = NULL;
 	t_peer[n].t_file[f].file_size = NULL;
-	t_peer[n].t_file[f].previously_completed = 0;
+	t_peer[n].t_file[f].previously_completed = 0; // TODO Consider moving this to library?
 	return 0;
 }
 
@@ -1167,7 +1167,7 @@ static int transfer_progress_idle(void *arg)
 	if(size > 0)
 		fraction = ((double)transferred*1.000/(double)size);
 	const int file_status = file_status_get(n,f);
-	if(t_peer[n].t_file[f].previously_completed == 0 && (fraction == ENUM_FILE_INACTIVE_COMPLETE || fraction == 1))
+	if(t_peer[n].t_file[f].previously_completed == 0 && (file_status == ENUM_FILE_INACTIVE_COMPLETE || transferred == size))
 	{ // Ensure that we didn't notify of completion already (relevant to GROUP_CTRL)
 		t_peer[n].t_file[f].previously_completed = 1;
 		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,2);
@@ -1188,7 +1188,7 @@ static int transfer_progress_idle(void *arg)
 	if(t_peer[n].t_file[f].progress_bar)
 	{ // Sanity check
 		gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(t_peer[n].t_file[f].progress_bar),fraction);
-		if(file_status == ENUM_FILE_ACTIVE_IN || file_status == ENUM_FILE_ACTIVE_OUT || file_status == ENUM_FILE_ACTIVE_IN_OUT || file_status == ENUM_FILE_INACTIVE_COMPLETE)
+		if(file_status != ENUM_FILE_INACTIVE_AWAITING_ACCEPTANCE_INBOUND && file_status != ENUM_FILE_INACTIVE_CANCELLED)
 			gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
 	}
 	if(file_status == ENUM_FILE_INACTIVE_COMPLETE && is_image_file(file_path))
@@ -5270,6 +5270,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			file_n = nn; // group_n
 		filename = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,filename));
 		file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
+	//	printf("Checkpoint loader: pc=%u fic=%d fsg=%d\n",t_peer[file_n].t_file[f].previously_completed,file_is_complete(file_n,f),file_status_get(file_n,f));
 		if(t_peer[file_n].t_file[f].previously_completed || file_is_complete(file_n,f))
 		{
 			t_peer[file_n].t_file[f].previously_completed = 1;
@@ -5431,7 +5432,9 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			double fraction = 0;
 			const uint64_t size = getter_uint64(file_n,INT_MIN,f,offsetof(struct file_list,size));
 			const uint64_t transferred = calculate_transferred(file_n,f);
-			if(size > 0)
+			if(!transferred && t_peer[file_n].t_file[f].previously_completed)
+				fraction = 1.000;
+			else if(size > 0)
 				fraction = (1.000 *(double)transferred / (double)size);
 
 			t_peer[file_n].t_file[f].progress_bar = gtk_progress_bar_new();
@@ -5442,7 +5445,9 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			gtk_box_append(GTK_BOX(text_area),msg);
 			gtk_box_append(GTK_BOX(text_area),t_peer[file_n].t_file[f].file_size);
 			gtk_box_append(GTK_BOX(text_area),t_peer[file_n].t_file[f].progress_bar);
-			gtk_widget_set_visible(t_peer[file_n].t_file[f].progress_bar,FALSE);
+			const int file_status = file_status_get(file_n,f);
+			if(file_status == ENUM_FILE_INACTIVE_AWAITING_ACCEPTANCE_INBOUND || file_status == ENUM_FILE_INACTIVE_CANCELLED)
+				gtk_widget_set_visible(t_peer[file_n].t_file[f].progress_bar,FALSE);
 
 			gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
 			gtk_grid_attach (GTK_GRID(grid),text_area,1,0,1,1);
@@ -6640,15 +6645,20 @@ static void ui_group_peerlist(const gpointer data)
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_group_peerlist));
 }
 
-
 static inline void on_file_drop(GtkDropTarget *drop_target, const GValue *value, gpointer arg)
 { // https://gitlab.gnome.org/GNOME/gtk/-/issues/3755
 	(void) drop_target;
 	const int n = vptoi(arg);
-	GFile *file = g_value_get_object(value);
-	char *file_path = g_file_get_path(file); // free'd
-	file_send(n,file_path);
-	g_free(file_path); file_path = NULL;
+	if (n > -1 && G_VALUE_HOLDS(value, GDK_TYPE_FILE_LIST))
+	{
+		GSList *list = g_value_get_boxed (value);
+		for (const GSList *iter = list; iter && G_IS_FILE (iter->data); iter = iter->next)
+		{ // NOTE: We could also handle non-GFile things to allow dragging and dropping of text, for example.
+			char *file_path = g_file_get_path(iter->data); // free'd
+			file_send(n,file_path);
+			g_free(file_path); file_path = NULL;
+		}
+	}
 }
 
 static void ui_send_pressed(GtkGestureClick *gesture, int n_press, double x, double y, gpointer *arg)
@@ -6832,7 +6842,7 @@ static void ui_select_changed(const void *arg)
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
 
 	/* Add drop target (for drag-and-drop file sends) */
-	GtkDropTarget *drop_target = gtk_drop_target_new(G_TYPE_FILE, GDK_ACTION_COPY);
+	GtkDropTarget *drop_target = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
 	g_signal_connect(drop_target, "drop", G_CALLBACK(on_file_drop), itovp(n));
 	gtk_widget_add_controller(t_main.write_message, GTK_EVENT_CONTROLLER(drop_target));
 
