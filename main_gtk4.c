@@ -1872,9 +1872,9 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 		if(folder)
 		{
 			torx_read(n) // 🟧🟧🟧
-			const char *filename = peer[n].file[f].filename;
+			const uint8_t filename_exists = peer[n].file[f].filename ? 1 : 0;
 			torx_unlock(n) // 🟩🟩🟩
-			if(filename == NULL)
+			if(!filename_exists)
 			{
 				error_simple(0,"Null file name. Failed sanity check.");
 				gtk_window_destroy(GTK_WINDOW(dialog));
@@ -5143,9 +5143,9 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		}
 		const int file_status = file_status_get(file_n,f);
 		torx_read(file_n) // 🟧🟧🟧
-		const char *file_path = peer[file_n].file[f].file_path;
+		const uint8_t file_path_exists = peer[file_n].file[f].file_path ? 1 : 0;
 		torx_unlock(file_n) // 🟩🟩🟩
-		if(file_path)
+		if(file_path_exists)
 		{
 			if(file_status == ENUM_FILE_INACTIVE_ACCEPTED)
 				create_button(text_start,ui_message_pause,data)
@@ -7034,13 +7034,13 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		if(invite_required)
 		{
 			unsigned char verification_message[56+crypto_sign_PUBLICKEYBYTES];
-			torx_read(n) // 🟧🟧🟧
-			const unsigned char *invitation = peer[n].invitation;
-			memcpy(verification_message,peer[n].peeronion,56);
-			memcpy(&verification_message[56],peer[n].peer_sign_pk,crypto_sign_PUBLICKEYBYTES);
-			torx_unlock(n) // 🟩🟩🟩
+			getter_array(verification_message,56,n,INT_MIN,-1,offsetof(struct peer_list,peeronion));
+			getter_array(&verification_message[56],crypto_sign_PUBLICKEYBYTES,n,INT_MIN,-1,offsetof(struct peer_list,peer_sign_pk));
+			unsigned char invitation[crypto_sign_BYTES];
+			getter_array(invitation,sizeof(invitation),n,INT_MIN,-1,offsetof(struct peer_list,invitation));
 			invitor_n = group_check_sig(g,(char *)verification_message,sizeof(verification_message),0,invitation,NULL);
 			sodium_memzero(verification_message,sizeof(verification_message));
+			sodium_memzero(invitation,sizeof(invitation));
 		}
 		if(invitor_n > -1)
 		{
