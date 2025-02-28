@@ -559,7 +559,7 @@ static const char *text_active_mult = {0};
 static const char *text_active_sing = {0};
 static const char *text_you = {0};
 static const char *text_queued = {0};
-static const char *text_draft = {0}; // TODO implement
+static const char *text_draft = {0};
 static const char *text_accept = {0};
 static const char *text_reject = {0};
 static const char *text_copy = {0};
@@ -1340,10 +1340,10 @@ static void ui_set_last_seen(const int n)
 		struct tm *info = localtime(&last_seen);
 		char timebuffer[20] = {0};
 		strftime(timebuffer,20,"%Y/%m/%d %H:%M:%S",info);
-		snprintf(last_online_text,sizeof(last_online_text),"%s%s",text_status_last_seen,timebuffer);
+		snprintf(last_online_text,sizeof(last_online_text),"%s: %s",text_status_last_seen,timebuffer);
 	}
 	else
-		snprintf(last_online_text,sizeof(last_online_text),"%s%s",text_status_last_seen,text_status_never);
+		snprintf(last_online_text,sizeof(last_online_text),"%s: %s",text_status_last_seen,text_status_never);
 	gtk_label_set_text(GTK_LABEL(t_main.last_online),last_online_text);
 }
 
@@ -3055,7 +3055,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_group_offer = "Group Offer";
 		text_audio_message = "Audio Message";
 		text_sticker = "Sticker";
-		text_current_members = "Current Members: ";
+		text_current_members = "Current Members";
 		text_group_private = "Private Group";
 		text_group_public = "Public Group";
 		text_block = "Block";
@@ -3067,9 +3067,9 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_outgoing = "Outgoing Requests";
 		text_active_mult = "Active Multi-Use IDs";
 		text_active_sing = "Active Single-Use IDs";
-		text_you = "You: ";
-		text_queued = "Queued: ";
-		text_draft = "Draft: ";
+		text_you = "You";
+		text_queued = "Queued";
+		text_draft = "Draft";
 		text_accept = "Accept";
 		text_reject = "Reject";
 		text_copy = "Copy";
@@ -3127,7 +3127,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_tooltip_button_delete_log = "DANGER:\nDelete Message History";
 		text_status_online = "Currently online";
 		text_of = "of";
-		text_status_last_seen = "Last seen: ";
+		text_status_last_seen = "Last seen";
 		text_status_never = "Never";
 		text_edit_torrc = "Edit Torrc";
 		text_saving_will_restart_tor = "Saving will restart Tor";
@@ -5303,7 +5303,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				peernick = getter_string(&peernick_len,group_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			char group_message[ARBITRARY_ARRAY_SIZE];
 			if(group_n > -1 && peernick && peernick_len)
-				snprintf(group_message,sizeof(group_message),"%s\n%s %u\n%s",group_type,text_current_members,peercount,peernick);
+				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,peernick);
 			else
 			{ // We have not joined yet, so no name. Use encoded GroupID instead
 				unsigned char id[GROUP_ID_SIZE];
@@ -5312,7 +5312,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				pthread_rwlock_unlock(&mutex_expand_group);
 				char *group_encoded = b64_encode(id,GROUP_ID_SIZE);
 				sodium_memzero(id,sizeof(id));
-				snprintf(group_message,sizeof(group_message),"%s\n%s %u\n%s",group_type,text_current_members,peercount,group_encoded);
+				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,group_encoded);
 				torx_free((void*)&group_encoded);
 			}
 			torx_free((void*)&peernick);
@@ -7044,8 +7044,12 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		}
 		if(invitor_n > -1)
 		{
+			const int group_n = getter_group_int(g,offsetof(struct group_list,n));
 			torx_read(invitor_n) // 🟧🟧🟧
-			snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",identifier,onion,text_invitor,peer[invitor_n].peernick);
+			if(invitor_n == group_n)
+				snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",identifier,onion,text_invitor,text_you);
+			else
+				snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",identifier,onion,text_invitor,peer[invitor_n].peernick);
 			torx_unlock(invitor_n) // 🟩🟩🟩
 		}
 		else
@@ -7132,7 +7136,7 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 			GtkTextIter start, end;
 			gtk_text_buffer_get_bounds(t_peer[n].buffer_write, &start, &end);
 			char *text = gtk_text_buffer_get_text(t_peer[n].buffer_write, &start, &end, FALSE);
-			snprintf(last_message,sizeof(last_message),"%s%s",text_draft,text);
+			snprintf(last_message,sizeof(last_message),"%s: %s",text_draft,text);
 			g_free(text);
 			text = NULL;
 		}
@@ -7164,9 +7168,9 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 					if(stat == ENUM_MESSAGE_RECV && t_peer[n].unread > 0) // NOTE: This n needs to be n, not last_message_n. n is the group_ctrl whereas last_message_n is peer
 					{}//	prefix = snprintf(last_message,sizeof(last_message),"🔔 "); // this bell is 4char
 					else if(stat == ENUM_MESSAGE_FAIL && owner != ENUM_OWNER_GROUP_CTRL)
-						prefix = snprintf(last_message,sizeof(last_message),"%s",text_queued);
+						prefix = snprintf(last_message,sizeof(last_message),"%s: ",text_queued);
 					else if(stat != ENUM_MESSAGE_RECV)
-						prefix = snprintf(last_message,sizeof(last_message),"%s",text_you);
+						prefix = snprintf(last_message,sizeof(last_message),"%s: ",text_you);
 					if(file_offer)
 					{ // Last message is file offer
 						int file_n = last_message_n;
