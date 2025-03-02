@@ -1192,7 +1192,7 @@ static int transfer_progress_idle(void *arg)
 			gtk_widget_set_visible(t_peer[n].t_file[f].progress_bar,TRUE);
 	}
 	if(file_status == ENUM_FILE_INACTIVE_COMPLETE && is_image_file(file_path))
-		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,3); // rebuild message to display image. Do this last.
+		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,2); // rebuild message to display image. Do this last.
 	torx_free((void*)&file_path);
 	return 0;
 }
@@ -2379,26 +2379,6 @@ static void ui_delete_log(GtkWidget *button,const gpointer data)
 { // The logic here is complicated but efficient. We must set .visible = 0 before we g_list_store_remove_all.
 	const int n = vptoi(data); // DO NOT FREE ARG
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_active)));
-	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-	if(owner == ENUM_OWNER_GROUP_CTRL)
-	{
-		const int g = set_g(n,NULL);
-		pthread_rwlock_rdlock(&mutex_expand_group);
-		struct msg_list *page = group[g].msg_first;
-		pthread_rwlock_unlock(&mutex_expand_group);
-		while(page)
-		{
-			t_peer[page->n].t_message[page->i].visible = 0;
-			page = page->message_next;
-		}
-	}
-	else
-	{
-		const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
-		const int min_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,min_i));
-		for(int i = min_i; i <= max_i; i++)
-			t_peer[n].t_message[i].visible = 0;
-	}
 	delete_log(n);
 	g_list_store_remove_all(t_main.list_store_chat);
 }
@@ -5569,6 +5549,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].message_box = NULL;
 	}
 	#endif
+	if(scroll == 3) // NOT else if. 2024/03/02 Message has just been deleted (this is the callback). HIGHLY necessary otherwise bad things will happen when deleting group messages
+		t_peer[n].t_message[i].visible = 0;
 	if(p_iter < 0)
 	{ // hide or do not print (deleted message)
 		if(t_peer[n].t_message[i].visible)
