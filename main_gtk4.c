@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.24 2025/02/20 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.25 2025/03/06 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -484,6 +484,7 @@ void initialize_n_cb_ui(const int n);
 void initialize_i_cb_ui(const int n,const int i);
 void initialize_f_cb_ui(const int n,const int f);
 void initialize_g_cb_ui(const int g);
+void shrinkage_cb_ui(const int n,const int shrinkage);
 void expand_file_struc_cb_ui(const int n,const int f);
 void expand_message_struc_cb_ui(const int n,const int i);
 void expand_peer_struc_cb_ui(const int n);
@@ -951,6 +952,27 @@ void initialize_g_cb_ui(const int g)
 	(void) g;
 }
 
+static int shrinkage_idle(void *arg)
+{
+	const int n = vptoii_n(arg);
+	const int shrinkage = vptoii_i(arg);
+	if(shrinkage)
+	{
+		const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location); // XXX Note this shift
+		const size_t current_shift = (size_t)abs(shrinkage);
+		if(shrinkage > 0) // We shift everything forward
+			t_peer[n].t_message = (struct t_message_list*)torx_realloc_shift(t_peer[n].t_message + t_peer[n].pointer_location, current_allocation_size - sizeof(struct t_message_list) *current_shift,1) - t_peer[n].pointer_location - current_shift;
+		else
+			t_peer[n].t_message = (struct t_message_list*)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location, current_allocation_size - sizeof(struct t_message_list) *current_shift) - t_peer[n].pointer_location;
+	}
+	return 0;
+}
+
+void shrinkage_cb_ui(const int n,const int shrinkage)
+{
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,shrinkage_idle,iitovp(n,shrinkage),NULL);
+}
+
 static int expand_file_struc_idle(void *arg)
 {
 	const int n = vptoii_n(arg);
@@ -1377,6 +1399,19 @@ static int onion_deleted_idle(void *arg)
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
+	if(t_peer[n].buffer_write)
+	{
+		g_free(t_peer[n].buffer_write);
+		t_peer[n].buffer_write = NULL;
+	}
+	t_peer[n].pointer_location = -10;
+	t_peer[n].t_message = (struct t_message_list *)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
+	t_peer[n].t_file = torx_realloc(t_peer[n].t_file,sizeof(struct t_file_list) *11);
+	for(int i = -10 ; i <= 10 ; i++) // re-initialize t_message
+		initialize_i_idle(iitovp(n,i)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
+	for(int f = 0 ; f <= 10 ; f++) // re-initialize t_file
+		initialize_f_idle(iitovp(n,f)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
+	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	if(generated_n > -1 && getter_uint8(generated_n,INT_MIN,-1,offsetof(struct peer_list,owner)) == 0)
 	{
 		generated_n = -1;
@@ -2376,11 +2411,10 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 }
 
 static void ui_delete_log(GtkWidget *button,const gpointer data)
-{ // The logic here is complicated but efficient. We must set .visible = 0 before we g_list_store_remove_all.
+{
 	const int n = vptoi(data); // DO NOT FREE ARG
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_active)));
 	delete_log(n);
-	g_list_store_remove_all(t_main.list_store_chat);
 }
 
 static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const GtkPositionType pos,const gpointer data)
@@ -2391,6 +2425,7 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 	const int n = vptoi(data); // DO NOT FREE ARG
 	int count = 0;
 	int *loaded_array = message_load_more(&count,n);
+	printf("Checkpoint ui_load_more_messages\n");
 	for(int current = count-1; current >= 0 ; current--)
 	{ // TODO replace with _splice // TODO do not use loaded because in some circumstances it'll be less than show_log_messages
 		struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
@@ -5075,6 +5110,8 @@ static void ui_message_delete(const gpointer data)
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
 	message_edit(n,i,NULL);
+	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
+		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
 }
 
 static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,const gpointer data)
@@ -5533,44 +5570,23 @@ static void message_builder(GtkListItemFactory *factory, GtkListItem *list_item,
 }
 
 static void ui_print_message(const int n,const int i,const int scroll)
-{ // use _idle or _cb unless in main thread // TODO TODO TODO XXX this function is too complex, theorize how to move most of it to library so we don't have to maintain it in UI
+{ // use _idle or _cb unless in main thread // XXX WARNING: DO NOT ACCESS .message STRUCT IF SCROLL==3
 	if(n < 0 || i == INT_MIN/* || i > getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i)) || i < getter_int(n,INT_MIN,-1,offsetof(struct peer_list,min_i))*/)
 	{
 		error_simple(0,"Sanity check failed in ui_print_message. Coding error. Report this.");
 		breakpoint();
 		return;
 	}
-	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 	const int p_iter = getter_int(n,i,-1,offsetof(struct message_list,p_iter));
+	if(p_iter < 0)
+		return;
 	#if GTK_FACTORY_BUG
-	if((scroll == 2 || scroll == 3) && t_peer[n].t_message[i].message_box)
+	if(scroll == 2 && t_peer[n].t_message[i].message_box)
 	{
 		g_object_unref(t_peer[n].t_message[i].message_box);
 		t_peer[n].t_message[i].message_box = NULL;
 	}
 	#endif
-	if(scroll == 3) // NOT else if. 2024/03/02 Message has just been deleted (this is the callback). HIGHLY necessary otherwise bad things will happen when deleting group messages
-		t_peer[n].t_message[i].visible = 0;
-	if(p_iter < 0)
-	{ // hide or do not print (deleted message)
-		if(t_peer[n].t_message[i].visible)
-		{
-			t_peer[n].t_message[i].visible = 0;
-			if(n == global_n)
-			{
-				IntPair *pair = int_pair_new(n,i,-1,-1);
-				if(INVERSION_TEST)
-				{
-					const guint total = (guint)(t_main.global_pos_max - t_main.global_pos_min);
-					g_list_store_splice (t_main.list_store_chat,total - (guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
-				}
-				else
-					g_list_store_splice (t_main.list_store_chat,(guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
-			}
-		}
-		t_peer[n].t_message[i].pos = 0;
-		goto skip_printing;
-	}
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint16_t protocol = protocols[p_iter].protocol;
 	const uint8_t notifiable = protocols[p_iter].notifiable;
@@ -5607,6 +5623,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		return; // do not display
 	}
 	int g = -1;
+	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
 	{
@@ -5695,7 +5712,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			return; // do not display other types of files messages
 		}
 		// Handle :sent: TODO
-		if(scroll == 2 || scroll == 3)
+		if(scroll == 2)
 		{ // Update but *do not* actually scroll
 		//	ui_message_info(n,i);
 			IntPair *pair = int_pair_new(n,i,f,g);
@@ -5750,20 +5767,19 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	skip_printing: {}
 //printf("Checkpoint print n=%d i=%d p_iter=%d scroll=%d pos=%d msg=%s\n",n,i,p_iter,scroll,t_peer[n].t_message[i].pos,peer[n].message[i].message);
 	if(scroll > 0)
-	{ // == 1 or == 2 or == 3
+	{ // == 1 or == 2
 		const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
-		if(scroll == 1 || i >= max_i) // TODO 2024/02/22 Minor bug: when deleting the last message (max_i), this if statement is not activated. A bad work-ardound would be to pass scroll==1, but a better one would be to check the validity of max_i and look lower.
+		if(scroll == 1 || i == max_i + 1)
 		{ // populate_peers if last message or commanded (1)
 			if(owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL)); // Necessary for last_message and also the order
 			else
 			{
-				const uint8_t status_nn = getter_uint8(nn,INT_MIN,-1,offsetof(struct peer_list,status));
-				ui_populate_peers(itovp(status_nn)); // Necessary for last_message and also the order
+				const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
+				ui_populate_peers(itovp(status)); // Necessary for last_message and also the order
 			}
 		}
 	}
-
 }
 
 int print_message_idle(void *arg)
@@ -5901,13 +5917,66 @@ void message_modified_cb_ui(const int n,const int i)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL);
 }
 
+static int message_deleted_idle(void *arg)
+{ // XXX WARNING: DO NOT ACCESS .message STRUCT due to shrinkage possibly having occurred
+	const int n = vptoii_n(arg);
+	const int i = vptoii_i(arg);
+	if(n < 0 || i == INT_MIN)
+	{
+		error_simple(0,"Sanity check failed in message_deleted_idle. Coding error. Report this.");
+		breakpoint();
+		return 0;
+	}
+	printf("Checkpoint message_deleted_idle n=%d i=%d\n",n,i);
+	#if GTK_FACTORY_BUG
+	if(t_peer[n].t_message[i].message_box)
+	{
+		g_object_unref(t_peer[n].t_message[i].message_box);
+		t_peer[n].t_message[i].message_box = NULL;
+	}
+	#endif
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if(t_peer[n].t_message[i].visible)
+	{
+		t_peer[n].t_message[i].visible = 0; // We must set .visible = 0 before we g_list_store_remove_all or g_list_store_splice
+		int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
+		if(owner == ENUM_OWNER_GROUP_PEER)
+		{
+			const int g = set_g(n,NULL);
+			group_n = getter_group_int(g,offsetof(struct group_list,n));
+		}
+		if(n == global_n || group_n == global_n) // TODO cannot occur when we already wiped
+		{
+			IntPair *pair = int_pair_new(n,i,-1,-1);
+			if(INVERSION_TEST)
+			{
+				const guint total = (guint)(t_main.global_pos_max - t_main.global_pos_min);
+				g_list_store_splice (t_main.list_store_chat,total - (guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+			}
+			else
+				g_list_store_splice (t_main.list_store_chat,(guint)abs(t_main.global_pos_min - t_peer[n].t_message[i].pos),1,(void**)&pair,1);
+		}
+	}
+	t_peer[n].t_message[i].pos = 0;
+	t_peer[n].t_message[i].visible = 0;
+	t_peer[n].t_message[i].unheard = 1;
+	const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
+	if(i == max_i + 1)
+	{ // populate_peers if last message
+		if(owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
+			ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL)); // Necessary for last_message and also the order
+		else
+		{
+			const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
+			ui_populate_peers(itovp(status)); // Necessary for last_message and also the order
+		}
+	}
+	return 0;
+}
+
 void message_deleted_cb_ui(const int n,const int i)
-{ // GUI Callback
-	struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
-	printing->n = n;
-	printing->i = i;
-	printing->scroll = 3;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL);
+{ // GUI Callback // XXX WARNING: DO NOT ACCESS .message STRUCT due to shrinkage possibly having occurred
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,message_deleted_idle,iitovp(n,i),NULL);
 }
 
 static int stream_idle(void *arg)
@@ -5922,7 +5991,7 @@ static int stream_idle(void *arg)
 	pthread_rwlock_rdlock(&mutex_protocols);
 	const uint16_t protocol = protocols[p_iter].protocol;
 	pthread_rwlock_unlock(&mutex_protocols);
-	uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
 		goto end; // ignored or blocked
@@ -7640,6 +7709,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	initialize_i_setter(initialize_i_cb_ui);
 	initialize_f_setter(initialize_f_cb_ui);
 	initialize_g_setter(initialize_g_cb_ui);
+	shrinkage_setter(shrinkage_cb_ui);
 	expand_file_struc_setter(expand_file_struc_cb_ui);
 	expand_message_struc_setter(expand_message_struc_cb_ui);
 	expand_peer_struc_setter(expand_peer_struc_cb_ui);
