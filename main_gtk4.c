@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.25 2025/03/06 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.26 2025/03/10 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -508,6 +508,7 @@ void message_modified_cb_ui(const int n,const int i);
 void message_deleted_cb_ui(const int n,const int i);
 void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len);
 void message_extra_cb_ui(const int n,const int i,unsigned char *data,const uint32_t data_len);
+void message_more_cb_ui(const int loaded,int *loaded_array_n,int *loaded_array_i);
 void login_cb_ui(const int value);
 
 /* Global Text Declarations for ui_initialize_language() */
@@ -819,6 +820,12 @@ struct stream_data { // XXX Do not sodium_malloc structs unless they contain sen
 	int p_iter;
 	char *data;
 	uint32_t data_len;
+};
+
+struct int_p_p {
+	int loaded;
+	int *loaded_array_n;
+	int *loaded_array_i;
 };
 
 struct int_int { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
@@ -2423,18 +2430,7 @@ static void ui_load_more_messages(const GtkScrolledWindow *scrolled_window,const
 	if((INVERSION_TEST && pos == GTK_POS_TOP) || (!INVERSION_TEST && pos == GTK_POS_BOTTOM)) // GTK_POS_BOTTOM
 		return;
 	const int n = vptoi(data); // DO NOT FREE ARG
-	int count = 0;
-	int *loaded_array = message_load_more(&count,n);
-	printf("Checkpoint ui_load_more_messages\n");
-	for(int current = count-1; current >= 0 ; current--)
-	{ // TODO replace with _splice // TODO do not use loaded because in some circumstances it'll be less than show_log_messages
-		struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
-		printing->n = n;
-		printing->i = loaded_array[current];
-		printing->scroll = -1;
-		g_idle_add_full(G_PRIORITY_HIGH_IDLE,print_message_idle,printing,NULL); // XXX XXX XXX WARNING: MUST BE _IDLE, despite being in UI thread, because sql_populate_message triggers callbacks that need to execute first (expansions and initializations)s
-	}
-	torx_free((void*)&loaded_array);
+	message_load_more(n);
 }
 
 static void ui_input_new(GtkWidget *entry)
@@ -2627,10 +2623,6 @@ static void ui_decorate_headerbar(void)
 
 	GtkEventController *ev_enter = gtk_event_controller_motion_new();
 	GtkEventController *ev_leave = gtk_event_controller_motion_new();
-
-//	struct mouseover *mouseover = torx_insecure_malloc(sizeof(mouseover));
-//	mouseover->on = t_main.headerbar_buttons_box_enter;
-//	mouseover->off = t_main.headerbar_buttons_box_leave;
 
 	g_signal_connect_after(ev_enter, "enter", G_CALLBACK(ui_enter_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	g_signal_connect_after(ev_leave, "leave", G_CALLBACK(ui_leave_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
@@ -6064,7 +6056,7 @@ static int stream_idle(void *arg)
 }
 
 void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_len)
-{ // XXX WARNING: Not _idle function, DO NOT do UI things here // torx_secure_free required XXX
+{
 	struct stream_data *stream_data = torx_insecure_malloc(sizeof(struct stream_data));
 	stream_data->n = n;
 	stream_data->p_iter = p_iter;
@@ -6099,13 +6091,33 @@ static int message_extra_idle(void *arg)
 }
 
 void message_extra_cb_ui(const int n,const int i,unsigned char *data,const uint32_t data_len)
-{ // XXX WARNING: Not _idle function, DO NOT do UI things here // torx_secure_free required XXX
+{
 	struct stream_data *stream_data = torx_insecure_malloc(sizeof(struct stream_data));
 	stream_data->n = n;
 	stream_data->p_iter = i;
 	stream_data->data = (char *)data;
 	stream_data->data_len = data_len;
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,message_extra_idle,stream_data,NULL);
+}
+
+static int message_more_idle(void *arg)
+{
+	struct int_p_p *int_p_p = (struct int_p_p*) arg; // Casting passed struct
+	for(int current = 0; current < int_p_p->loaded ; current++)
+		ui_print_message(int_p_p->loaded_array_n[current],int_p_p->loaded_array_i[current],-1);
+	torx_free((void*)&int_p_p->loaded_array_n);
+	torx_free((void*)&int_p_p->loaded_array_i);
+	torx_free((void*)&int_p_p);
+	return 0;
+}
+
+void message_more_cb_ui(const int loaded,int *loaded_array_n,int *loaded_array_i)
+{
+	struct int_p_p *int_p_p = torx_insecure_malloc(sizeof(struct int_p_p));
+	int_p_p->loaded = loaded;
+	int_p_p->loaded_array_n = loaded_array_n;
+	int_p_p->loaded_array_i = loaded_array_i;
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE,message_more_idle,int_p_p,NULL);
 }
 
 static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state,const gpointer data)
@@ -7057,10 +7069,6 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		g_signal_connect_swapped(long_press, "cancelled", G_CALLBACK(callback_click),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 
 		// Long press
-	//	struct long_presses *long_presses = torx_insecure_malloc(sizeof(long_presses));
-	//	long_presses->button = button_peer;
-	//	long_presses->n = n;
-	//	g_signal_connect_swapped(long_press, "pressed", G_CALLBACK(ui_group_peerlist_sub),long_presses); // DO NOT FREE arg because this only gets passed ONCE.
 		g_signal_connect_swapped(long_press, "pressed", G_CALLBACK(gtk_popover_popup),GTK_POPOVER(popover)); // DO NOT FREE arg because this only gets passed ONCE.
 
 		gtk_widget_add_controller(button_peer, GTK_EVENT_CONTROLLER(long_press));
@@ -7734,6 +7742,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	cleanup_setter(cleanup_cb_ui);
 	stream_setter(stream_cb_ui);
 	message_extra_setter(message_extra_cb_ui);
+	message_more_setter(message_more_cb_ui);
 
 	t_peer = torx_insecure_malloc(sizeof(struct t_peer_list) *11);
 
