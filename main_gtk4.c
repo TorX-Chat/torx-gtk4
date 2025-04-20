@@ -706,8 +706,10 @@ const char **options[] = { &text_peer, &text_group, &text_block, &text_incoming,
 void call_update(const int n,const int c);
 void call_join(void *arg);
 void call_leave(void *arg);
+void call_leave_all_except(const int except_n,const int except_c);
 void call_peer_joining(const int call_n,const int c,const int peer_n);
 void call_peer_leaving(const int call_n,const int c,const int peer_n);
+void call_peer_leaving_all_except(const int n,const int except_n,const int except_c);
 static void ui_input_new(GtkWidget *entry);
 static void ui_input_bad(GtkWidget *entry);
 static void ui_select_changed(const void *data);
@@ -1178,6 +1180,7 @@ void call_join(void *arg)
 		error_simple(0, "Cannot join a call with zero time/nstime. Coding error. Report this.");
 		return;
 	}
+	call_leave_all_except(n,c);
 	t_peer[n].t_call[c].waiting = 0;
 	t_peer[n].t_call[c].joined = 1;
 	const int owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
@@ -1238,6 +1241,19 @@ printf("Checkpoint call_leave n=%d c=%d\n",n,c);
 	call_update(n,c);
 }
 
+void call_leave_all_except(const int except_n,const int except_c)
+{ // Leave or reject all active calls, except one (or none if -1). To be called primarily when call_join is called, but may also be called for other purposes.
+	for(int call_n = 0; getter_byte(call_n,INT_MIN,-1,offsetof(struct peer_list,onion)) != 0 || getter_int(call_n,INT_MIN,-1,offsetof(struct peer_list,peer_index)) > -1 ; call_n++)
+	{
+		const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
+		if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
+			for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
+				if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0))
+					if(call_n != except_n || (int)c != except_c)
+						call_leave(iitovp(call_n, (int)c));
+	}
+}
+
 void call_peer_joining(const int call_n,const int c,const int peer_n)
 {
 	if(call_n < 0 || peer_n < 0 || (size_t)c >= sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list))
@@ -1251,6 +1267,7 @@ void call_peer_joining(const int call_n,const int c,const int peer_n)
 			error_simple(0, "Peer is already part of call. Possible coding error. Report this.");
 			return; // Peer is already in the call
 		}
+	call_peer_leaving_all_except(peer_n,call_n,c);
 	// printf("Checkpoint call_peer_joining $call_n $c $peer_n");
 	const int participants = call_participant_count(call_n,c);
 	if(participants)
@@ -1300,6 +1317,26 @@ void call_peer_leaving(const int call_n,const int c,const int peer_n)
 		t_peer[call_n].t_call[c].waiting = 0;
 	}
 	call_update(call_n,c);
+}
+
+void call_peer_leaving_all_except(const int n,const int except_n,const int except_c)
+{ // Peer is leaving all calls (ex: they went offline)
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if(owner == ENUM_OWNER_GROUP_PEER)
+	{
+		const int g = set_g(n,NULL);
+		const int group_n = getter_group_int(g,offsetof(struct group_list,n));
+		const int call_n = group_n;
+		for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
+			if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0))
+				if(call_n != except_n || (int)c != except_c)
+					call_peer_leaving(call_n, (int)c, n);
+	} // NOT ELSE
+	const int call_n = n;
+	for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
+		if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0))
+			if(call_n != except_n || (int)c != except_c)
+				call_peer_leaving(call_n, (int)c, n);
 }
 
 static int initialize_n_idle(void *arg)
@@ -1916,23 +1953,8 @@ static int peer_offline_idle(void *arg)
 	const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
 	const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
 	const uint8_t online = recvfd_connected + sendfd_connected;
-	if(!online)
-	{ // Peer is completely offline
-		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-		if(owner == ENUM_OWNER_GROUP_PEER)
-		{
-			const int g = set_g(n,NULL);
-			const int group_n = getter_group_int(g,offsetof(struct group_list,n));
-			const int call_n = group_n;
-			for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
-				if(t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0)
-					call_peer_leaving(call_n, (int)c, n);
-		} // NOT ELSE
-		const int call_n = n;
-		for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
-			if(t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0)
-				call_peer_leaving(call_n, (int)c, n);
-	}
+	if(!online) // Peer is completely offline
+		call_peer_leaving_all_except(n,-1,-1);
 	return peer_online_idle(arg); // XXX
 }
 
@@ -6691,7 +6713,7 @@ static int stream_idle(void *arg)
 		printf("Checkpoint received host: %ld %ld\n",time,nstime);
 		int call_n = n;
 		int call_c = -1;
-		for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+		for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 			if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
 				call_c = (int)c;
 		if(call_c == -1 && owner == ENUM_OWNER_GROUP_PEER)
@@ -6699,7 +6721,7 @@ static int stream_idle(void *arg)
 			const int g = set_g(n, NULL);
 			const int group_n = getter_group_int(g, offsetof(struct group_list, n));
 			call_n = group_n;
-			for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+			for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 				if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
 					call_c = (int)c;
 		}
@@ -7633,7 +7655,7 @@ static void ui_select_changed(const void *arg)
 	gtk_box_append(GTK_BOX(write_box), t_main.button_send);
 
 	/* Set margins on write box */
-	gtk_widget_set_margin_top(write_box, size_margin_ten);
+	gtk_widget_set_margin_top(write_box, size_spacing_zero); // reduced to 0 due to t_main.call_box
 	gtk_widget_set_margin_start(write_box, size_margin_ten);
 	gtk_widget_set_margin_end(write_box, size_margin_ten);
 	gtk_widget_set_margin_bottom(write_box, size_margin_fifteen);
