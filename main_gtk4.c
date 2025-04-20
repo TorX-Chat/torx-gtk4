@@ -530,6 +530,8 @@ void stream_cb_ui(const int n,const int p_iter,char *data,const uint32_t data_le
 void message_extra_cb_ui(const int n,const int i,unsigned char *data,const uint32_t data_len);
 void message_more_cb_ui(const int loaded,int *loaded_array_n,int *loaded_array_i);
 void login_cb_ui(const int value);
+void ui_show_auth_screen(void);
+void ui_show_missing_binaries(void);
 
 /* Global Text Declarations for ui_initialize_language() */
 static const char *text_title = {0};
@@ -3436,12 +3438,15 @@ static void ui_show_change_password(void)
 	gtk_box_append(GTK_BOX(t_main.scroll_box_right), box);
 }
 
+const char* languages_available_name[] = {"English","中文",NULL};
+const char* languages_available_code[] = {"en_US","zh_CN",NULL};
+
 static void ui_initialize_language(GtkWidget *combobox)
 {
 	if(combobox != NULL) // from settings page
 	{
-		if(gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox)) == 0)
-			snprintf(language,sizeof(language),"en_US");
+		const unsigned int selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
+		snprintf(language,sizeof(language),languages_available_code[selected]);
 		sql_setting(1,-1,"language",language,strlen(language));
 	}
 	if(language[0] == '\0' || !strncmp(language,"en_US",5))
@@ -3620,6 +3625,192 @@ after each comes online and receives the code.";
 		text_censored_region = "Censored Region";
 		text_invite_friend = "Invite Friend";  // unused in GTK
 		text_group_peers = "Group Peers"; // unused in GTK
+	}
+	else if(!strncmp(language,"zh_CN",5))
+	{
+		//text_chats = "聊天";
+		//text_add_generate_bottom = "添加 / 生成";
+		//text_dismiss = "关闭";
+		//text_enter_password_first_run = "输入密码";
+		text_show_qr = "显示二维码";
+		//text_scan_qr = "扫描二维码";
+		//text_share_qr = "分享二维码";
+		//text_log_always = "始终记录";
+		//text_log_never = "从不记录";
+		//text_log_global_on = "全域开启";
+		//text_log_global_off = "全域关闭";
+		//text_blocked = "已屏蔽";
+		//text_unblocked = "解除屏蔽";
+		//text_kill = "终止";
+		//text_mute_on = "静音开启";
+		//text_mute_off = "静音关闭";
+		//text_keyboard_privacy = "键盘隐私";
+		//text_placeholder_privkey_flutter = "Base64编码，88个字符（含末尾==）";
+		//text_tap_return = "点击返回";
+		//text_vertical_change_password = "修改密码";
+		//text_quit = "退出";
+		//text_reply = "回复";
+		//text_warning = "警告";
+		text_queued = "已排队";
+		text_draft = "草稿";
+		//text_select_sticker = "选择表情包";
+		text_title = "TorX";
+		text_welcome = "欢迎使用TorX";
+		text_transfer_completed = "已发送";
+		text_online = "在线";
+		text_new_friend = "有新的好友请求";
+		text_accepted_file = "已接收文件";
+		text_spoiled = "一次性洋葱已失效";
+		text_placeholder_privkey = "洋葱私钥（base64编码，88个字符含末尾==，或从文件选择）";
+		text_placeholder_identifier = "好友昵称或多次标识符";
+		text_placeholder_add_identifier = "好友昵称";
+		text_placeholder_add_onion = "好友TorX-ID或洋葱ID（由好友提供）";
+		text_placeholder_add_group_identifier = "群聊昵称";
+		text_placeholder_add_group_id = "公共群聊ID（由好友提供）";
+		text_placeholder_search = "搜索";
+		text_dark = "深色";
+		text_light = "浅色";
+		text_minimize_to_tray = "最小化至托盘";
+		text_generate_onionid = "生成洋葱ID";
+		text_generate_torxid = "生成TorX-ID";
+		text_disable = "禁用";
+		text_enable = "启用";
+		text_no = "否";
+		text_yes = "是";
+		text_leave_after = "离开时间";
+		text_delete_after = "删除时间";
+		text_select = "选择";
+		text_save_sing = "保存为一次性";
+		text_save_mult = "保存为多次";
+		text_emit_global_kill = "发送全域销毁代码";
+		text_vertical_emit_global_kill = "发送全域\n销毁代码";
+		text_peer = "好友";
+		text_group = "群聊";
+		text_group_offer = "群聊邀请";
+		text_audio_message = "语音消息";
+		text_audio_call = "语音通话";
+		text_sticker = "表情包";
+		text_current_members = "当前成员";
+		text_group_private = "私密群聊";
+		text_group_public = "公开群聊";
+		text_block = "屏蔽";
+		text_unblock = "取消屏蔽";
+		text_ignore = "消息免打扰";
+		text_unignore = "取消消息免打扰";
+		text_edit = "编辑";
+		text_incoming = " 收到的请求";
+		text_outgoing = " 发出的请求";
+		text_active_mult = "活跃多次IDs";
+		text_active_sing = "活跃一次性IDs";
+		text_you = "你";
+		text_accept = "接受";
+		text_reject = "拒绝";
+		text_copy = "复制";
+		//text_copy_all = "全选复制";
+		text_start = "开始";
+		text_pause = "暂停";
+		text_cancel = "取消";
+		text_save_qr = "保存二维码";
+		text_copy_qr = "复制二维码";
+		text_delete = "删除";
+		text_delete_log = "清除日志";
+		text_hold_to_talk = "按住说话";
+		text_cancel_editing = "取消编辑";
+		text_private_messaging = "私密消息";
+		text_rename = "重命名";
+		text_button_add = "发送好友请求";
+		text_button_join = "尝试加入";
+		text_button_sing = "生成一次性ID";
+		text_button_mult = "生成多次ID";
+		text_button_generate_invite = "生成邀请制群组";
+		text_button_generate_public = "生成公开群组";
+		text_wait = "请稍候";
+		text_tooltip_image_header_0 = "V3Auth已启用，好友已阻止";
+		text_tooltip_image_header_1 = "V3Auth已启用，好友已连接";
+		text_tooltip_image_header_2 = "V3Auth已启用，出站连接（50%）";
+		text_tooltip_image_header_3 = "V3Auth已启用，入站连接（50%）";
+		text_tooltip_image_header_4 = "V3Auth已启用，好友已断开";
+		text_tooltip_image_header_5 = "V3Auth已禁用，好友已阻止";
+		text_tooltip_image_header_6 = "V3Auth已禁用，好友已连接";
+		text_tooltip_image_header_7 = "V3Auth已禁用，出站连接（50%）";
+		text_tooltip_image_header_8 = "V3Auth已禁用，入站连接（50%）";
+		text_tooltip_image_header_9 = "V3Auth已禁用，好友已断开";
+		text_tooltip_logging_disabled = "日志记录已禁用";
+		text_tooltip_logging_enabled = "日志记录已启用";
+		text_tooltip_logging_global_on = "使用全域日志设置（开启）";
+		text_tooltip_logging_global_off = "使用全域日志设置（关闭）";
+		text_tooltip_notifications_off = "通知已关闭";
+		text_tooltip_notifications_on = "通知已开启";
+		text_tooltip_blocked_on = "好友已阻止";
+		text_tooltip_blocked_off = "好友未阻止";
+		text_tooltip_button_select_custom = "选择hs_ed25519_secret_key文件";
+		text_tooltip_button_custom_sing = "保存为一次性洋葱ID";
+		text_tooltip_button_custom_mult = "保存为多次洋葱ID";
+		text_tooltip_group_or_user_name = "点击修改";
+		text_tooltip_button_kill = "危险：\n指示对等方删除密钥和消息历史\n然后删除本地密钥和历史消息记录";
+		text_tooltip_button_delete = "危险：\n删除密钥和消息历史";
+		text_status_online = "当前在线";
+		text_of = "来自";
+		text_status_last_seen = "上次在线";
+		text_status_never = "从未";
+		text_edit_torrc = "编辑Torrc";
+		text_saving_will_restart_tor = "保存将重启Tor服务";
+		//text_save_torrc = "保存Torrc";
+		text_change_password = "修改密码";
+		//text_resume_interupted = "恢复中断的\n密码修改";
+		text_old_password = "旧密码";
+		text_new_password = "新密码";
+		text_new_password_again = "再次输入新密码";
+		text_settings = "设置";
+		text_set_select_theme = "选择主题色";
+		text_set_select_language = "选择语言";
+		text_set_onionid_or_torxid = "TorX-ID（≤52字符）或洋葱ID（含校验和56字符）";
+		text_set_global_log = "消息日志（全域默认）";
+		text_set_auto_resume_inbound = "自动恢复入站传输";
+		text_set_save_all_stickers = "保存所有表情包";
+		text_set_download_directory = "选择下载目录";
+		//text_set_tor = "选择自定义Tor二进制文件路径（立即生效）";
+		text_tor = "Tor"; // part B
+		text_snowflake = "Snowflake"; // part B
+		text_lyrebird = "Lyrebird"; // part B
+		text_conjure = "Conjure"; // part B
+		text_binary_location = "二进制地址(即刻生效)"; // part C
+		text_set_cpu = "TorX-ID生成的最大CPU线程数";
+		text_set_suffix = "TorX-ID生成的最小后缀长度";
+		text_set_validity_sing = "一次性TorX-ID有效期（天）";
+		text_set_validity_mult = "多次TorX-ID有效期（天）";
+		text_set_auto_mult = "自动接受收到的多次请求";
+		text_set_externally_generated = "输入外部生成的自定义洋葱ID或TorX-ID";
+		text_tor_log = "Tor日志";
+		text_torx_log = "TorX日志";
+		text_global_kill = "全域销毁代码";
+		text_global_kill_warning = "销毁代码用于怀疑私钥泄露并被用于冒充你时。发送全局销毁代码会向每个好友发送指令：\n\n在线好友会立即删除你的密钥和聊天记录，离线好友上线后也会执行相同操作。发送成功后，本地客户端也会删除该好友及其聊天记录。\n\n操作前请确保完全理解风险！\n\n激活后请保持客户端运行，直到所有好友从列表中自动移除（对方上线并接收代码后立即生效）。";
+		text_home = "主页";
+		text_add_generate = "添加对等方或生成ID";
+		text_add_peer_by = "通过TorX-ID/洋葱ID添加好友";
+		text_add_group_by = "加入公开群组";
+		text_generate_for = "生成TorX-ID/洋葱ID或二维码用于分享";
+		text_generate_group_for = "生成可分享的群组";
+		text_qr_code = "二维码";
+		text_enter_password = "输入解密密码";
+		text_enter = "确认";
+		text_incorrect = "密码错误";
+		text_debug_level = "调试级别：";
+		text_debug_level_notice = "调试级别重启后自动重置以确保安全。";
+		text_fatal_error = "致命错误";
+		text_active = "活动中";
+		text_identifier = "标识符";
+		text_onionid = "洋葱ID";
+		text_torxid = "TorX-ID";
+		text_invitor = "邀请者";
+		text_groupid = "群组ID";
+		text_successfully_created_group = "群组创建成功";
+		text_error_creating_group = "创建群组失败";
+		text_censored_region = "审查区域";
+		text_invite_friend = "邀请好友";
+		text_group_peers = "群组成员";
+		text_save = "保存";
+		text_override = "覆盖 / 忽略错误";
 	}
 }
 
@@ -3950,11 +4141,12 @@ static void ui_show_settings(void)
 	GtkWidget *inner_box  = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	gtk_widget_set_halign(inner_box, GTK_ALIGN_END);
 
-	const char* strings1[] = {"English", NULL};
-	GtkWidget *combo_box_language = gtk_drop_down_new_from_strings(strings1);
+	GtkWidget *combo_box_language = gtk_drop_down_new_from_strings(languages_available_name);
 	gtk_box_append (GTK_BOX (inner_box), combo_box_language);
-	if(language[0] == '\0' || !strncmp(language,"en_US",5))
+	if(language[0] == '\0' || !strncmp(language,languages_available_code[0],5))
 		gtk_drop_down_set_selected(GTK_DROP_DOWN(combo_box_language),0);
+	else if(!strncmp(language,languages_available_code[1],5))
+		gtk_drop_down_set_selected(GTK_DROP_DOWN(combo_box_language),1);
 	g_signal_connect(combo_box_language, "notify::selected-item", G_CALLBACK(ui_initialize_language), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_box_append (GTK_BOX (box_language), label_language);
 	gtk_box_append (GTK_BOX (box_language), inner_box);
@@ -5247,8 +5439,23 @@ static int custom_setting_idle(void *arg)
 	}
 	else if(!strncmp(setting_name,"language",8) && sizeof(language) == setting_value_len+1)
 	{
-		memcpy(language,setting_value,setting_value_len);
-		language[setting_value_len] = '\0';
+	//	printf("Checkpoint language %s vs %s\n",language,setting_value);
+		if(memcmp(language,setting_value,sizeof(language)))
+		{ // Loading a different language setting. This check is to avoid unnecessarily calling ui_show_auth_screen twice.
+			memcpy(language,setting_value,setting_value_len);
+			language[setting_value_len] = '\0';
+			ui_initialize_language(NULL);
+			if(t_main.window == window_auth)
+			{ // Making sure we don't try to show auth when we have already passed it
+				pthread_rwlock_rdlock(&mutex_global_variable);
+				const char *tor_location_local = tor_location;
+				pthread_rwlock_unlock(&mutex_global_variable);
+				if(tor_location_local)
+					ui_show_auth_screen();
+				else // missing a required binary
+					ui_show_missing_binaries();
+			}
+		}
 	}
 	else if(!strncmp(setting_name,"gtk4-width",10))
 		size_window_default_width = (int)strtoll(setting_value, NULL, 10);
@@ -7932,8 +8139,8 @@ static gboolean switch_state_set(GtkSwitch *self,gboolean state,gpointer data)
 	return FALSE;
 }
 
-static void ui_show_auth_screen(void)
-{
+void ui_show_auth_screen(void)
+{ // Note: This runs twice if there is a saved language setting.
 	if(!tor_location)
 	{
 		error_simple(0,"Must set Tor location.");
@@ -7942,7 +8149,7 @@ static void ui_show_auth_screen(void)
 	t_main.window = window_auth; // Auth
 
 //	t_main.auth_entry_pass = GTK_PASSWORD_ENTRY(gtk_password_entry_new());	// WORKS 
-	t_main.auth_entry_pass = gtk_password_entry_new();				// WORKS
+	t_main.auth_entry_pass = gtk_password_entry_new(); // WORKS
 	gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(t_main.auth_entry_pass),TRUE);
 	t_main.auth_error = gtk_label_new(""); // do not set to null
 
@@ -7976,16 +8183,17 @@ static void ui_show_auth_screen(void)
 	gtk_widget_set_size_request(image_logo,size_logo_auth,size_logo_auth);
 	gtk_box_append (GTK_BOX(auth_logo_box),image_logo);
 // TESTING TODO
-
 	GtkWidget *auth_text_next_logo = gtk_label_new(text_title);
 	gtk_box_append (GTK_BOX(auth_logo_box), auth_text_next_logo);
-	t_main.auth_button = gtk_button_new_with_label (text_enter); // perhaps just leave this blank. people know what its there for.
+	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
+		t_main.auth_button = gtk_button_new_with_label (text_wait);
+	else
+		t_main.auth_button = gtk_button_new_with_label (text_enter);
 	gtk_widget_set_size_request(t_main.auth_button, size_button_auth_width, size_button_auth_height);
 //	gtk_widget_set_size_request(t_main.auth_entry_pass, size_entry_auth, size_natural);
 	gtk_widget_set_margin_top(t_main.auth_button, size_margin_fifteen);
 	gtk_editable_set_alignment(GTK_EDITABLE(t_main.auth_entry_pass),0.5);
 	GtkWidget *auth_text_under_logo = gtk_label_new(text_enter_password);
-
 
 	/* Send password information to be verified */
 	g_signal_connect(t_main.auth_button, "clicked", G_CALLBACK (ui_send_login), NULL); // DO NOT FREE arg because this only gets passed ONCE.
@@ -8028,7 +8236,7 @@ static void ui_show_auth_screen(void)
 	gtk_window_set_child (GTK_WINDOW(t_main.main_window),auth_background);
 }
 
-static void ui_show_missing_binaries(void)
+void ui_show_missing_binaries(void)
 { // Shows on startup if tor_location is unset
 	t_main.window = window_auth; // Auth
 	gtk_widget_add_css_class(t_main.main_window, "window_auth");
