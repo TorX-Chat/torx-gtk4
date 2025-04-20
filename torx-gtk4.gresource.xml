@@ -24,6 +24,10 @@
 		<file>other/block_200dp_474747.svg</file>
 		<file>other/block_200dp_D2D2D2.svg</file>
 		<file>other/block_200dp_FF0000.svg</file>
+		<file>other/call_200dp_474747.svg</file>
+		<file>other/call_200dp_D2D2D2.svg</file>
+		<file>other/call_end_200dp_474747.svg</file>
+		<file>other/call_end_200dp_D2D2D2.svg</file>
 		<file>other/cancel_200dp_FF0000.svg</file>
 		<file>other/circle_200dp_27FF00.svg</file>
 		<file>other/circle_200dp_919191.svg</file>
@@ -38,10 +42,16 @@
 		<file>other/delete_forever_200dp_474747.svg</file>
 		<file>other/delete_forever_200dp_D2D2D2.svg</file>
 		<file>other/delete_forever_200dp_ECB365.svg</file>
+		<file>other/diversity_2_200dp_474747.svg</file>
+		<file>other/diversity_2_200dp_D2D2D2.svg</file>
 		<file>other/emoji_emotions_200dp_474747.svg</file>
 		<file>other/emoji_emotions_200dp_D2D2D2.svg</file>
 		<file>other/gif_box_200dp_474747.svg</file>
 		<file>other/gif_box_200dp_D2D2D2.svg</file>
+		<file>other/group_200dp_474747.svg</file>
+		<file>other/group_200dp_D2D2D2.svg</file>
+		<file>other/groups_200dp_474747.svg</file>
+		<file>other/groups_200dp_D2D2D2.svg</file>
 		<file>other/home_200dp_474747.svg</file>
 		<file>other/home_200dp_D2D2D2.svg</file>
 		<file>other/home_200dp_ECB365.svg</file>
@@ -65,11 +75,23 @@
 		<file>other/lock_open_200dp_FFA500.svg</file>
 		<file>other/mic_200dp_474747.svg</file>
 		<file>other/mic_200dp_D2D2D2.svg</file>
+		<file>other/mic_off_200dp_474747.svg</file>
+		<file>other/mic_off_200dp_D2D2D2.svg</file>
 		<file>other/more_vert_200dp_474747.svg</file>
 		<file>other/more_vert_200dp_D2D2D2.svg</file>
+		<file>other/no_accounts_200dp_474747.svg</file>
+		<file>other/no_accounts_200dp_D2D2D2.svg</file>
 		<file>other/notifications_active_200dp_ECB365.svg</file>
 		<file>other/notifications_off_200dp_474747.svg</file>
 		<file>other/notifications_off_200dp_D2D2D2.svg</file>
+		<file>other/person_200dp_474747.svg</file>
+		<file>other/person_200dp_D2D2D2.svg</file>
+		<file>other/phone_callback_200dp_474747.svg</file>
+		<file>other/phone_callback_200dp_D2D2D2.svg</file>
+		<file>other/phone_callback_200dp_00C80A.svg</file>
+		<file>other/phone_missed_200dp_474747.svg</file>
+		<file>other/phone_missed_200dp_D2D2D2.svg</file>
+		<file>other/phone_missed_200dp_DE3131.svg</file>
 		<file>other/search_200dp_474747.svg</file>
 		<file>other/search_200dp_D2D2D2.svg</file>
 		<file>other/send_200dp_474747.svg</file>
@@ -77,6 +99,10 @@
 		<file>other/settings_200dp_474747.svg</file>
 		<file>other/settings_200dp_D2D2D2.svg</file>
 		<file>other/settings_200dp_ECB365.svg</file>
+		<file>other/volume_off_200dp_474747.svg</file>
+		<file>other/volume_off_200dp_D2D2D2.svg</file>
+		<file>other/volume_up_200dp_474747.svg</file>
+		<file>other/volume_up_200dp_D2D2D2.svg</file>
 
 		<file compressed="true">theme/dark_chat.css</file>
 		<file compressed="true">theme/light_chat.css</file>

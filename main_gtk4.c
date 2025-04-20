@@ -245,6 +245,20 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		int i; // The message iter that progress_bar is in, for rebuilds upon completion
 		uint8_t previously_completed; // We need to track this so we can limit complete notifications to once in group file transfers.
 	} *t_file;
+	struct t_call_list {
+		uint8_t joined; // Whether we accepted/joined it
+		uint8_t waiting; // Whether it is awaiting an acceptance/join or has been declined/ignored
+		uint8_t mic_on;
+		uint8_t speaker_on;
+		uint8_t speaker_phone;
+		uint8_t audio_only;
+		time_t start_time;
+		time_t start_nstime;
+		int participating[256]; // Maximum 256 concurrent peers for simplicity TODO
+		time_t last_played_time;
+		time_t last_played_nstime;
+		GtkWidget *row;
+	} t_call[25]; // Maximum 25 concurrent calls for simplicity TODO
 	unsigned char stickers_requested[MAX_STICKER_REQUESTS][CHECKSUM_BIN_LEN];
 } *t_peer; // TODO do not initialize automatically, but upon use
 
@@ -276,7 +290,7 @@ static GtkWidget *ui_popover_destroy(GtkWidget *widget)
 }
 */
 
-static struct { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily intialize as NULL
+static struct { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily initialize as NULL
 	GListStore *treestore_incoming;
 	GListStore *treestore_outgoing;
 	GListStore *treestore_mult;
@@ -324,6 +338,7 @@ static struct { // XXX Do not sodium_malloc structs unless they contain sensitiv
 
 	/* Individual Peer Chat Pages */
 	GtkWidget *last_online;
+	GtkWidget *call_box;
 	GtkWidget *button_activity; // editing, private messaging, etc
 	GtkWidget *write_message; // TODO can probably be eliminated with some work
 	GtkWidget *button_record;
@@ -446,6 +461,7 @@ enum windows { // for t_main.window = none
 enum buttons { // for ui_button_generate
 	ENUM_BUTTON_LOGGING,
 	ENUM_BUTTON_MUTE,
+	ENUM_BUTTON_CALL,
 	ENUM_BUTTON_ADD_BLOCK_MENU,
 	ENUM_BUTTON_ADD_BLOCK,
 	ENUM_BUTTON_KILL,
@@ -468,7 +484,6 @@ enum spin { // for spin_change
 };
 
 enum ui_protocols {
-//	ENUM_PROTOCOL_TEST_STREAM = 3313,		// Just for testing stream. Works fine.
 	ENUM_PROTOCOL_STICKER_HASH = 29812,		// Sticker will be sending a sticker hash. If peer doesn't have the sticker, request.
 	ENUM_PROTOCOL_STICKER_HASH_PRIVATE = 40505,
 	ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED = 1891,
@@ -477,7 +492,12 @@ enum ui_protocols {
 	// TODO vibration... but do it only in flutter as a UI specific protocol
 	ENUM_PROTOCOL_AAC_AUDIO_MSG = 43474, // uint32_t duration (milliseconds, big endian) + data
 	ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE = 29304, // uint32_t duration (milliseconds, big endian) + data
-	ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED = 47904 // uint32_t duration (milliseconds, big endian) + data
+	ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED = 47904, // uint32_t duration (milliseconds, big endian) + data
+	ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN = 65303, // Start Time + nstime // This is also offer
+	ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE = 33037, // Start Time + nstime // This is also offer
+	ENUM_PROTOCOL_AAC_AUDIO_STREAM_PEERS = 16343, // Start Time + nstime + 56*participating
+	ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE = 23602, // Start Time + nstime
+	ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE = 54254 // Start Time + nstime + data + date
 };
 
 void initialize_n_cb_ui(const int n);
@@ -546,6 +566,7 @@ static const char *text_peer = {0};
 static const char *text_group = {0};
 static const char *text_group_offer = {0};
 static const char *text_audio_message = {0};
+static const char *text_audio_call = {0};
 static const char *text_sticker = {0};
 static const char *text_current_members = {0};
 static const char *text_group_public = {0};
@@ -680,6 +701,11 @@ static const char *text_group_peers = {0}; // unused in GTK
 
 const char **options[] = { &text_peer, &text_group, &text_block, &text_incoming, &text_outgoing, &text_active_mult, &text_active_sing }; // do not modify without thinking
 
+void call_update(const int n,const int c);
+void call_join(void *arg);
+void call_leave(void *arg);
+void call_peer_joining(const int call_n,const int c,const int peer_n);
+void call_peer_leaving(const int call_n,const int c,const int peer_n);
 static void ui_input_new(GtkWidget *entry);
 static void ui_input_bad(GtkWidget *entry);
 static void ui_select_changed(const void *data);
@@ -775,6 +801,32 @@ static GdkTexture *send_dark;
 static GdkTexture *send_light;
 //static GdkTexture *clear_dark; // unused so far
 //static GdkTexture *clear_light; // unused so far
+static GdkTexture *call_light;
+static GdkTexture *call_dark;
+static GdkTexture *call_end_light;
+static GdkTexture *call_end_dark;
+//static GdkTexture *diversity_2_light; // TODO unused so far, for replacing "Group"
+//static GdkTexture *diversity_2_dark; // TODO unused so far, for replacing "Group"
+static GdkTexture *group_light;
+static GdkTexture *group_dark;
+//static GdkTexture *groups_light; // TODO unused so far, might not use, in favor of diversity_2
+//static GdkTexture *groups_dark; // TODO unused so far, might not use, in favor of diversity_2
+static GdkTexture *mic_off_light;
+static GdkTexture *mic_off_dark;
+//static GdkTexture *no_accounts_light; // TODO unused so far, for replacing "Block"
+//static GdkTexture *no_accounts_dark; // TODO unused so far, for replacing "Block"
+//static GdkTexture *person_light; // TODO unused so far, for replacing "Peer"
+//static GdkTexture *person_dark; // TODO unused so far, for replacing "Peer"
+//static GdkTexture *phone_callback_light; // TODO unused so far, might not use
+//static GdkTexture *phone_callback_dark; // TODO unused so far, might not use
+static GdkTexture *phone_callback_green;
+//static GdkTexture *phone_missed_light; // TODO unused so far, might not use
+//static GdkTexture *phone_missed_dark; // TODO unused so far, might not use
+static GdkTexture *phone_missed_red;
+static GdkTexture *volume_off_light;
+static GdkTexture *volume_off_dark;
+static GdkTexture *volume_up_light;
+static GdkTexture *volume_up_dark;
 
 /* Non-global struct models */
 /*
@@ -898,8 +950,358 @@ static inline int vptoii_i(const void *arg)
 	return int_int->i;
 }
 
-static int initialize_n_idle(void *arg)
+static void gtk_box_remove_all(GtkWidget *box)
+{ // Similar to ui_kill_children
+	if(!box)
+		return;
+	for(GtkWidget *child = gtk_widget_get_first_child(box) ; child != NULL ; child = gtk_widget_get_first_child(box))
+		gtk_box_remove(GTK_BOX(box), child);
+}
+
+static int set_c(const int n,const time_t time,const time_t nstime)
+{ // XXX -1 is error. Be sure to accomodate.
+	size_t c;
+	for (c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+		if (t_peer[n].t_call[c].start_time == time && t_peer[n].t_call[c].start_nstime == nstime)
+			return (int)c; // found existing match
+	for (c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+		if(t_peer[n].t_call[c].start_time == 0 && t_peer[n].t_call[c].start_nstime == 0)
+			break; // found an empty slot
+	if(c == sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
+	{ // This cannot be a fatal error because otherwise a malicious user could trigger this to crash everyone in a group
+		error_simple(0,"Set_c has too many calls. More than reasonably anticipated. Coding error. Report this."); // array of struct is too small
+		return -1;
+	}
+	t_peer[n].t_call[c].start_time = time;
+	t_peer[n].t_call[c].start_nstime = nstime;
+	return (int)c;
+}
+
+static void initialize_peer_call(const int n,const int c)
 {
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in initialize_peer_call. Coding error. Report this.");
+		return;
+	}
+	t_peer[n].t_call[c].joined = 0;
+	t_peer[n].t_call[c].waiting = 0;
+	t_peer[n].t_call[c].mic_on = 1;
+	t_peer[n].t_call[c].speaker_on = 1;
+	t_peer[n].t_call[c].speaker_phone = 0;
+	t_peer[n].t_call[c].audio_only = 1;
+	t_peer[n].t_call[c].start_time = 0;
+	t_peer[n].t_call[c].start_nstime = 0;
+	for(size_t iter = 0 ; iter < sizeof(t_peer[n].t_call[c].participating)/sizeof(int) ; iter++)
+		t_peer[n].t_call[c].participating[iter] = -1;
+	t_peer[n].t_call[c].last_played_time = 0;
+	t_peer[n].t_call[c].last_played_nstime = 0;
+	t_peer[n].t_call[c].row = NULL; // TODO when zeroing an existing, call g_object_unref(t_peer[n].t_call[c].row);
+}
+
+static void initialize_peer_call_list(const int n)
+{
+	for(size_t c = 0 ; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list) ; c++)
+		initialize_peer_call(n,(int)c);
+}
+
+static int call_participant_count(const int n, const int c)
+{
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in call_participant_count. Coding error. Report this.");
+		return 0;
+	}
+	int participating = 0;
+	for(size_t iter = 0 ; iter < sizeof(t_peer[n].t_call[c].participating)/sizeof(int) ; iter++)
+		if(t_peer[n].t_call[c].participating[iter] > -1)
+			participating++;
+	return participating;
+}
+
+static void toggle_int8(void *arg)
+{ // Works for int8_t and uint8_t
+	if(*(uint8_t *)arg)
+		*(uint8_t *)arg = 0;
+	else
+		*(uint8_t *)arg = 1;
+}
+
+static void call_participant_list(void *arg)
+{ // TODO
+	const int n = vptoii_n(arg);
+	const int c = vptoii_i(arg);
+	printf("TODO: Show a list of participating peers: %d %d\n",n,c);
+}
+
+void call_update(const int n,const int c)
+{ // Here should handle everything within a row
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in call_update. Coding error. Report this.");
+		return;
+	}
+	const int participants = call_participant_count(n,c);
+	if(t_peer[n].t_call[c].joined || t_peer[n].t_call[c].waiting)
+	{
+		const int owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
+		if(t_peer[n].t_call[c].row == NULL)
+		{
+			t_peer[n].t_call[c].row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
+			int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
+			if(owner == ENUM_OWNER_GROUP_PEER)
+			{
+				const int g = set_g(n,NULL);
+				group_n = getter_group_int(g,offsetof(struct group_list,n));
+			}
+			if(n == global_n || group_n == global_n)
+				gtk_box_append(GTK_BOX(t_main.call_box), t_peer[global_n].t_call[c].row);
+		}
+		else
+			gtk_box_remove_all(t_peer[n].t_call[c].row);
+		if(t_peer[n].t_call[c].joined)
+		{
+			if(participants)
+			{ // We are in an existing call
+				GtkWidget *button_mic = gtk_button_new();
+				gtk_widget_add_css_class(button_mic, "invisible");
+				if(t_peer[n].t_call[c].mic_on)
+				{
+					if(global_theme == DARK_THEME)
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
+					else
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light)));
+				}
+				else
+				{
+					if(global_theme == DARK_THEME)
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+					else
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+				}
+				gtk_widget_set_size_request(button_mic, size_icon_bottom_right, size_icon_bottom_right);
+				g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].mic_on);
+				gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_mic);
+
+				GtkWidget *button_speaker = gtk_button_new();
+				gtk_widget_add_css_class(button_speaker, "invisible");
+				if(t_peer[n].t_call[c].speaker_on)
+				{
+					if(global_theme == DARK_THEME)
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark)));
+					else
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light)));
+				}
+				else
+				{
+					if(global_theme == DARK_THEME)
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark)));
+					else
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light)));
+				}
+				gtk_widget_set_size_request(button_speaker, size_icon_bottom_right, size_icon_bottom_right);
+				g_signal_connect(button_speaker, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].speaker_on);
+				gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_speaker);
+
+				if(owner == ENUM_OWNER_GROUP_CTRL)
+				{
+					GtkWidget *button_participants = gtk_button_new();
+					gtk_widget_add_css_class(button_participants, "invisible");
+					if(global_theme == DARK_THEME)
+						gtk_button_set_child(GTK_BUTTON(button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_dark)));
+					else
+						gtk_button_set_child(GTK_BUTTON(button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_light)));
+					gtk_widget_set_size_request(button_participants, size_icon_bottom_right, size_icon_bottom_right);
+					g_signal_connect_swapped(button_participants, "clicked", G_CALLBACK(call_participant_list),iitovp(n,c));
+					gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_participants);
+				}
+			}
+			GtkWidget *button_hangup = gtk_button_new();
+			gtk_widget_add_css_class(button_hangup, "invisible");
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
+			gtk_widget_set_size_request(button_hangup, size_icon_bottom_right, size_icon_bottom_right);
+	printf("Checkpoint call_update 2 n=%d c=%d\n",n,c);
+			g_signal_connect_swapped(button_hangup, "clicked", G_CALLBACK(call_leave),iitovp(n,c));
+			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_hangup);
+		}
+		else if(t_peer[n].t_call[c].waiting)
+		{ // Incoming call, should display only Reject / Accept
+	printf("Checkpoint call_update 7\n");
+			GtkWidget *button_accept = gtk_button_new();
+			gtk_widget_add_css_class(button_accept, "invisible");
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable(GDK_PAINTABLE(call_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable(GDK_PAINTABLE(call_light)));
+			gtk_widget_set_size_request(button_accept, size_icon_bottom_right, size_icon_bottom_right);
+			g_signal_connect_swapped(button_accept, "clicked", G_CALLBACK(call_join),iitovp(n,c));
+			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_accept);
+
+			GtkWidget *button_reject = gtk_button_new();
+			gtk_widget_add_css_class(button_reject, "invisible");
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
+			gtk_widget_set_size_request(button_reject, size_icon_bottom_right, size_icon_bottom_right);
+			g_signal_connect_swapped(button_reject, "clicked", G_CALLBACK(call_leave),iitovp(n,c));
+			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_reject);
+		}
+	}
+	else if(t_peer[n].t_call[c].row)
+	{ // Destroy the row, we are leaving or not joining the call
+printf("Checkpoint call_update 8\n");
+		gtk_box_remove_all(t_peer[n].t_call[c].row);
+		gtk_widget_unparent(t_peer[n].t_call[c].row); // not g_object_unref for some reason
+		t_peer[n].t_call[c].row = NULL;
+	}
+	else
+		error_simple(0,"Unexpected or repeated call_update. Coding error. Report this.");
+}
+
+void call_join(void *arg)
+{
+	const int n = vptoii_n(arg);
+	const int c = vptoii_i(arg);
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in call_join. Coding error. Report this.");
+		return;
+	}
+	if(t_peer[n].t_call[c].start_time == 0 && t_peer[n].t_call[c].start_nstime == 0)
+	{
+		error_simple(0, "Cannot join a call with zero time/nstime. Coding error. Report this.");
+		return;
+	}
+	t_peer[n].t_call[c].waiting = 0;
+	t_peer[n].t_call[c].joined = 1;
+	const int owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
+	uint16_t protocol;
+	if(owner == ENUM_OWNER_GROUP_PEER)
+		protocol = ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE;
+	else
+		protocol = ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN;
+	unsigned char message[8];
+	uint32_t trash = htobe32((uint32_t)t_peer[n].t_call[c].start_time);
+	memcpy(message,&trash,sizeof(trash));
+	trash = htobe32((uint32_t)t_peer[n].t_call[c].start_nstime);
+	memcpy(&message[4],&trash,sizeof(trash));
+//	printf("Checkpoint call_join to ${t_peer[n].t_call[c].participating[c].length} peers ${t_peer[n].t_call[c].start_time[c]}:${t_peer[n].t_call[c].start_time[c]}");
+	const int participants = call_participant_count(n,c);
+	if(participants)
+	{
+		for(size_t iter = 0; iter < sizeof(t_peer[n].t_call[c].participating)/sizeof(int); iter++) // Join Existing call
+			if(t_peer[n].t_call[c].participating[iter] > -1)
+				message_send(t_peer[n].t_call[c].participating[iter],protocol,message,sizeof(message));
+	}
+	else // Start new call
+		message_send(n,protocol,message,(uint32_t)sizeof(message));
+	sodium_memzero(message,sizeof(message));
+	call_update(n,c);
+}
+
+void call_leave(void *arg)
+{
+	const int n = vptoii_n(arg);
+	const int c = vptoii_i(arg);
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list) || (!t_peer[n].t_call[c].joined && !t_peer[n].t_call[c].waiting))
+	{
+		error_simple(0,"Sanity check failed in call_leave. Coding error. Report this.");
+		return;
+	}
+printf("Checkpoint call_leave n=%d c=%d\n",n,c);
+	unsigned char message[8];
+	uint32_t trash = htobe32((uint32_t)t_peer[n].t_call[c].start_time);
+	memcpy(message,&trash,sizeof(trash));
+	trash = htobe32((uint32_t)t_peer[n].t_call[c].start_nstime);
+	memcpy(&message[4],&trash,sizeof(trash));
+	// printf("Checkpoint call_leave to ${t_peer.t_call[n].participating[c].length} peers ${t_peer.t_call[n].start_time[c]}:${t_peer.t_call[n].start_time[c]}");
+	int send_count = 0;
+	if(t_peer[n].t_call[c].joined)
+		for(size_t iter = 0; iter < sizeof(t_peer[n].t_call[c].participating)/sizeof(int); iter++)
+			if(t_peer[n].t_call[c].participating[iter] > -1)
+			{
+				message_send(t_peer[n].t_call[c].participating[iter],ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE,message,sizeof(message));
+				send_count++;
+			}
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if(send_count == 0 && (owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_PEER))
+		message_send(n,ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE,message,sizeof(message));
+	sodium_memzero(message,sizeof(message));
+	t_peer[n].t_call[c].waiting = 0;
+	t_peer[n].t_call[c].joined = 0;
+	call_update(n,c);
+}
+
+void call_peer_joining(const int call_n,const int c,const int peer_n)
+{
+	if(call_n < 0 || peer_n < 0 || (size_t)c >= sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in call_peer_joining. Coding error. Report this.");
+		return;
+	}
+	for(size_t iter = 0; iter < sizeof(t_peer[call_n].t_call[c].participating)/sizeof(int); iter++)
+		if (peer_n == t_peer[call_n].t_call[c].participating[iter])
+		{
+			error_simple(0, "Peer is already part of call. Possible coding error. Report this.");
+			return; // Peer is already in the call
+		}
+	// printf("Checkpoint call_peer_joining $call_n $c $peer_n");
+	const int participants = call_participant_count(call_n,c);
+	if(participants)
+	{ // send a list of peer onions that are already in the call, excluding this peer, if any
+		const uint32_t message_len = (uint32_t)(8 + 56 * participants);
+		unsigned char message[message_len];
+		uint32_t trash = htobe32((uint32_t)t_peer[call_n].t_call[c].start_time);
+		memcpy(message,&trash,sizeof(trash));
+		trash = htobe32((uint32_t)t_peer[call_n].t_call[c].start_nstime);
+		memcpy(&message[4],&trash,sizeof(trash));
+		for(size_t iter = 0; iter < sizeof(t_peer[call_n].t_call[c].participating)/sizeof(int); iter++)
+			if(t_peer[call_n].t_call[c].participating[iter] > -1)
+			{
+				char *peeronion = getter_string(NULL,t_peer[call_n].t_call[c].participating[iter], INT_MIN, -1, offsetof(struct peer_list, peeronion));
+				memcpy(&message[8+iter*56], peeronion, 56);
+				torx_free((void*)&peeronion);
+			}
+		message_send(peer_n,ENUM_PROTOCOL_AAC_AUDIO_STREAM_PEERS,message,message_len);
+		sodium_memzero(message,sizeof(message));
+	}
+	for(size_t iter = 0; iter < sizeof(t_peer[call_n].t_call[c].participating)/sizeof(int); iter++)
+		if(t_peer[call_n].t_call[c].participating[iter] == -1)
+		{ // Add this peer then break
+			t_peer[call_n].t_call[c].participating[iter] = peer_n;
+			break;
+		}
+	call_update(call_n,c);
+}
+
+void call_peer_leaving(const int call_n,const int c,const int peer_n)
+{
+	if(call_n < 0 || peer_n < 0 || (size_t)c >= sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list))
+	{
+		error_simple(0,"Sanity check failed in call_peer_leaving. Coding error. Report this.");
+		return;
+	}
+	for(size_t iter = 0; iter < sizeof(t_peer[call_n].t_call[c].participating)/sizeof(int); iter++)
+		if (peer_n == t_peer[call_n].t_call[c].participating[iter])
+		{ // TODO perhaps we should shift all forward
+			t_peer[call_n].t_call[c].participating[iter] = -1;
+			break;
+		}
+	const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_PEER))
+	{ // Ending the call if it is non-group
+		t_peer[call_n].t_call[c].joined = 0;
+		t_peer[call_n].t_call[c].waiting = 0;
+	}
+	call_update(call_n,c);
+}
+
+static int initialize_n_idle(void *arg)
+{ // Remember to also cleanup in onion_deleted_idle
 	const int n = vptoi(arg);
 	t_peer[n].unread = 0;
 	t_peer[n].mute = 0;
@@ -910,6 +1312,7 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
 	t_peer[n].t_file = torx_insecure_malloc(sizeof(struct t_file_list) *11);
+	initialize_peer_call_list(n);
 	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	return 0;
 }
@@ -1266,14 +1669,6 @@ static int change_password_idle(void *arg)
 	return 0;
 }
 
-static void gtk_box_remove_all(GtkWidget *box)
-{
-	if(!box)
-		return;
-	for(GtkWidget *child = gtk_widget_get_first_child(box) ; child != NULL ; child = gtk_widget_get_first_child(box))
-		gtk_box_remove(GTK_BOX(box), child);
-}
-
 static void ui_set_image_lock(const int n)
 {
 	if(n != global_n)
@@ -1418,6 +1813,7 @@ static int onion_deleted_idle(void *arg)
 		initialize_i_idle(iitovp(n,i)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
 	for(int f = 0 ; f <= 10 ; f++) // re-initialize t_file
 		initialize_f_idle(iitovp(n,f)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
+	initialize_peer_call_list(n);
 	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	if(generated_n > -1 && getter_uint8(generated_n,INT_MIN,-1,offsetof(struct peer_list,owner)) == 0)
 	{
@@ -2353,10 +2749,7 @@ static void ui_toggle_mute(const gpointer data)
 	const int n = vptoi(data);// DO NOT FREE ARG
 	const int peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index));
 	// Update Setting
-	if(t_peer[n].mute == 0)
-		t_peer[n].mute = 1;
-	else
-		t_peer[n].mute = 0;
+	toggle_int8(&t_peer[n].mute);
 	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
 	// Save Setting
@@ -2367,9 +2760,35 @@ static void ui_toggle_mute(const gpointer data)
 
 static void ui_toggle_mute_button(GtkWidget *button,const gpointer data)
 {
-	const int n = vptoi(data);// DO NOT FREE ARG
+	const int n = vptoi(data); // DO NOT FREE ARG
 	ui_toggle_mute(data);
 	ui_set_image_mute(button,n);
+}
+
+static void ui_call_start(const gpointer data)
+{
+	const int call_n = vptoi(data); // DO NOT FREE ARG
+	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
+		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+
+	time_t time = 0;
+	time_t nstime = 0;
+	set_time(&time,&nstime);
+	// printf("Checkpoint time=$time nstime=$nstime ${DateFormat('yyyy/MM/dd kk:mm:ss').format(DateTime.fromMillisecondsSinceEpoch((time as int) * 1000, isUtc: false))}");
+	const int c = set_c(call_n,time,nstime);
+	if(c > -1) // Necessary check in GTK
+		call_join(iitovp(call_n,c));
+}
+
+static void ui_call_start_button(GtkWidget *button,const gpointer data)
+{
+//	const int n = vptoi(data); // DO NOT FREE ARG
+	(void)button;
+	(void)data;
+	int n = global_n;
+	if(t_peer[global_n].pm_n > -1)
+		n = t_peer[global_n].pm_n;
+	ui_call_start(itovp(n));
 }
 
 static void ui_toggle_block(const gpointer data)
@@ -2403,7 +2822,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 	kill_code(n,NULL);
 	if(t_main.popover_more && GTK_IS_WIDGET(t_main.popover_more))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_more));
-//	error("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
+//	error_simple("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
 }
 
 static void ui_toggle_delete(GtkWidget *button,const gpointer data)
@@ -3061,6 +3480,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_group = "Group";
 		text_group_offer = "Group Offer";
 		text_audio_message = "Audio Message";
+		text_audio_call = "Audio Call";
 		text_sticker = "Sticker";
 		text_current_members = "Current Members";
 		text_group_private = "Private Group";
@@ -5180,6 +5600,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		}
 		if(null_terminated_len == 1 && (signature_len == 0 || stat != ENUM_MESSAGE_RECV))
 			create_button(text_edit,ui_activity_edit,data)
+		create_button(text_audio_call,ui_call_start,data)
 		if(owner == ENUM_OWNER_GROUP_PEER)
 			create_button(text_private_messaging,ui_activity_pm,data)
 		if(owner == ENUM_OWNER_GROUP_PEER)
@@ -5268,7 +5689,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		if(group_n > -1)
 			nn = group_n;
 	}
-	GtkWidget *msg = NULL; // must be null intialized
+	GtkWidget *msg = NULL; // must be null initialized
 	uint8_t finished_image = 0;
 	char *filename;
 	char *file_path;
@@ -6035,14 +6456,46 @@ static int stream_idle(void *arg)
 			sodium_memzero(checksum,sizeof(checksum));
 		}
 	}
-/*	else if(protocol == ENUM_PROTOCOL_TEST_STREAM && data_len)
+	else if(data_len >= 8 && (protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE))
 	{
-		char *message = torx_secure_malloc(data_len+1);
-		memcpy(message,data,data_len);
-		message[data_len] = '\0';
-		printf("Checkpoint stream_cb %d %d: %s\n",n,p_iter,message);
-		torx_free((void*)&message);
-	} */
+		const time_t time = be32toh(align_uint32((void*)data));
+		const time_t nstime = be32toh(align_uint32((void*)&data[4]));
+		printf("Checkpoint received host: %ld %ld\n",time,nstime);
+		int call_n = n;
+		int call_c = -1;
+		for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+			if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
+				call_c = (int)c;
+		if(call_c == -1 && owner == ENUM_OWNER_GROUP_PEER)
+		{ // Try group_n instead
+			const int g = set_g(n, NULL);
+			const int group_n = getter_group_int(g, offsetof(struct group_list, n));
+			call_n = group_n;
+			for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+				if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
+					call_c = (int)c;
+		}
+		if(call_c == -1 && (protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE))
+		{ // Received offer to join a new call
+			printf("Checkpoint receiving offer to join a new call\n");
+			if(protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE)
+				call_n = n;
+			call_c = set_c(call_n,time,nstime); // reserve
+			t_peer[call_n].t_call[call_c].waiting = 1;
+			call_peer_joining(call_n, call_c, n); // should call before call_update
+		}
+		else if(call_c > -1)
+		{
+			if(protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE)
+				printf("Checkpoint stream_cb_ui AAC_AUDIO_STREAM_DATA_DATE time=$time:$nstime data_len=$data_len\n"); // TODO PLAY IT
+			else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE)
+				call_peer_leaving(call_n, call_c, n);
+			else // if(protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE)
+				call_peer_joining(call_n, call_c, n);
+		}
+		else
+			error_printf(0, "Received a audio stream related message for an unknown call: %lu %lu",time,nstime); // If DATA, consider sending _LEAVE once. Otherwise it is _LEAVE, so ignore.
+	}
 	else
 		error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
 	torx_free((void*)&data);
@@ -6168,8 +6621,6 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 			else if(t_peer[n].pm_n > -1)
 			{ // send to GROUP_PEER instead of GROUP_CTRL
 				message_send(t_peer[n].pm_n,ENUM_PROTOCOL_UTF8_TEXT_PRIVATE,message,(uint32_t)strlen(message));
-			/*	const char test_stream[] = "i leik catz (pm)\n";
-				message_send(pm_n,ENUM_PROTOCOL_TEST_STREAM,test_stream,(uint32_t)strlen(test_stream));	*/
 				gtk_text_buffer_set_text(t_peer[n].buffer_write, "", 0); // this occurs in ui_activity_cancel
 			}
 			else
@@ -6194,8 +6645,6 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		//		message_send(n,ENUM_PROTOCOL_UTF8_TEXT_SIGNED,message,(uint32_t)strlen(message));
 			else // regular messages, private messages (in authenticated pipes), public messages in public groups (in authenticated pipes)
 				message_send(n,ENUM_PROTOCOL_UTF8_TEXT,message,(uint32_t)strlen(message));
-		/*	const char test_stream[] = "i leik catz (non-pm)\n";
-			message_send(n,ENUM_PROTOCOL_TEST_STREAM,test_stream,(uint32_t)strlen(test_stream));	*/
 			gtk_text_buffer_set_text(t_peer[n].buffer_write, "", 0); // this occurs in ui_activity_cancel
 		}
 		sodium_memzero(message,buf_len);
@@ -6478,6 +6927,7 @@ static void ui_choose_vertical(GtkWidget *button,const gpointer data)
 	gtk_widget_add_css_class(box_popover, "popover_inner");
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_more),box_popover);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_CALL,n));
 	if(owner != ENUM_OWNER_GROUP_CTRL)
 	{
 		gtk_box_append(GTK_BOX(box_popover),ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
@@ -6533,6 +6983,15 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		ui_set_image_mute(button,n);
 		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_mute_button),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
+	}
+	else if(type == ENUM_BUTTON_CALL)
+	{
+		if(global_theme == DARK_THEME)
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(call_dark)));
+		else
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(call_light)));
+		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
+		g_signal_connect(button, "clicked", G_CALLBACK(ui_call_start_button),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_KILL)
 	{
@@ -6779,6 +7238,7 @@ static void ui_select_changed(const void *arg)
 { /* show_peer() Triggered when a peer is selected from the peer list */
 	const int n = vptoi(arg); // DO NOT FREE ARG
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	int g = -1;
 //	if(t_peer[n].unread)
 //	{ // TODO 2024/03/22 this conditional SHOULD exist, but it causes problems in horizonal mode because "clicked" callbacks are only available once.
 		if(t_peer[n].unread > 0)
@@ -6849,6 +7309,7 @@ static void ui_select_changed(const void *arg)
 	}
 	else
 	{
+		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_CALL,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_KILL,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_DELETE_CTRL,n));
@@ -6951,6 +7412,27 @@ static void ui_select_changed(const void *arg)
 
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
 
+	t_main.call_box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
+	gtk_widget_set_halign(t_main.call_box, GTK_ALIGN_CENTER);
+	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.call_box);
+	for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list) ; c++)
+		if(t_peer[n].t_call[c].row)
+			gtk_box_append(GTK_BOX(t_main.call_box), t_peer[n].t_call[c].row);
+	if(owner == ENUM_OWNER_GROUP_CTRL)
+	{ // Iterate through all group peers and add their rows too
+		g = set_g(n,NULL);
+		const uint32_t peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
+		for(uint32_t nn = 0 ; nn < peercount ; nn++)
+		{
+			pthread_rwlock_rdlock(&mutex_expand_group);
+			const int peer_n = group[g].peerlist[nn];
+			pthread_rwlock_unlock(&mutex_expand_group);
+			for(size_t c = 0; c < sizeof(t_peer[peer_n].t_call)/sizeof(struct t_call_list) ; c++)
+				if(t_peer[peer_n].t_call[c].row)
+					gtk_box_append(GTK_BOX(t_main.call_box), t_peer[peer_n].t_call[c].row);
+		}
+	}
+
 	// Current activity (Edit, private message)
 	t_main.button_activity = gtk_button_new();
 	if(t_peer[n].pm_n > -1 || t_peer[n].edit_n > -1)
@@ -6979,7 +7461,6 @@ static void ui_select_changed(const void *arg)
 
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
-		const int g = set_g(n,NULL);
 		pthread_rwlock_rdlock(&mutex_expand_group);
 		struct msg_list *page = group[g].msg_first;
 		pthread_rwlock_unlock(&mutex_expand_group);
@@ -7044,7 +7525,6 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 	gtk_widget_set_valign(chat_info_vert, GTK_ALIGN_CENTER);
 
 	/* Add Click Function Callbacks */
-
 	if(minimal_size == 3)
 	{ // This is only passed for Group Peerlist
 		// Build popover
@@ -7052,6 +7532,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 		gtk_widget_add_css_class(box, "popover_inner");
 		const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
+		create_button(text_audio_call,ui_call_start,itovp(n))
+		create_button(text_private_messaging,ui_activity_pm,itovp(n))
 		create_button(text_rename,ui_activity_rename,itovp(n))
 		if(t_peer[n].mute)
 			create_button(text_unignore,ui_toggle_mute,itovp(n))
@@ -7749,7 +8231,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 	initial();
 	gst_init(NULL, NULL);
 
-//	protocol_registration(ENUM_PROTOCOL_TEST_STREAM,"Test stream data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,1);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
@@ -7758,6 +8239,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 2 * 4, crypto_sign_BYTES, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, "AAC Audio Message Private", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, 0);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN, "AAC Audio Stream Join", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE, "AAC Audio Stream Join Private", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_PEERS, "AAC Audio Stream Peers", "", 0, 0, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE, "AAC Audio Stream Leave", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 1, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
@@ -7889,6 +8375,32 @@ static void ui_activate(GtkApplication *application,void *arg)
 	send_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/send_200dp_474747.svg");
 //	clear_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/clear_200dp_D2D2D2.svg"); // TODO unused so far, for clearing search bar
 //	clear_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/clear_200dp_474747.svg"); // TODO unused so far, for clearing search bar
+	call_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/call_200dp_474747.svg");
+	call_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/call_200dp_D2D2D2.svg");
+	call_end_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/call_end_200dp_474747.svg");
+	call_end_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/call_end_200dp_D2D2D2.svg");
+//	diversity_2_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/diversity_2_200dp_474747.svg"); // TODO unused so far, for replacing "Group"
+//	diversity_2_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/diversity_2_200dp_D2D2D2.svg"); // TODO unused so far, for replacing "Group"
+	group_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/group_200dp_474747.svg");
+	group_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/group_200dp_D2D2D2.svg");
+//	groups_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/groups_200dp_474747.svg"); // TODO unused so far, might not use, in favor of diversity_2
+//	groups_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/groups_200dp_D2D2D2.svg"); // TODO unused so far, might not use, in favor of diversity_2
+	mic_off_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/mic_off_200dp_474747.svg");
+	mic_off_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/mic_off_200dp_D2D2D2.svg");
+//	no_accounts_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/no_accounts_200dp_474747.svg"); // TODO unused so far, for replacing "Block"
+//	no_accounts_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/no_accounts_200dp_D2D2D2.svg"); // TODO unused so far, for replacing "Block"
+//	person_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/person_200dp_474747.svg"); // TODO unused so far, for replacing "Peer"
+//	person_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/person_200dp_D2D2D2.svg"); // TODO unused so far, for replacing "Peer"
+//	phone_callback_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_474747.svg"); // TODO unused so far, might not use
+//	phone_callback_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_D2D2D2.svg"); // TODO unused so far, might not use
+	phone_callback_green = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_00C80A.svg");
+//	phone_missed_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_474747.svg"); // TODO unused so far, might not use
+//	phone_missed_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_D2D2D2.svg"); // TODO unused so far, might not use
+	phone_missed_red = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_DE3131.svg");
+	volume_off_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_off_200dp_474747.svg");
+	volume_off_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_off_200dp_D2D2D2.svg");
+	volume_up_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_474747.svg");
+	volume_up_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_D2D2D2.svg");
 
 	if(tor_location) // shouldn't need mutex
 		ui_show_auth_screen();
