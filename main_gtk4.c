@@ -1911,8 +1911,29 @@ void peer_online_cb_ui(const int n)
 }
 
 static int peer_offline_idle(void *arg)
-{ // currently a duplicate of peer_online_idle and the contents of this exists in a 3rd place
-	return peer_online_idle(arg);
+{ // Mostly a duplicate of peer_online_idle and the contents of that exists in a 3rd place
+	const int n = vptoi(arg);
+	const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
+	const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
+	const uint8_t online = recvfd_connected + sendfd_connected;
+	if(!online)
+	{ // Peer is completely offline
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+		if(owner == ENUM_OWNER_GROUP_PEER)
+		{
+			const int g = set_g(n,NULL);
+			const int group_n = getter_group_int(g,offsetof(struct group_list,n));
+			const int call_n = group_n;
+			for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+				if(t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0)
+					call_peer_leaving(call_n, (int)c, n);
+		} // NOT ELSE
+		const int call_n = n;
+		for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list); c++)
+			if(t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0)
+				call_peer_leaving(call_n, (int)c, n);
+	}
+	return peer_online_idle(arg); // XXX
 }
 
 void peer_offline_cb_ui(const int n)
