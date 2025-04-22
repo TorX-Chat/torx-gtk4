@@ -257,7 +257,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		int participating[256]; // Maximum 256 concurrent peers for simplicity TODO
 		time_t last_played_time;
 		time_t last_played_nstime;
-		GtkWidget *row;
+		GtkWidget *column; // Vertical box, contains who is calling and then a row of applicable widgets related to the call
 	} t_call[25]; // Maximum 25 concurrent calls for simplicity TODO
 	unsigned char stickers_requested[MAX_STICKER_REQUESTS][CHECKSUM_BIN_LEN];
 } *t_peer; // TODO do not initialize automatically, but upon use
@@ -1000,7 +1000,7 @@ static void initialize_peer_call(const int n,const int c)
 		t_peer[n].t_call[c].participating[iter] = -1;
 	t_peer[n].t_call[c].last_played_time = 0;
 	t_peer[n].t_call[c].last_played_nstime = 0;
-	t_peer[n].t_call[c].row = NULL; // TODO when zeroing an existing, call g_object_unref(t_peer[n].t_call[c].row);
+	t_peer[n].t_call[c].column = NULL; // TODO when zeroing an existing, call g_object_unref(t_peer[n].t_call[c].column);
 }
 
 static void initialize_peer_call_list(const int n)
@@ -1039,7 +1039,7 @@ static void call_participant_list(void *arg)
 }
 
 void call_update(const int n,const int c)
-{ // Here should handle everything within a row
+{ // Here should handle everything within a column. Note: N could be CTRL, GROUP_PEER, or GROUP_CTRL
 	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list))
 	{
 		error_simple(0,"Sanity check failed in call_update. Coding error. Report this.");
@@ -1048,21 +1048,24 @@ void call_update(const int n,const int c)
 	const int participants = call_participant_count(n,c);
 	if(t_peer[n].t_call[c].joined || t_peer[n].t_call[c].waiting)
 	{
-		const int owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
-		if(t_peer[n].t_call[c].row == NULL)
+		GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
+		const uint8_t owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
+		if(t_peer[n].t_call[c].column == NULL)
 		{
-			t_peer[n].t_call[c].row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
+			t_peer[n].t_call[c].column = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
+			g_object_ref(t_peer[n].t_call[c].column); // XXX THIS IS NECESSARY BECAUSE OTHERWISE IT WILL BE DESTROYED WHEN WE NAVIGATE AWAY. Otherwise we need to re-write this function and call_update instead of just adding .column to .call_box
 			int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
 			if(owner == ENUM_OWNER_GROUP_PEER)
 			{
 				const int g = set_g(n,NULL);
 				group_n = getter_group_int(g,offsetof(struct group_list,n));
 			}
+		//	printf("Checkpoint call_update 2: global_n=%d group_n=%d n=%d c=%d\n",global_n,group_n,n,c);
 			if(n == global_n || group_n == global_n)
-				gtk_box_append(GTK_BOX(t_main.call_box), t_peer[global_n].t_call[c].row);
+				gtk_box_append(GTK_BOX(t_main.call_box), t_peer[n].t_call[c].column);
 		}
 		else
-			gtk_box_remove_all(t_peer[n].t_call[c].row);
+			gtk_box_remove_all(t_peer[n].t_call[c].column);
 		if(t_peer[n].t_call[c].joined)
 		{
 			if(participants)
@@ -1085,7 +1088,7 @@ void call_update(const int n,const int c)
 				}
 				gtk_widget_set_size_request(button_mic, size_icon_bottom_right, size_icon_bottom_right);
 				g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].mic_on);
-				gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_mic);
+				gtk_box_append(GTK_BOX(row),button_mic);
 
 				GtkWidget *button_speaker = gtk_button_new();
 				gtk_widget_add_css_class(button_speaker, "invisible");
@@ -1105,7 +1108,7 @@ void call_update(const int n,const int c)
 				}
 				gtk_widget_set_size_request(button_speaker, size_icon_bottom_right, size_icon_bottom_right);
 				g_signal_connect(button_speaker, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].speaker_on);
-				gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_speaker);
+				gtk_box_append(GTK_BOX(row),button_speaker);
 
 				if(owner == ENUM_OWNER_GROUP_CTRL)
 				{
@@ -1117,7 +1120,7 @@ void call_update(const int n,const int c)
 						gtk_button_set_child(GTK_BUTTON(button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_light)));
 					gtk_widget_set_size_request(button_participants, size_icon_bottom_right, size_icon_bottom_right);
 					g_signal_connect_swapped(button_participants, "clicked", G_CALLBACK(call_participant_list),iitovp(n,c));
-					gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_participants);
+					gtk_box_append(GTK_BOX(row),button_participants);
 				}
 			}
 			GtkWidget *button_hangup = gtk_button_new();
@@ -1127,13 +1130,11 @@ void call_update(const int n,const int c)
 			else
 				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
 			gtk_widget_set_size_request(button_hangup, size_icon_bottom_right, size_icon_bottom_right);
-	printf("Checkpoint call_update 2 n=%d c=%d\n",n,c);
 			g_signal_connect_swapped(button_hangup, "clicked", G_CALLBACK(call_leave),iitovp(n,c));
-			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_hangup);
+			gtk_box_append(GTK_BOX(row),button_hangup);
 		}
 		else if(t_peer[n].t_call[c].waiting)
 		{ // Incoming call, should display only Reject / Accept
-	printf("Checkpoint call_update 7\n");
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
 			if(global_theme == DARK_THEME)
@@ -1142,7 +1143,7 @@ void call_update(const int n,const int c)
 				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable(GDK_PAINTABLE(call_light)));
 			gtk_widget_set_size_request(button_accept, size_icon_bottom_right, size_icon_bottom_right);
 			g_signal_connect_swapped(button_accept, "clicked", G_CALLBACK(call_join),iitovp(n,c));
-			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_accept);
+			gtk_box_append(GTK_BOX(row),button_accept);
 
 			GtkWidget *button_reject = gtk_button_new();
 			gtk_widget_add_css_class(button_reject, "invisible");
@@ -1152,15 +1153,24 @@ void call_update(const int n,const int c)
 				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
 			gtk_widget_set_size_request(button_reject, size_icon_bottom_right, size_icon_bottom_right);
 			g_signal_connect_swapped(button_reject, "clicked", G_CALLBACK(call_leave),iitovp(n,c));
-			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].row),button_reject);
+			gtk_box_append(GTK_BOX(row),button_reject);
 		}
+		gtk_widget_set_halign(row, GTK_ALIGN_CENTER);
+		if(owner == ENUM_OWNER_GROUP_PEER)
+		{
+			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			GtkWidget *label = gtk_label_new(peernick);
+			torx_free((void*)&peernick);
+			gtk_box_append(GTK_BOX(t_peer[n].t_call[c].column),label);
+		}
+		gtk_box_append(GTK_BOX(t_peer[n].t_call[c].column),row);
 	}
-	else if(t_peer[n].t_call[c].row)
+	else if(t_peer[n].t_call[c].column)
 	{ // Destroy the row, we are leaving or not joining the call
-printf("Checkpoint call_update 8\n");
-		gtk_box_remove_all(t_peer[n].t_call[c].row);
-		gtk_widget_unparent(t_peer[n].t_call[c].row); // not g_object_unref for some reason
-		t_peer[n].t_call[c].row = NULL;
+		gtk_box_remove_all(t_peer[n].t_call[c].column);
+		gtk_widget_unparent(t_peer[n].t_call[c].column);
+		g_object_unref(t_peer[n].t_call[c].column);
+		t_peer[n].t_call[c].column = NULL;
 	}
 	else
 		error_simple(0,"Unexpected or repeated call_update. Coding error. Report this.");
@@ -1183,7 +1193,7 @@ void call_join(void *arg)
 	call_leave_all_except(n,c);
 	t_peer[n].t_call[c].waiting = 0;
 	t_peer[n].t_call[c].joined = 1;
-	const int owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
+	const uint8_t owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
 	uint16_t protocol;
 	if(owner == ENUM_OWNER_GROUP_PEER)
 		protocol = ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE;
@@ -1246,7 +1256,7 @@ void call_leave_all_except(const int except_n,const int except_c)
 	for(int call_n = 0; getter_byte(call_n,INT_MIN,-1,offsetof(struct peer_list,onion)) != 0 || getter_int(call_n,INT_MIN,-1,offsetof(struct peer_list,peer_index)) > -1 ; call_n++)
 	{
 		const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
-		if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
+		if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 			for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 				if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0))
 					if(call_n != except_n || (int)c != except_c)
@@ -2810,19 +2820,27 @@ static void ui_toggle_mute_button(GtkWidget *button,const gpointer data)
 	ui_set_image_mute(button,n);
 }
 
-static void ui_call_start(const gpointer data)
+static void call_start(const gpointer data)
 {
 	const int call_n = vptoi(data); // DO NOT FREE ARG
 	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
 
-	time_t time = 0;
-	time_t nstime = 0;
-	set_time(&time,&nstime);
-	// printf("Checkpoint time=$time nstime=$nstime ${DateFormat('yyyy/MM/dd kk:mm:ss').format(DateTime.fromMillisecondsSinceEpoch((time as int) * 1000, isUtc: false))}");
-	const int c = set_c(call_n,time,nstime);
-	if(c > -1) // Necessary check in GTK
-		call_join(iitovp(call_n,c));
+	const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	const uint8_t sendfd_connected = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
+	const uint8_t recvfd_connected = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
+	const uint8_t online = recvfd_connected + sendfd_connected;
+
+	if(owner == ENUM_OWNER_GROUP_CTRL || online) // TODO remove 1
+	{
+		time_t time = 0;
+		time_t nstime = 0;
+		set_time(&time,&nstime);
+		// printf("Checkpoint time=$time nstime=$nstime ${DateFormat('yyyy/MM/dd kk:mm:ss').format(DateTime.fromMillisecondsSinceEpoch((time as int) * 1000, isUtc: false))}");
+		const int c = set_c(call_n,time,nstime);
+		if(c > -1) // Necessary check in GTK
+			call_join(iitovp(call_n,c));
+	}
 }
 
 static void ui_call_start_button(GtkWidget *button,const gpointer data)
@@ -2833,7 +2851,7 @@ static void ui_call_start_button(GtkWidget *button,const gpointer data)
 	int n = global_n;
 	if(t_peer[global_n].pm_n > -1)
 		n = t_peer[global_n].pm_n;
-	ui_call_start(itovp(n));
+	call_start(itovp(n));
 }
 
 static void ui_toggle_block(const gpointer data)
@@ -5702,6 +5720,11 @@ static void ui_activity_rename(const gpointer data)
 
 static void ui_establish_pm(const int n,void *popover)
 {
+	if(n < 0)
+	{ // If triggered, check that iitovp or itovp is used as appropriate in calling the caller function.
+		error_simple(0,"Sanity check failure in ui_establish_pm. Coding error. Report this.");
+		return;
+	}
 	if(t_peer[global_n].edit_n > -1 && t_peer[global_n].edit_i > INT_MIN)
 	{
 		t_peer[global_n].edit_n = -1;
@@ -5724,13 +5747,13 @@ static void ui_establish_pm(const int n,void *popover)
 }
 
 static void ui_private_message(const void *data)
-{ // start PM from group peerlist
+{ // Start PM from group peerlist. Call with itovp.
 	const int n = vptoi(data);
 	ui_establish_pm(n,t_main.popover_group_peerlist);
 }
 
 static void ui_activity_pm(const gpointer data)
-{ // start PM from message popover
+{ // Start PM from message popover. Call with iitovp.
 	const int n = vptoii_n(data);
 //	const int i = vptoii_i(data);
 	ui_establish_pm(n,t_main.popover_message);
@@ -5804,6 +5827,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
 	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+
 	if(file_checksum)
 	{ // files:	start/pause,reject/cancel	text_start / text_pause, text_reject (in) / text_cancel (out) // TODO rebuild int_int struct and pass f along with n,i
 		int file_n = n;
@@ -5850,7 +5874,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		}
 		if(null_terminated_len == 1 && (signature_len == 0 || stat != ENUM_MESSAGE_RECV))
 			create_button(text_edit,ui_activity_edit,data)
-		create_button(text_audio_call,ui_call_start,data)
+		create_button(text_audio_call,call_start,data)
 		if(owner == ENUM_OWNER_GROUP_PEER)
 			create_button(text_private_messaging,ui_activity_pm,data)
 		if(owner == ENUM_OWNER_GROUP_PEER)
@@ -7666,8 +7690,8 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_halign(t_main.call_box, GTK_ALIGN_CENTER);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.call_box);
 	for(size_t c = 0; c < sizeof(t_peer[n].t_call)/sizeof(struct t_call_list) ; c++)
-		if(t_peer[n].t_call[c].row)
-			gtk_box_append(GTK_BOX(t_main.call_box), t_peer[n].t_call[c].row);
+		if(t_peer[n].t_call[c].column)
+			gtk_box_append(GTK_BOX(t_main.call_box), t_peer[n].t_call[c].column);
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{ // Iterate through all group peers and add their rows too
 		g = set_g(n,NULL);
@@ -7678,8 +7702,8 @@ static void ui_select_changed(const void *arg)
 			const int peer_n = group[g].peerlist[nn];
 			pthread_rwlock_unlock(&mutex_expand_group);
 			for(size_t c = 0; c < sizeof(t_peer[peer_n].t_call)/sizeof(struct t_call_list) ; c++)
-				if(t_peer[peer_n].t_call[c].row)
-					gtk_box_append(GTK_BOX(t_main.call_box), t_peer[peer_n].t_call[c].row);
+				if(t_peer[peer_n].t_call[c].column)
+					gtk_box_append(GTK_BOX(t_main.call_box), t_peer[peer_n].t_call[c].column);
 		}
 	}
 
@@ -7773,7 +7797,10 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 	gtk_button_set_child(GTK_BUTTON (button_peer), chat_info);
 	GtkWidget *chat_info_vert = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
 	gtk_widget_set_valign(chat_info_vert, GTK_ALIGN_CENTER);
-
+	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
+	const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
+	const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
 	/* Add Click Function Callbacks */
 	if(minimal_size == 3)
 	{ // This is only passed for Group Peerlist
@@ -7781,9 +7808,8 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		GtkWidget *popover = custom_popover_new(button_peer);
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 		gtk_widget_add_css_class(box, "popover_inner");
-		const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
-		create_button(text_audio_call,ui_call_start,itovp(n))
-		create_button(text_private_messaging,ui_activity_pm,itovp(n))
+		create_button(text_audio_call,call_start,itovp(n))
+		create_button(text_private_messaging,ui_private_message,itovp(n))
 		create_button(text_rename,ui_activity_rename,itovp(n))
 		if(t_peer[n].mute)
 			create_button(text_unignore,ui_toggle_mute,itovp(n))
@@ -7856,8 +7882,6 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		gtk_widget_add_controller(button_peer, GTK_EVENT_CONTROLLER(click));
 	}
 
-	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	/* Build Avatar or Online Status Indicator Image */
 	GtkWidget *image_peerlist;
 	if(owner == ENUM_OWNER_GROUP_CTRL) // Handle group TODO should have a > arrow that goes to downward pointing upon click, to show individual GROUP_PEERs
@@ -7866,8 +7890,6 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
 	else
 	{
-		const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
-		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
 		if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
 			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_green));
 		else if(sendfd_connected > 0 && recvfd_connected < 1)
