@@ -1050,18 +1050,18 @@ void call_update(const int n,const int c)
 	const int participants = call_participant_count(n,c);
 	if(t_peer[n].t_call[c].joined || t_peer[n].t_call[c].waiting)
 	{
-		GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
+		int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
 		const uint8_t owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
+		if(owner == ENUM_OWNER_GROUP_PEER)
+		{
+			const int g = set_g(n,NULL);
+			group_n = getter_group_int(g,offsetof(struct group_list,n));
+		}
+		GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
 		if(t_peer[n].t_call[c].column == NULL)
 		{
 			t_peer[n].t_call[c].column = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
 			g_object_ref(t_peer[n].t_call[c].column); // XXX THIS IS NECESSARY BECAUSE OTHERWISE IT WILL BE DESTROYED WHEN WE NAVIGATE AWAY. Otherwise we need to re-write this function and call_update instead of just adding .column to .call_box
-			int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
-			if(owner == ENUM_OWNER_GROUP_PEER)
-			{
-				const int g = set_g(n,NULL);
-				group_n = getter_group_int(g,offsetof(struct group_list,n));
-			}
 		//	printf("Checkpoint call_update 2: global_n=%d group_n=%d n=%d c=%d\n",global_n,group_n,n,c);
 			if(n == global_n || group_n == global_n)
 				gtk_box_append(GTK_BOX(t_main.call_box), t_peer[n].t_call[c].column);
@@ -1137,7 +1137,8 @@ void call_update(const int n,const int c)
 		}
 		else if(t_peer[n].t_call[c].waiting)
 		{ // Incoming call, should display only Reject / Accept
-			ring_start(); // XXX start ringing
+			if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0)
+				ring_start(); // XXX start ringing
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
 			if(global_theme == DARK_THEME)
@@ -6812,7 +6813,7 @@ static int stream_idle(void *arg)
 	torx_free((void*)&arg);
 	return 0;
 	end: {}
-	error_simple(0,"Potential issue in stream_cb.");
+	error_simple(0,"Potential issue in stream_cb."); // 2025/04/22 Occured when receiving a CALL JOIN from an ignore'd peer in a group chat
 	torx_free((void*)&data);
 	torx_free((void*)&arg);
 	return 0;
