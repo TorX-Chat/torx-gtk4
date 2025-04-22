@@ -82,10 +82,15 @@ struct play_info {
 	pthread_rwlock_t *mutex;
 	unsigned char *data;
 	size_t data_len;
+	uint8_t loop; // play on repeat
 };
+
+GstElement *ring_pipeline = NULL; // for ringtone (sending / receiving calls)
+pthread_rwlock_t ring_pipeline_mutex = PTHREAD_RWLOCK_INITIALIZER; // for ringtone (sending / receiving calls)
 
 GstElement *global_pipeline = NULL; // This is for 'pausable' audio (such as voice messages), not streaming.
 pthread_rwlock_t global_pipeline_mutex = PTHREAD_RWLOCK_INITIALIZER; // This is for 'pausable' audio (such as voice messages), not streaming.
+
 struct rec_info *current_recording = NULL;
 
 struct rec_info *record_start(const int sample_rate);

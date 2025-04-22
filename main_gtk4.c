@@ -532,6 +532,8 @@ void message_more_cb_ui(const int loaded,int *loaded_array_n,int *loaded_array_i
 void login_cb_ui(const int value);
 void ui_show_auth_screen(void);
 void ui_show_missing_binaries(void);
+void ring_start(void);
+void ring_stop(void);
 
 /* Global Text Declarations for ui_initialize_language() */
 static const char *text_title = {0};
@@ -1135,6 +1137,7 @@ void call_update(const int n,const int c)
 		}
 		else if(t_peer[n].t_call[c].waiting)
 		{ // Incoming call, should display only Reject / Accept
+			ring_start(); // XXX start ringing
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
 			if(global_theme == DARK_THEME)
@@ -1191,6 +1194,8 @@ void call_join(void *arg)
 		return;
 	}
 	call_leave_all_except(n,c);
+	if(t_peer[n].t_call[c].waiting)
+		ring_stop(); // XXX stop ringing
 	t_peer[n].t_call[c].waiting = 0;
 	t_peer[n].t_call[c].joined = 1;
 	const uint8_t owner = getter_uint8(n, INT_MIN, -1, offsetof(struct peer_list,owner));
@@ -1246,6 +1251,8 @@ printf("Checkpoint call_leave n=%d c=%d\n",n,c);
 	if(send_count == 0 && (owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_PEER))
 		message_send(n,ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE,message,sizeof(message));
 	sodium_memzero(message,sizeof(message));
+	if(t_peer[n].t_call[c].waiting)
+		ring_stop(); // XXX stop ringing
 	t_peer[n].t_call[c].waiting = 0;
 	t_peer[n].t_call[c].joined = 0;
 	call_update(n,c);
@@ -1323,6 +1330,8 @@ void call_peer_leaving(const int call_n,const int c,const int peer_n)
 	const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_PEER))
 	{ // Ending the call if it is non-group
+		if(t_peer[call_n].t_call[c].waiting)
+			ring_stop(); // XXX stop ringing
 		t_peer[call_n].t_call[c].joined = 0;
 		t_peer[call_n].t_call[c].waiting = 0;
 	}
@@ -4401,14 +4410,19 @@ void tor_log_cb_ui(char *message)
 static void *playback_threaded(void* arg)
 { // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
 	struct play_info *play_info = (struct play_info *)arg;
-	playback_start(play_info->pipeline,play_info->mutex,play_info->data,play_info->data_len);
+	while(1)
+	{
+		playback_start(play_info->pipeline,play_info->mutex,play_info->data,play_info->data_len);
+		if(!play_info->loop)
+			break; // play only once
+	}
 	torx_free((void*)&play_info->data);
 	torx_free((void*)&play_info);
 	pthread_exit(NULL);
 	return NULL;
 }
 
-static void playback_async(GstElement **passed_pipeline, pthread_rwlock_t *mutex,const unsigned char *data, const size_t data_len)
+static void playback_async(GstElement **passed_pipeline, pthread_rwlock_t *mutex,const uint8_t loop,const unsigned char *data, const size_t data_len)
 { // Play audio in a pthread.
 	pthread_t thread_playback = {0};
 	struct play_info *play_info = torx_insecure_malloc(sizeof(struct play_info));
@@ -4417,6 +4431,7 @@ static void playback_async(GstElement **passed_pipeline, pthread_rwlock_t *mutex
 	play_info->data_len = data_len;
 	play_info->pipeline = passed_pipeline;
 	play_info->mutex = mutex;
+	play_info->loop = loop;
 	if(pthread_create(&thread_playback,&ATTR_DETACHED,&playback_threaded,play_info))
 		error_simple(0,"Failed to create thread");
 }
@@ -4437,7 +4452,7 @@ static void playback_message(void* arg)
 	last_played_i = i;
 	uint32_t len;
 	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
-	playback_async(&global_pipeline,&global_pipeline_mutex,(unsigned char *)&message[4],len-4);
+	playback_async(&global_pipeline,&global_pipeline_mutex,0,(unsigned char *)&message[4],len-4);
 	torx_free((void*)&message);
 	if(t_peer[n].t_message[i].unheard && getter_uint8(n,i,-1,offsetof(struct message_list,stat)) == ENUM_MESSAGE_RECV)
 	{
@@ -4447,12 +4462,33 @@ static void playback_message(void* arg)
 	}
 }
 
+void ring_start(void)
+{ // Start ringing
+	if(ring_pipeline)
+		return; // Already ringing
+	if(global_pipeline)
+	{
+		error_simple(0,"Not ringing because other audio is playing.");
+		return; // Don't ring if something else is playing (such as playback_message)
+	}
+	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
+	size_t size = 0;
+	const void *data = g_bytes_get_data(bytes,&size);
+	playback_async(&ring_pipeline,&ring_pipeline_mutex,1,data,size);
+}
+
+void ring_stop(void)
+{ // Stop ringing
+	if(ring_pipeline)
+		playback_stop(&ring_pipeline,&ring_pipeline_mutex);
+}
+
 static void beep(void)
 { // This function currently does not need to run in the UI thread, which is why it is not ui_prefixed
 	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 	size_t size = 0;
 	const void *data = g_bytes_get_data(bytes,&size);
-	playback_async(NULL,NULL,data,size);
+	playback_async(NULL,NULL,0,data,size);
 /*	#ifdef WIN32
 	{ // call PlaySound asyncronously to prevent having to CreateProcess
 		PlaySound(FILENAME_BEEP, NULL, SND_FILENAME | SND_ASYNC);
