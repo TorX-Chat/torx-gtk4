@@ -255,6 +255,8 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		time_t start_time;
 		time_t start_nstime;
 		int participating[256]; // Maximum 256 concurrent peers for simplicity TODO
+		uint8_t participant_mic[256]; // Maximum 256 concurrent peers for simplicity TODO
+		uint8_t participant_speaker[256]; // Maximum 256 concurrent peers for simplicity TODO
 		time_t last_played_time;
 		time_t last_played_nstime;
 		GtkWidget *column; // Vertical box, contains who is calling and then a row of applicable widgets related to the call
@@ -351,8 +353,10 @@ static struct { // XXX Do not sodium_malloc structs unless they contain sensitiv
 	GtkWidget *popover_sticker;
 
 	/* Individual Group Chat Pages */
+	GtkWidget *button_participants;
 	GtkWidget *popover_invite; // TODO can probably be eliminated with lots of work
 	GtkWidget *popover_group_peerlist;
+	GtkWidget *popover_participant_list;
 	GtkWidget *popover_more;
 
 	/* Home Page */
@@ -721,7 +725,7 @@ static void ui_show_generate(void);
 static void ui_show_home(void);
 static void ui_show_settings(void);
 static int ui_populate_peers(void *arg);
-GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
+GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
 GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unused_result));
 GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *label_text)__attribute__((warn_unused_result));
 static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unused_result));
@@ -999,7 +1003,11 @@ static void initialize_peer_call(const int n,const int c)
 	t_peer[n].t_call[c].start_time = 0;
 	t_peer[n].t_call[c].start_nstime = 0;
 	for(size_t iter = 0 ; iter < sizeof(t_peer[n].t_call[c].participating)/sizeof(int) ; iter++)
+	{
 		t_peer[n].t_call[c].participating[iter] = -1;
+		t_peer[n].t_call[c].participant_mic[iter] = 1; // default, enabled
+		t_peer[n].t_call[c].participant_speaker[iter] = 1; // default, enabled
+	}
 	t_peer[n].t_call[c].last_played_time = 0;
 	t_peer[n].t_call[c].last_played_nstime = 0;
 	t_peer[n].t_call[c].column = NULL; // TODO when zeroing an existing, call g_object_unref(t_peer[n].t_call[c].column);
@@ -1026,18 +1034,87 @@ static int call_participant_count(const int n, const int c)
 }
 
 static void toggle_int8(void *arg)
-{ // Works for int8_t and uint8_t
+{ // Works for int8_t and uint8_t // TODO cease to use this on any heap allocations. Cease to use this function!!
 	if(*(uint8_t *)arg)
 		*(uint8_t *)arg = 0;
 	else
 		*(uint8_t *)arg = 1;
 }
 
-static void call_participant_list(void *arg)
-{ // TODO
-	const int n = vptoii_n(arg);
-	const int c = vptoii_i(arg);
-	printf("TODO: Show a list of participating peers: %d %d\n",n,c);
+static void custom_popover_closed(GtkPopover* self,gpointer user_data)
+{ // XXX For working-around GTK bug on double level popovers
+	(void)user_data;
+	(void)self;
+	if(popover_level_one)
+	{
+		gtk_popover_popdown(GTK_POPOVER(popover_level_one));
+		popover_level_one = NULL;
+	}
+}
+
+static GtkWidget *custom_popover_new(GtkWidget *parent)
+{
+	GtkWidget *custom_popover = gtk_popover_new();
+	gtk_widget_set_parent(custom_popover,parent);
+	g_signal_connect(custom_popover, "closed", G_CALLBACK (custom_popover_closed), NULL); // XXX For working-around GTK bug on double level popovers
+	g_signal_connect(custom_popover, "closed", G_CALLBACK (gtk_widget_unparent), custom_popover); // XXX necessary or a warning occurs
+	if(!popover_level_one) // XXX For working-around GTK bug on double level popovers
+		popover_level_one = custom_popover; // XXX For working-around GTK bug on double level popovers
+	return custom_popover;
+}
+
+static void chat_builder(GtkListItemFactory *factory, GtkListItem *list_item,void (*callback_click)(const void *))
+{ // This is for peer list
+	(void) factory;
+	IntPair *pair = gtk_list_item_get_item(list_item);
+	if(pair->fourth == 2)
+		gtk_list_item_set_activatable(list_item,FALSE);
+	else
+		gtk_list_item_set_activatable(list_item,TRUE); // XXX this changes whether hover is visible
+	if(pair)
+	{
+		GtkWidget *node = ui_add_chat_node(pair->first,pair->second,pair->third,callback_click,pair->fourth);
+		gtk_widget_add_css_class(node, "node");
+		gtk_list_item_set_child(list_item, node);
+	}
+}
+
+static void ui_participant_list(void *arg)
+{ // modelled after ui_group_peerlist
+	const int call_n = vptoii_n(arg); // DO NOT FREE ARG
+	const int call_c = vptoii_i(arg); // DO NOT FREE ARG
+
+	t_main.popover_participant_list = custom_popover_new(t_main.button_participants);
+
+	GtkWidget *box_popover_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
+	gtk_widget_add_css_class(box_popover_outer, "popover_inner");
+	GtkWidget *scrolled_window_popover = gtk_scrolled_window_new();
+	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (scrolled_window_popover),size_peerlist_minimum_width);
+
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_popover),box_popover_outer);
+	gtk_popover_set_child(GTK_POPOVER(t_main.popover_participant_list),scrolled_window_popover);
+	gtk_scrolled_window_set_min_content_height (GTK_SCROLLED_WINDOW (scrolled_window_popover),size_peerlist_button_height*8);
+	GtkWidget *box_popover_inner = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
+
+	gtk_box_append(GTK_BOX(box_popover_outer), box_popover_inner);
+
+	const int participants = call_participant_count(call_n,call_c);
+	if(participants)
+	{
+		GListStore *list_store = g_list_store_new(int_pair_get_type());
+		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
+
+		for(size_t iter = 0 ; iter < sizeof(t_peer[call_n].t_call[call_c].participating)/sizeof(int) ; iter++)
+			if(t_peer[call_n].t_call[call_c].participating[iter] > -1)
+				g_list_store_append(list_store, int_pair_new(t_peer[call_n].t_call[call_c].participating[iter],call_n,call_c,2));
+
+		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),NULL); // TODO make click do something
+		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
+		gtk_box_append (GTK_BOX(box_popover_inner), list_view);
+	}
+
+	gtk_popover_popup(GTK_POPOVER(t_main.popover_participant_list));
 }
 
 void call_update(const int n,const int c)
@@ -1089,7 +1166,7 @@ void call_update(const int n,const int c)
 						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
 				}
 				gtk_widget_set_size_request(button_mic, size_icon_bottom_right, size_icon_bottom_right);
-				g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].mic_on);
+				g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].mic_on); // TODO WARNING this could move
 				gtk_box_append(GTK_BOX(row),button_mic);
 
 				GtkWidget *button_speaker = gtk_button_new();
@@ -1109,20 +1186,23 @@ void call_update(const int n,const int c)
 						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light)));
 				}
 				gtk_widget_set_size_request(button_speaker, size_icon_bottom_right, size_icon_bottom_right);
-				g_signal_connect(button_speaker, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].speaker_on);
+				g_signal_connect(button_speaker, "clicked", G_CALLBACK(toggle_int8),&t_peer[n].t_call[c].speaker_on); // TODO WARNING this could move
 				gtk_box_append(GTK_BOX(row),button_speaker);
 
 				if(owner == ENUM_OWNER_GROUP_CTRL)
 				{
-					GtkWidget *button_participants = gtk_button_new();
-					gtk_widget_add_css_class(button_participants, "invisible");
+					t_main.button_participants = gtk_button_new();
+					gtk_widget_add_css_class(t_main.button_participants, "invisible");
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_dark)));
+						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_dark)));
 					else
-						gtk_button_set_child(GTK_BUTTON(button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_light)));
-					gtk_widget_set_size_request(button_participants, size_icon_bottom_right, size_icon_bottom_right);
-					g_signal_connect_swapped(button_participants, "clicked", G_CALLBACK(call_participant_list),iitovp(n,c));
-					gtk_box_append(GTK_BOX(row),button_participants);
+						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_light)));
+					gtk_widget_set_size_request(t_main.button_participants, size_icon_bottom_right, size_icon_bottom_right);
+					g_signal_connect_swapped(t_main.button_participants, "clicked", G_CALLBACK(ui_participant_list),iitovp(n,c));
+				/*	GtkGesture *click = gtk_gesture_click_new();
+					g_signal_connect_swapped(click, "pressed", G_CALLBACK(ui_participant_list), iitovp(n,c)); // DO NOT FREE arg because this only gets passed ONCE.
+					gtk_widget_add_controller(t_main.button_participants, GTK_EVENT_CONTROLLER(click));	*/
+					gtk_box_append(GTK_BOX(row),t_main.button_participants);
 				}
 			}
 			GtkWidget *button_hangup = gtk_button_new();
@@ -1310,6 +1390,8 @@ void call_peer_joining(const int call_n,const int c,const int peer_n)
 		if(t_peer[call_n].t_call[c].participating[iter] == -1)
 		{ // Add this peer then break
 			t_peer[call_n].t_call[c].participating[iter] = peer_n;
+			t_peer[call_n].t_call[c].participant_mic[iter] = 1; // default, enabled
+			t_peer[call_n].t_call[c].participant_speaker[iter] = 1; // default, enabled
 			break;
 		}
 	call_update(call_n,c);
@@ -1326,6 +1408,8 @@ void call_peer_leaving(const int call_n,const int c,const int peer_n)
 		if (peer_n == t_peer[call_n].t_call[c].participating[iter])
 		{ // TODO perhaps we should shift all forward
 			t_peer[call_n].t_call[c].participating[iter] = -1;
+			t_peer[call_n].t_call[c].participant_mic[iter] = 1; // default, enabled
+			t_peer[call_n].t_call[c].participant_speaker[iter] = 1; // default, enabled
 			break;
 		}
 	const uint8_t owner = getter_uint8(call_n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -2495,28 +2579,6 @@ static inline GtkWidget *ui_sticker_box(GdkPaintable *paintable,const int square
 	}
 	gtk_box_append(GTK_BOX(box), sticker_image);
 	return box;
-}
-
-static void custom_popover_closed(GtkPopover* self,gpointer user_data)
-{ // XXX For working-around GTK bug on double level popovers
-	(void)user_data;
-	(void)self;
-	if(popover_level_one)
-	{
-		gtk_popover_popdown(GTK_POPOVER(popover_level_one));
-		popover_level_one = NULL;
-	}
-}
-
-static GtkWidget *custom_popover_new(GtkWidget *parent)
-{
-	GtkWidget *custom_popover = gtk_popover_new();
-	gtk_widget_set_parent(custom_popover,parent);
-	g_signal_connect(custom_popover, "closed", G_CALLBACK (custom_popover_closed), NULL); // XXX For working-around GTK bug on double level popovers
-	g_signal_connect(custom_popover, "closed", G_CALLBACK (gtk_widget_unparent), custom_popover); // XXX necessary or a warning occurs
-	if(!popover_level_one) // XXX For working-around GTK bug on double level popovers
-		popover_level_one = custom_popover; // XXX For working-around GTK bug on double level popovers
-	return custom_popover;
 }
 
 static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
@@ -7017,19 +7079,6 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 		message_send(n,ENUM_PROTOCOL_GROUP_OFFER,itovp(global_group),GROUP_OFFER_LEN);
 }
 
-static void chat_builder(GtkListItemFactory *factory, GtkListItem *list_item,void (*callback_click)(const void *))
-{ // This is for peer list
-	(void) factory;
-	gtk_list_item_set_activatable(list_item,TRUE); // XXX this changes whether hover is visible
-	IntPair *pair = gtk_list_item_get_item(list_item);
-	if(pair)
-	{
-		GtkWidget *node = ui_add_chat_node(pair->first,callback_click,pair->third);
-		gtk_widget_add_css_class(node, "node");
-		gtk_list_item_set_child(list_item, node);
-	}
-}
-
 static int ui_populate_peers(void *arg)
 { /* Search Letters Entered */ // Takes 0 or ENUM_STATUS_BLOCKED / ENUM_STATUS_FRIEND as argument
 // TODO should probably save the scroll point, or not scroll if not at bottom, since this will be triggered on every message in/out
@@ -7068,11 +7117,11 @@ static int ui_populate_peers(void *arg)
 				const int n = array[pos];
 				const uint8_t status_local = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 				if(status == ENUM_STATUS_GROUP_CTRL)
-					g_list_store_append(list_store, int_pair_new(array[pos],-1,0,-1));
+					g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,0));
 				else if(status == ENUM_STATUS_BLOCKED && status_local == ENUM_STATUS_BLOCKED)
-					g_list_store_append(list_store, int_pair_new(array[pos],-1,0,-1));
+					g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,0));
 				else if(status == ENUM_STATUS_FRIEND && status_local == ENUM_STATUS_FRIEND)
-					g_list_store_append(list_store, int_pair_new(array[pos],-1,0,-1));
+					g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,0));
 			}
 			torx_free((void*)&array);
 		}
@@ -7105,7 +7154,7 @@ static void ui_populate_group_peerlist_popover(GtkWidget *entry_search_popover,G
 		GListStore *list_store = g_list_store_new(int_pair_get_type());
 		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
-			g_list_store_append(list_store, int_pair_new(array[pos],-1,3,-1));
+			g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,3));
 		torx_free((void*)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_private_message);
@@ -7126,7 +7175,7 @@ static void ui_populate_peer_popover(GtkWidget *entry_search_popover,GParamSpec 
 		GListStore *list_store = g_list_store_new(int_pair_get_type());
 		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
-			g_list_store_append(list_store, int_pair_new(array[pos],-1,1,-1));
+			g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,1));
 		torx_free((void*)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_group_invite);
@@ -7820,29 +7869,37 @@ static void ui_select_changed(const void *arg)
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view); // Do not change. ListView should be a direct child of a Scrolled Window otherwise weird things happen with > 205 widgets.
 }
 
-GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),const int minimal_size)
+GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)
 { /* XXX Note: Populate_list() is more refined and flexible than this. This only handles CTRL onions, status 0 or 1. */
-	/* Build Invisible Button To Contain Peer Info */
-	GtkWidget *button_peer = gtk_button_new();
-	if(minimal_size == 0)
-		gtk_widget_set_size_request(button_peer,size_peerlist_minimum_width,size_peerlist_button_height);
-	else
-		gtk_widget_set_size_request(button_peer,size_peerlist_minimum_width,size_peerlist_button_height/2);
-
-	/* Build the button / node */
 	GtkWidget *chat_info = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
-	gtk_button_set_child(GTK_BUTTON (button_peer), chat_info);
+	if(minimal_size == 0)
+		gtk_widget_set_size_request(chat_info,size_peerlist_minimum_width,size_peerlist_button_height);
+	else
+		gtk_widget_set_size_request(chat_info,size_peerlist_minimum_width,size_peerlist_button_height/2);
+//	gtk_button_set_child(GTK_BUTTON (button_peer), chat_info);
 	GtkWidget *chat_info_vert = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
 	gtk_widget_set_valign(chat_info_vert, GTK_ALIGN_CENTER);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
 	const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
+	size_t iter = 0;
+	if(call_n > -1 && call_c > -1 && minimal_size == 2)
+	{ // Must determine the iter
+		for( ; iter < sizeof(t_peer[call_n].t_call[call_c].participating)/sizeof(int) ; iter++)
+			if(t_peer[call_n].t_call[call_c].participating[iter] == n)
+				break;
+		if(iter == sizeof(t_peer[call_n].t_call[call_c].participating)/sizeof(int))
+		{ // Sanity check. Might be fatal.
+			error_simple(0,"Serious error in ui_add_chat_node caused by race condition. Coding error. Report this.");
+			return NULL;
+		}
+	}
 	/* Add Click Function Callbacks */
-	if(minimal_size == 3)
-	{ // This is only passed for Group Peerlist
+	if(minimal_size == 2 || minimal_size == 3)
+	{ // This is only passed for Group Peerlist, and Participant List
 		// Build popover
-		GtkWidget *popover = custom_popover_new(button_peer);
+		GtkWidget *popover = custom_popover_new(chat_info);
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 		gtk_widget_add_css_class(box, "popover_inner");
 		create_button(text_audio_call,call_start,itovp(n))
@@ -7858,15 +7915,14 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 			create_button(text_block,ui_toggle_block,itovp(n))
 		gtk_popover_set_child(GTK_POPOVER(popover),box);
 
-		// Single click
 		GtkGesture *long_press = gtk_gesture_long_press_new(); // NOTE: "cancelled" == single click, "pressed" == long press
 		gtk_gesture_long_press_set_delay_factor(GTK_GESTURE_LONG_PRESS(long_press),LONG_PRESS_TIME);
-		g_signal_connect_swapped(long_press, "cancelled", G_CALLBACK(callback_click),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
-
+		if(callback_click) // Single click
+			g_signal_connect_swapped(long_press, "cancelled", G_CALLBACK(callback_click),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 		// Long press
 		g_signal_connect_swapped(long_press, "pressed", G_CALLBACK(gtk_popover_popup),GTK_POPOVER(popover)); // DO NOT FREE arg because this only gets passed ONCE.
 
-		gtk_widget_add_controller(button_peer, GTK_EVENT_CONTROLLER(long_press));
+		gtk_widget_add_controller(chat_info, GTK_EVENT_CONTROLLER(long_press));
 
 		// Tooltip
 		const char *identifier;
@@ -7908,15 +7964,15 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		}
 		else
 			snprintf(tooltip,sizeof(tooltip),"%s: %s",identifier,onion);
-		gtk_widget_set_tooltip_text(button_peer,tooltip);
+		gtk_widget_set_tooltip_text(chat_info,tooltip);
 		sodium_memzero(onion,sizeof(onion));
 		sodium_memzero(tooltip,sizeof(tooltip));
 	}
-	else
+	else if(callback_click)
 	{
 		GtkGesture *click = gtk_gesture_click_new();
 		g_signal_connect_swapped(click, "pressed", G_CALLBACK(callback_click), itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(button_peer, GTK_EVENT_CONTROLLER(click));
+		gtk_widget_add_controller(chat_info, GTK_EVENT_CONTROLLER(click));
 	}
 
 	/* Build Avatar or Online Status Indicator Image */
@@ -7964,7 +8020,23 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 		}
 	}
 	else
+	{
 		gtk_widget_set_size_request(image_peerlist,size_peerlist_icon_size/2,size_peerlist_icon_size/2);
+		if(minimal_size == 2)
+		{
+		//	if(currently speaking) // TODO
+		//	{ // Handle "Badges"
+				GtkWidget *overlay2 = gtk_overlay_new();
+				gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/2/1.5),(int)(size_peerlist_icon_size/2/1.5));
+				gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
+				gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
+				GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+				gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
+
+				gtk_overlay_add_overlay(GTK_OVERLAY(overlay),overlay2);
+		//	}
+		}
+	}
 
 	/* Assemble everything */
 	gtk_box_append (GTK_BOX(chat_info), overlay); // For groups, we'll probably do 3 dots in a triangle. 1 Green for each Green user.
@@ -8071,9 +8143,51 @@ GtkWidget *ui_add_chat_node(const int n,void (*callback_click)(const void *),con
 	}
 	gtk_box_append (GTK_BOX(chat_info), chat_info_vert);
 
-	/* Append it to passed box */
-//	gtk_box_append (GTK_BOX(widget), button_peer);
-	return button_peer;
+	if(minimal_size == 2)
+	{
+		GtkWidget *image_mic;
+		if(t_peer[call_n].t_call[call_c].participant_mic[iter])
+		{
+			if(global_theme == DARK_THEME)
+				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark));
+			else
+				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light));
+		}
+		else
+		{
+			if(global_theme == DARK_THEME)
+				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark));
+			else
+				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light));
+		}
+		gtk_widget_set_size_request(image_mic, size_peerlist_icon_size, size_peerlist_icon_size);
+		GtkGesture *click1 = gtk_gesture_click_new(); // TODO must trigger rebuild by rebuilding the list_store
+		g_signal_connect_swapped(click1, "pressed", G_CALLBACK(toggle_int8),&t_peer[call_n].t_call[call_c].participant_mic[iter]); // DO NOT FREE arg because this only gets passed ONCE.
+		gtk_widget_add_controller(image_mic, GTK_EVENT_CONTROLLER(click1));
+		gtk_box_append(GTK_BOX(chat_info),image_mic);
+
+		GtkWidget *image_speaker;
+		if(t_peer[call_n].t_call[call_c].participant_speaker[iter])
+		{
+			if(global_theme == DARK_THEME)
+				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark));
+			else
+				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light));
+		}
+		else
+		{
+			if(global_theme == DARK_THEME)
+				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark));
+			else
+				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light));
+		}
+		gtk_widget_set_size_request(image_speaker, size_peerlist_icon_size, size_peerlist_icon_size);
+		GtkGesture *click2 = gtk_gesture_click_new(); // TODO must trigger rebuild by rebuilding the list_store
+		g_signal_connect_swapped(click2, "pressed", G_CALLBACK(toggle_int8),&t_peer[call_n].t_call[call_c].participant_speaker[iter]); // DO NOT FREE arg because this only gets passed ONCE.
+		gtk_widget_add_controller(image_speaker, GTK_EVENT_CONTROLLER(click2));
+		gtk_box_append(GTK_BOX(chat_info),image_speaker);
+	}
+	return chat_info;
 }
 
 static void ui_show_main_screen(GtkWidget *window)
