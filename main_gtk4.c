@@ -706,11 +706,13 @@ static const char *text_error_creating_group = {0};
 static const char *text_censored_region = {0};
 static const char *text_invite_friend = {0};  // unused in GTK
 static const char *text_group_peers = {0}; // unused in GTK
+static const char *text_incoming_call = {0};
 
 const char **options[] = { &text_peer, &text_group, &text_block, &text_incoming, &text_outgoing, &text_active_mult, &text_active_sing }; // do not modify without thinking
 
 void call_update(const int n,const int c);
 void call_join(void *arg);
+void call_ignore(void *arg);
 void call_leave(void *arg);
 void call_leave_all_except(const int except_n,const int except_c);
 void call_peer_joining(const int call_n,const int c,const int peer_n);
@@ -1217,8 +1219,6 @@ void call_update(const int n,const int c)
 		}
 		else if(t_peer[n].t_call[c].waiting)
 		{ // Incoming call, should display only Reject / Accept
-			if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0)
-				ring_start(); // XXX start ringing
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
 			if(global_theme == DARK_THEME)
@@ -1304,6 +1304,22 @@ void call_join(void *arg)
 	call_update(n,c);
 }
 
+void call_ignore(void *arg)
+{ // so far kind of under-utilized
+	const int n = vptoii_n(arg);
+	const int c = vptoii_i(arg);
+	if(n < 0 || (size_t)c >= sizeof(t_peer[n].t_call)/sizeof(struct t_call_list) || (!t_peer[n].t_call[c].joined && !t_peer[n].t_call[c].waiting))
+	{
+		error_simple(0,"Sanity check failed in call_ignore. Coding error. Report this.");
+		return;
+	}
+	if(t_peer[n].t_call[c].waiting)
+		ring_stop(); // XXX stop ringing
+	t_peer[n].t_call[c].waiting = 0;
+	t_peer[n].t_call[c].joined = 0;
+	call_update(n,c);
+}
+
 void call_leave(void *arg)
 {
 	const int n = vptoii_n(arg);
@@ -1332,11 +1348,7 @@ printf("Checkpoint call_leave n=%d c=%d\n",n,c);
 	if(send_count == 0 && (owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_PEER))
 		message_send(n,ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE,message,sizeof(message));
 	sodium_memzero(message,sizeof(message));
-	if(t_peer[n].t_call[c].waiting)
-		ring_stop(); // XXX stop ringing
-	t_peer[n].t_call[c].waiting = 0;
-	t_peer[n].t_call[c].joined = 0;
-	call_update(n,c);
+	call_ignore(arg);
 }
 
 void call_leave_all_except(const int except_n,const int except_c)
@@ -3758,6 +3770,7 @@ after each comes online and receives the code.";
 		text_censored_region = "Censored Region";
 		text_invite_friend = "Invite Friend";  // unused in GTK
 		text_group_peers = "Group Peers"; // unused in GTK
+		text_incoming_call = "Incoming Call";
 	}
 	else if(!strncmp(language,"zh_CN",5))
 	{
@@ -3944,6 +3957,7 @@ after each comes online and receives the code.";
 		text_group_peers = "群组成员";
 		text_save = "保存";
 		text_override = "覆盖 / 忽略错误";
+		text_incoming_call = "来电";
 	}
 }
 
@@ -6836,13 +6850,14 @@ static int stream_idle(void *arg)
 		printf("Checkpoint received host: %ld %ld\n",time,nstime);
 		int call_n = n;
 		int call_c = -1;
+		int group_n;
 		for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 			if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
 				call_c = (int)c;
 		if(call_c == -1 && owner == ENUM_OWNER_GROUP_PEER)
 		{ // Try group_n instead
 			const int g = set_g(n, NULL);
-			const int group_n = getter_group_int(g, offsetof(struct group_list, n));
+			group_n = getter_group_int(g, offsetof(struct group_list, n));
 			call_n = group_n;
 			for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 				if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
@@ -6850,12 +6865,16 @@ static int stream_idle(void *arg)
 		}
 		if(call_c == -1 && (protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE))
 		{ // Received offer to join a new call
-			printf("Checkpoint receiving offer to join a new call\n");
 			if(protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE)
 				call_n = n;
 			call_c = set_c(call_n,time,nstime); // reserve
 			t_peer[call_n].t_call[call_c].waiting = 1;
 			call_peer_joining(call_n, call_c, n); // should call before call_update
+			if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[call_n].mute == 0)
+				ring_start(); // XXX start ringing
+			char *peernick = getter_string(NULL,call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			ui_notify(text_incoming_call,peernick);
+			torx_free((void*)&peernick);
 		}
 		else if(call_c > -1)
 		{
