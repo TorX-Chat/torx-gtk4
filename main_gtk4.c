@@ -727,6 +727,7 @@ static void ui_show_generate(void);
 static void ui_show_home(void);
 static void ui_show_settings(void);
 static int ui_populate_peers(void *arg);
+static void ui_decorate_panel_left_top(void);
 GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
 GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unused_result));
 GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *label_text)__attribute__((warn_unused_result));
@@ -1715,7 +1716,7 @@ static int ui_populate_list(void *arg)
 		breakpoint();
 		return -1;
 	}
-	if(list_store && G_IS_LIST_STORE(list_store))
+	if(list_store && G_IS_LIST_STORE(list_store)) // TODO 2025/04/29 Hit segfault on G_IS_LIST_STORE when generating a SING, adding it, and then generating a MULT at approximately the same time of SING deletion. Possible race condition???
 	{
 		g_list_store_remove_all(list_store);
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
@@ -1934,7 +1935,7 @@ void change_password_cb_ui(const int value)
 static int incoming_friend_request_idle(void *arg)
 {
 	totalIncoming++;
-	// TODO rebuild ui_decorate_panel_left_top();
+	ui_decorate_panel_left_top();
 	ui_populate_list(arg);
 	return 0;
 }
@@ -2098,6 +2099,14 @@ void peer_new_cb_ui(const int n)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,peer_new_idle,itovp(n),NULL);
 }
 
+static int totalIncoming_increase_idle(void *arg)
+{
+	(void) arg;
+	totalIncoming++;
+	// TODO rebuild ui_decorate_panel_left_top(); // TODO not doing because expensive due to frequent run on startup. may need to do or simplify. We already do it in flutter, where it is less costly. Low priority, nearly non-issue.
+	return 0;
+}
+
 void peer_loaded_cb_ui(const int n)
 { // NOTE: this runs frequently on startup
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -2106,6 +2115,8 @@ void peer_loaded_cb_ui(const int n)
 	else
 	{
 		const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
+		if(owner == ENUM_OWNER_CTRL && status == ENUM_STATUS_PENDING)
+			g_idle_add_full(G_PRIORITY_HIGH_IDLE,totalIncoming_increase_idle,NULL,NULL);
 		g_idle_add_full(G_PRIORITY_HIGH_IDLE,ui_populate_peers,itovp(status),NULL);
 	}
 }
@@ -4792,7 +4803,7 @@ static void ui_accept(void)
 	if(treeview_n < 0)
 		return;
 	totalIncoming--;
-	// TODO rebuild ui_decorate_panel_left_top();
+	ui_decorate_panel_left_top();
 	peer_accept(treeview_n);
 	ui_populate_list(itovp(ENUM_OWNER_CTRL));
 	ui_populate_peers(itovp(ENUM_STATUS_FRIEND));
@@ -4812,7 +4823,7 @@ static void ui_delete(void)
 	if(owner == ENUM_OWNER_CTRL)
 	{
 		totalIncoming--;
-	// TODO rebuild ui_decorate_panel_left_top();
+		ui_decorate_panel_left_top();
 	}
 	takedown_onion(peer_index,1);
 	ui_populate_list(itovp(owner));
