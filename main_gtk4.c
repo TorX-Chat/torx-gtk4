@@ -726,6 +726,7 @@ static void ui_theme(const int theme_local);
 static void ui_show_generate(void);
 static void ui_show_home(void);
 static void ui_show_settings(void);
+static void ui_go_back(void *arg);
 static int ui_populate_peers(void *arg);
 static void ui_decorate_panel_left_top(void);
 GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
@@ -1958,10 +1959,7 @@ static int onion_deleted_idle(void *arg)
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
 	if(t_peer[n].buffer_write)
-	{
-		g_free(t_peer[n].buffer_write);
-		t_peer[n].buffer_write = NULL;
-	}
+		t_peer[n].buffer_write = NULL; // g_free(t_peer[n].buffer_write); // Causes issues when sending a kill. Do not g_free before NULLing.
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
 	t_peer[n].t_file = torx_realloc(t_peer[n].t_file,sizeof(struct t_file_list) *11);
@@ -1971,7 +1969,7 @@ static int onion_deleted_idle(void *arg)
 		initialize_f_idle(iitovp(n,f)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
 	initialize_peer_call_list(n);
 	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
-	if(generated_n > -1 && getter_uint8(generated_n,INT_MIN,-1,offsetof(struct peer_list,owner)) == 0)
+	if(generated_n == n)
 	{
 		generated_n = -1;
 		if(t_main.window == window_main)
@@ -2010,12 +2008,13 @@ static int onion_deleted_idle(void *arg)
 		g_free(buffer);
 		buffer = NULL;
 	} */
+	if(global_n == n)
+		ui_go_back(itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	return 0;
 }
 
 void onion_deleted_cb_ui(const uint8_t owner,const int n)
 { // GUI Callback, // array necessary because owner about to be zero'd
-	error_printf(0,"Checkpoint onion_deleted_cb owner: %d\n",owner);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_deleted_idle,iitovp(n,owner),NULL);
 }
 
@@ -2981,6 +2980,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 	if(t_main.popover_more && GTK_IS_WIDGET(t_main.popover_more))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_more));
 //	error_simple("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
+//	ui_go_back(data); // do not do here, already doing in onion_deleted_idle
 }
 
 static void ui_toggle_delete(GtkWidget *button,const gpointer data)
@@ -2991,7 +2991,7 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 	takedown_onion(peer_index,1);
 	if(t_main.popover_more && GTK_IS_WIDGET(t_main.popover_more))
 		gtk_popover_popdown(GTK_POPOVER(t_main.popover_more));
-	ui_go_back(data); // DO NOT FREE arg because this only gets passed ONCE.
+//	ui_go_back(data); // do not do here, already doing in onion_deleted_idle
 }
 
 static void ui_delete_log(GtkWidget *button,const gpointer data)
