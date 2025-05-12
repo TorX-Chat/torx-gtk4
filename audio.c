@@ -75,6 +75,8 @@ struct rec_info {
 	size_t buffer_len;
 	time_t start_time;
 	time_t start_nstime;
+	void (*callback)(void*,const unsigned char*,const size_t);
+	void *callback_arg;
 };
 
 struct play_info {
@@ -93,7 +95,7 @@ pthread_rwlock_t global_pipeline_mutex = PTHREAD_RWLOCK_INITIALIZER; // This is 
 
 struct rec_info *current_recording = NULL;
 
-struct rec_info *record_start(const int sample_rate);
+struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg);
 unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info **rec_info);
 void playback_start(GstElement **passed_pipeline, pthread_rwlock_t *mutex, const unsigned char *data, const size_t data_len);
 void playback_stop(GstElement **passed_pipeline, pthread_rwlock_t *mutex);
@@ -299,19 +301,24 @@ static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
 	GstMapInfo map;
 	if(gst_buffer_map(buffer, &map, GST_MAP_READ))
 	{ // Add new data to the current global buffer
-		if(rec_info->buffer)
-			rec_info->buffer = torx_realloc(rec_info->buffer,rec_info->buffer_len + map.size);
+		if(rec_info->callback) // Streaming audio, handle immediately
+			rec_info->callback(rec_info->callback_arg,map.data, map.size);
 		else
-			rec_info->buffer = torx_secure_malloc(rec_info->buffer_len + map.size);
-		memcpy(&rec_info->buffer[rec_info->buffer_len], map.data, map.size);
-		rec_info->buffer_len += map.size;
+		{ // Audio message, keep buffering
+			if(rec_info->buffer)
+				rec_info->buffer = torx_realloc(rec_info->buffer,rec_info->buffer_len + map.size);
+			else
+				rec_info->buffer = torx_secure_malloc(rec_info->buffer_len + map.size);
+			memcpy(&rec_info->buffer[rec_info->buffer_len], map.data, map.size);
+			rec_info->buffer_len += map.size;
+		}
 		gst_buffer_unmap(buffer, &map);
 	}
 	gst_sample_unref(sample);
 	return GST_FLOW_OK;
 }
 
-struct rec_info *record_start(const int sample_rate)
+struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg)
 {
 	GstElement *pipeline = gst_pipeline_new("audio_stream");
 	GstElement *audio_source = gst_element_factory_make("autoaudiosrc", "audio_source");
@@ -333,6 +340,8 @@ struct rec_info *record_start(const int sample_rate)
 	rec_info->buffer_len = 0;
 	rec_info->start_time = 0; // must initialize
 	rec_info->start_nstime = 0; // must initialize
+	rec_info->callback = callback;
+	rec_info->callback_arg = callback_arg;
 	// Configure appsink
 	g_object_set(G_OBJECT(sink), "emit-signals", TRUE, "sync", FALSE, NULL);
 	g_signal_connect(sink, "new-sample", G_CALLBACK(new_sample), rec_info);
