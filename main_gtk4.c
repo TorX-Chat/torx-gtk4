@@ -1054,8 +1054,9 @@ static void toggle_int8(void *arg)
 		*(uint8_t *)arg = 1;
 }
 
-static void toggle_mic(void *arg)
+static void toggle_mic(GtkWidget *button,void *arg)
 { // For not a specific participant, pass -1 as participant_iter
+	(void)button;
 	struct printing *printing = (struct printing*) arg; // Casting passed struct
 	const int call_n = printing->n;
 	const int call_c = printing->i;
@@ -1065,7 +1066,6 @@ static void toggle_mic(void *arg)
 		error_simple(0,"Sanity check failed in toggle_mic. Coding error. Report this to UI Devs.");
 		return;
 	}
-
 	if(participant_iter > -1)
 		toggle_int8(&t_peer[call_n].t_call[call_c].participant_mic[participant_iter]); // safe usage
 	else
@@ -1077,10 +1077,12 @@ static void toggle_mic(void *arg)
 		}
 		toggle_int8(&t_peer[call_n].t_call[call_c].mic_on); // safe usage
 	}
+	call_update(call_n,call_c);
 }
 
-static void toggle_speaker(void *arg)
+static void toggle_speaker(GtkWidget *button,void *arg)
 { // For not a specific participant, pass -1 as participant_iter
+	(void)button;
 	struct printing *printing = (struct printing*) arg; // Casting passed struct
 	const int call_n = printing->n;
 	const int call_c = printing->i;
@@ -1094,6 +1096,7 @@ static void toggle_speaker(void *arg)
 		toggle_int8(&t_peer[call_n].t_call[call_c].participant_speaker[participant_iter]); // safe usage
 	else
 		toggle_int8(&t_peer[call_n].t_call[call_c].speaker_on); // safe usage
+	call_update(call_n,call_c);
 }
 
 static void custom_popover_closed(GtkPopover* self,gpointer user_data)
@@ -1189,8 +1192,14 @@ static void audio_ready(void *arg,const unsigned char *data,const size_t data_le
 			recipient_list[recipient_count] = t_peer[call_n].t_call[call_c].participating[iter];
 			recipient_count++;
 		}
+	if(!recipient_count)
+	{
+		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
+		torx_free((void*)&to_free);
+		return;
+	}
 	const uint32_t message_len = (uint32_t)(8 + data_len);
-	unsigned char message[message_len];
+	unsigned char message[message_len]; // zero'd
 	uint32_t trash = htobe32((uint32_t)t_peer[call_n].t_call[call_c].start_time);
 	memcpy(message,&trash,sizeof(trash));
 	trash = htobe32((uint32_t)t_peer[call_n].t_call[call_c].start_nstime);
@@ -1232,6 +1241,11 @@ void call_update(const int n,const int c)
 		{
 			if(participants)
 			{ // We are in an existing call
+				struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
+				printing->n = n;
+				printing->i = c;
+				printing->scroll = -1; // no specific participant iter
+
 				GtkWidget *button_mic = gtk_button_new();
 				gtk_widget_add_css_class(button_mic, "invisible");
 				if(t_peer[n].t_call[c].mic_on)
@@ -1251,10 +1265,6 @@ void call_update(const int n,const int c)
 						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
 				}
 				gtk_widget_set_size_request(button_mic, size_icon_bottom_right, size_icon_bottom_right);
-				struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
-				printing->n = n;
-				printing->i = c;
-				printing->scroll = -1; // no specific participant iter
 				g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_mic),printing);
 				gtk_box_append(GTK_BOX(row),button_mic);
 
@@ -1295,7 +1305,7 @@ void call_update(const int n,const int c)
 				}
 			}
 			else if(t_peer[n].t_call[c].mic_on && current_recording) // + no participants
-			{
+			{ // NOTE: This probably won't trigger, or certainly won't always. Its more likely that record_stop triggers elsewhere.
 				unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 				torx_free((void*)&to_free);
 			}
@@ -1407,7 +1417,6 @@ void call_ignore(void *arg)
 	}
 	if(t_peer[n].t_call[c].waiting)
 		ring_stop(); // XXX stop ringing
-
 	if(t_peer[n].t_call[c].joined && t_peer[n].t_call[c].mic_on && current_recording)
 	{
 		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
@@ -4690,7 +4699,7 @@ static void *cache_play_threaded(void* arg)
 			cache_info->last_played_time = audio_time; // Important
 			cache_info->last_played_nstime = audio_nstime; // Important
 			// Second, realloc_shift to remove the data
-			cache_info->audio_cache = torx_realloc_shift(cache_info->audio_cache,(count - 1) * sizeof(unsigned char *),1);
+			cache_info->audio_cache = torx_realloc_shift(cache_info->audio_cache,(count - 1) * sizeof(unsigned char *),1); // torx_realloc(
 			cache_info->audio_cache_len = torx_realloc_shift(cache_info->audio_cache_len,(count - 1) * sizeof(size_t),1);
 			cache_info->audio_time = torx_realloc_shift(cache_info->audio_time,(count - 1) * sizeof(time_t),1);
 			cache_info->audio_nstime = torx_realloc_shift(cache_info->audio_nstime,(count - 1) * sizeof(time_t),1);
@@ -6997,6 +7006,7 @@ static void cache_add(const int n,const time_t time,const time_t nstime,const ch
 	}
 	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info[0].audio_cache);
 	const size_t prior_count = current_allocation_size/sizeof(unsigned char *);
+printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],(unsigned char)data[1],(unsigned char)data[data_len-2],(unsigned char)data[data_len-1]);
 	if(prior_count && (t_peer[n].t_cache_info[0].audio_time[prior_count-1] > time || (t_peer[n].t_cache_info[0].audio_time[prior_count-1] == time && t_peer[n].t_cache_info[0].audio_nstime[prior_count-1] > nstime)))
 	{ // Received audio is older than something we already have in our struct, so we need to re-order it.
 		unsigned char **audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
@@ -7038,6 +7048,7 @@ static void cache_add(const int n,const time_t time,const time_t nstime,const ch
 	{ // Add the new data at the end because it is newest
 		if(t_peer[n].t_cache_info[0].audio_cache)
 		{ // Only checking one for efficiency
+printf("Checkpoint prior_count=%lu making new size %lu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info[0].audio_cache = torx_realloc(t_peer[n].t_cache_info[0].audio_cache, (prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info[0].audio_cache_len = torx_realloc(t_peer[n].t_cache_info[0].audio_cache_len, (prior_count + 1) * sizeof(size_t));
 			t_peer[n].t_cache_info[0].audio_time = torx_realloc(t_peer[n].t_cache_info[0].audio_time, (prior_count + 1) * sizeof(time_t));
@@ -7125,9 +7136,9 @@ static int stream_idle(void *arg)
 	}
 	else if(data_len >= 8 && (protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE))
 	{
-		const time_t time = be32toh(align_uint32((void*)data));
-		const time_t nstime = be32toh(align_uint32((void*)&data[4]));
-		printf("Checkpoint received host: %ld %ld\n",time,nstime);
+		const time_t time = be32toh(align_uint32((void*)data)); // this is for the CALL, not MESSAGE
+		const time_t nstime = be32toh(align_uint32((void*)&data[4])); // this is for the CALL, not MESSAGE
+	//	printf("Checkpoint received host: %ld %ld\n",time,nstime);
 		int call_n = n;
 		int call_c = -1;
 		int group_n;
@@ -7169,11 +7180,10 @@ static int stream_idle(void *arg)
 					error_simple(0,"Serious error in stream_idle caused by race condition, or more likely by a peer mistakenly sending AUDIO before joining or after leaving a call. Coding error. Report this.");
 					goto end;
 				}
-				if(t_peer[call_n].t_call[call_c].speaker_on && t_peer[call_n].t_call[call_c].participant_speaker[iter])
+				else if(t_peer[call_n].t_call[call_c].speaker_on && t_peer[call_n].t_call[call_c].participant_speaker[iter])
 				{
-					printf("Checkpoint cache_add some audio\n"); // TODO PLAY IT
-					const time_t audio_time = be32toh(align_uint32((void*)&data[data_len]));
-					const time_t audio_nstime = be32toh(align_uint32((void*)&data[data_len+sizeof(uint32_t)]));
+					const time_t audio_time = be32toh(align_uint32((void*)&data[data_len])); // NOTE: this is intentionally reading outside data_len because that is where *message* date/time is stored by library
+					const time_t audio_nstime = be32toh(align_uint32((void*)&data[data_len+sizeof(uint32_t)])); // NOTE: this is intentionally reading outside data_len because that is where *message* date/time is stored by library
 					cache_add(n,audio_time,audio_nstime,&data[8],data_len-8);
 					cache_play(n);
 				}
@@ -8473,51 +8483,50 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 
 	if(minimal_size == 2)
 	{
-		GtkWidget *image_mic;
-		if(t_peer[call_n].t_call[call_c].participant_mic[iter])
-		{
-			if(global_theme == DARK_THEME)
-				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark));
-			else
-				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light));
-		}
-		else
-		{
-			if(global_theme == DARK_THEME)
-				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark));
-			else
-				image_mic = gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light));
-		}
-		gtk_widget_set_size_request(image_mic, size_peerlist_icon_size, size_peerlist_icon_size);
-		GtkGesture *click1 = gtk_gesture_click_new(); // TODO must trigger rebuild by rebuilding the list_store
-		struct printing *printing = torx_insecure_malloc(sizeof(struct printing)); // TODO NOT FREED
+		struct printing *printing = torx_insecure_malloc(sizeof(struct printing));
 		printing->n = call_n;
 		printing->i = call_c;
 		printing->scroll = (int)iter;
-		g_signal_connect_swapped(click1, "pressed", G_CALLBACK(toggle_mic),printing); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(image_mic, GTK_EVENT_CONTROLLER(click1));
-		gtk_box_append(GTK_BOX(chat_info),image_mic);
 
-		GtkWidget *image_speaker;
-		if(t_peer[call_n].t_call[call_c].participant_speaker[iter])
+		GtkWidget *button_mic = gtk_button_new();
+		gtk_widget_add_css_class(button_mic, "invisible");
+		if(t_peer[call_n].t_call[call_c].participant_mic[iter])
 		{
 			if(global_theme == DARK_THEME)
-				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
 			else
-				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light)));
 		}
 		else
 		{
 			if(global_theme == DARK_THEME)
-				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
 			else
-				image_speaker = gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
 		}
-		gtk_widget_set_size_request(image_speaker, size_peerlist_icon_size, size_peerlist_icon_size);
-		GtkGesture *click2 = gtk_gesture_click_new(); // TODO must trigger rebuild by rebuilding the list_store
-		g_signal_connect_swapped(click2, "pressed", G_CALLBACK(toggle_speaker),printing); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(image_speaker, GTK_EVENT_CONTROLLER(click2));
-		gtk_box_append(GTK_BOX(chat_info),image_speaker);
+		gtk_widget_set_size_request(button_mic, size_peerlist_icon_size, size_peerlist_icon_size);
+		g_signal_connect(button_mic, "clicked", G_CALLBACK(toggle_mic),printing);
+		gtk_box_append(GTK_BOX(chat_info),button_mic);
+
+		GtkWidget *button_speaker = gtk_button_new();
+		gtk_widget_add_css_class(button_speaker, "invisible");
+		if(t_peer[call_n].t_call[call_c].participant_speaker[iter])
+		{
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light)));
+		}
+		else
+		{
+			if(global_theme == DARK_THEME)
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark)));
+			else
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light)));
+		}
+		gtk_widget_set_size_request(button_speaker, size_peerlist_icon_size, size_peerlist_icon_size);
+		g_signal_connect(button_speaker, "clicked", G_CALLBACK(toggle_speaker),printing);
+		gtk_box_append(GTK_BOX(chat_info),button_speaker);
 	}
 	return chat_info;
 }
@@ -8993,13 +9002,13 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,ENUM_STREAM_NON_DISCARDABLE); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 2 * 4, crypto_sign_BYTES, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 2*sizeof(uint32_t), crypto_sign_BYTES, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, "AAC Audio Message Private", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN, "AAC Audio Stream Join", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE, "AAC Audio Stream Join Private", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_PEERS, "AAC Audio Stream Peers", "", 0, 0, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE, "AAC Audio Stream Leave", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 1, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 2*sizeof(uint32_t), 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
