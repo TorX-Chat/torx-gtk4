@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.26 2025/03/10 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.27 2025/05/21 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -199,8 +199,6 @@ static int generated_n = -1; // -1 is invalid, dont let anything get done with -
 static int last_played_n = -1; // for playback_message, to allow pausing or changing of playing audio message
 static int last_played_i = INT_MIN; // for playback_message, to allow pausing or changing of playing audio message
 
-static pthread_rwlock_t cache_info_mutex = PTHREAD_RWLOCK_INITIALIZER; // MUST NOT BE HELD FOR EXTENDED TIME, or it will cause audio jitter
-
 /* Global Structs */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 
 static pthread_t thread_icon_communicator = {0};
@@ -232,7 +230,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	int edit_i;
 	int pointer_location;
 	GtkTextBuffer* buffer_write;
-	struct t_cache_info { // XXX ACCESS MUST UTILIZE t_cache_info_mutex XXX
+	struct t_cache_info {
 		unsigned char **audio_cache;
 		size_t *audio_cache_len;
 		time_t *audio_time;
@@ -240,9 +238,8 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		time_t last_played_time;
 		time_t last_played_nstime;
 		GstElement *stream_pipeline;
-		pthread_rwlock_t stream_mutex;
 		uint8_t playing; // can't use stream_pipeline because it is repeatedly created and null'd every ~20-50ms of playback
-	} *t_cache_info; // MUST BE AN ALLOCATED POINTER which is NEVER free'd or realloc'd because we *cannot* have this moving if we realloc the t_peer or t_cache_info struct since t_cache_info sees multi-threaded usage
+	} t_cache_info; // MUST BE AN ALLOCATED POINTER which is NEVER free'd or realloc'd because we *cannot* have this moving if we realloc the t_peer or t_cache_info struct since t_cache_info sees multi-threaded usage
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		int pos;
 		uint8_t visible;
@@ -549,6 +546,8 @@ void ui_show_auth_screen(void);
 void ui_show_missing_binaries(void);
 void ring_start(void);
 void ring_stop(void);
+void playback_async(struct play_info *play_info,const uint8_t loop,const unsigned char *data, const size_t data_len);
+void cache_play(const int n);
 
 /* Global Text Declarations for ui_initialize_language() */
 static const char *text_title = {0};
@@ -1070,7 +1069,7 @@ static void toggle_mic(GtkWidget *button,void *arg)
 		toggle_int8(&t_peer[call_n].t_call[call_c].participant_mic[participant_iter]); // safe usage
 	else
 	{
-		if(t_peer[call_n].t_call[call_c].joined && t_peer[call_n].t_call[call_c].mic_on && current_recording)
+		if(t_peer[call_n].t_call[call_c].joined && t_peer[call_n].t_call[call_c].mic_on && current_recording.pipeline)
 		{
 			unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 			torx_free((void*)&to_free);
@@ -1250,8 +1249,8 @@ void call_update(const int n,const int c)
 				gtk_widget_add_css_class(button_mic, "invisible");
 				if(t_peer[n].t_call[c].mic_on)
 				{
-					if(!current_recording)
-						current_recording = record_start(16000,audio_ready,iitovp(n,c));
+					if(!current_recording.pipeline)
+						record_start(&current_recording,16000,audio_ready,iitovp(n,c));
 					if(global_theme == DARK_THEME)
 						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
 					else
@@ -1304,7 +1303,7 @@ void call_update(const int n,const int c)
 					gtk_box_append(GTK_BOX(row),t_main.button_participants);
 				}
 			}
-			else if(t_peer[n].t_call[c].mic_on && current_recording) // + no participants
+			else if(t_peer[n].t_call[c].mic_on && current_recording.pipeline) // + no participants
 			{ // NOTE: This probably won't trigger, or certainly won't always. Its more likely that record_stop triggers elsewhere.
 				unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 				torx_free((void*)&to_free);
@@ -1417,7 +1416,7 @@ void call_ignore(void *arg)
 	}
 	if(t_peer[n].t_call[c].waiting)
 		ring_stop(); // XXX stop ringing
-	if(t_peer[n].t_call[c].joined && t_peer[n].t_call[c].mic_on && current_recording)
+	if(t_peer[n].t_call[c].joined && t_peer[n].t_call[c].mic_on && current_recording.pipeline)
 	{
 		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 		torx_free((void*)&to_free);
@@ -1481,7 +1480,7 @@ static void call_mute_all_except(const int except_n,const int except_c)
 				if((t_peer[call_n].t_call[c].joined || t_peer[call_n].t_call[c].waiting) && (t_peer[call_n].t_call[c].start_time != 0 || t_peer[call_n].t_call[c].start_nstime != 0))
 					if(call_n != except_n || (int)c != except_c)
 					{
-						if(t_peer[call_n].t_call[c].joined && t_peer[call_n].t_call[c].mic_on && current_recording)
+						if(t_peer[call_n].t_call[c].joined && t_peer[call_n].t_call[c].mic_on && current_recording.pipeline)
 						{ // This isn't 100% certainty that the current_recording is for this call but it's a very good indication
 							unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 							torx_free((void*)&to_free);
@@ -1593,18 +1592,14 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].edit_i = INT_MIN;
 	t_peer[n].buffer_write = NULL;
 
-	pthread_rwlock_wrlock(&cache_info_mutex);
-	t_peer[n].t_cache_info = torx_insecure_malloc(sizeof(struct t_cache_info));
-	t_peer[n].t_cache_info[0].audio_cache = NULL;
-	t_peer[n].t_cache_info[0].audio_cache_len = NULL;
-	t_peer[n].t_cache_info[0].audio_time = NULL;
-	t_peer[n].t_cache_info[0].audio_nstime = NULL;
-	t_peer[n].t_cache_info[0].last_played_time = 0;
-	t_peer[n].t_cache_info[0].last_played_nstime = 0;
-	t_peer[n].t_cache_info[0].stream_pipeline = NULL;
-	pthread_rwlock_init(&t_peer[n].t_cache_info[0].stream_mutex,NULL);
-	t_peer[n].t_cache_info[0].playing = 0;
-	pthread_rwlock_unlock(&cache_info_mutex);
+	t_peer[n].t_cache_info.audio_cache = NULL;
+	t_peer[n].t_cache_info.audio_cache_len = NULL;
+	t_peer[n].t_cache_info.audio_time = NULL;
+	t_peer[n].t_cache_info.audio_nstime = NULL;
+	t_peer[n].t_cache_info.last_played_time = 0;
+	t_peer[n].t_cache_info.last_played_nstime = 0;
+	t_peer[n].t_cache_info.stream_pipeline = NULL;
+	t_peer[n].t_cache_info.playing = 0;
 
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
@@ -2101,22 +2096,20 @@ static int onion_deleted_idle(void *arg)
 	if(t_peer[n].buffer_write)
 		t_peer[n].buffer_write = NULL; // g_free(t_peer[n].buffer_write); // Causes issues when sending a kill. Do not g_free before NULLing.
 
-	pthread_rwlock_wrlock(&cache_info_mutex);
-	for(size_t count = torx_allocation_len(t_peer[n].t_cache_info[0].audio_cache)/sizeof(unsigned char *); count ; ) // do not change logic without thinking
-		torx_free((void*)&t_peer[n].t_cache_info[0].audio_cache[--count]); // clear out all unplayed audio data
-	torx_free((void*)&t_peer[n].t_cache_info[0].audio_cache);
-	torx_free((void*)&t_peer[n].t_cache_info[0].audio_cache_len);
-	torx_free((void*)&t_peer[n].t_cache_info[0].audio_time);
-	torx_free((void*)&t_peer[n].t_cache_info[0].audio_nstime);
-	t_peer[n].t_cache_info[0].last_played_time = 0;
-	t_peer[n].t_cache_info[0].last_played_nstime = 0;
-	if(t_peer[n].t_cache_info[0].stream_pipeline)
+	for(size_t count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *); count ; ) // do not change logic without thinking
+		torx_free((void*)&t_peer[n].t_cache_info.audio_cache[--count]); // clear out all unplayed audio data
+	torx_free((void*)&t_peer[n].t_cache_info.audio_cache);
+	torx_free((void*)&t_peer[n].t_cache_info.audio_cache_len);
+	torx_free((void*)&t_peer[n].t_cache_info.audio_time);
+	torx_free((void*)&t_peer[n].t_cache_info.audio_nstime);
+	t_peer[n].t_cache_info.last_played_time = 0;
+	t_peer[n].t_cache_info.last_played_nstime = 0;
+	if(t_peer[n].t_cache_info.stream_pipeline)
 	{
-		gst_object_unref(t_peer[n].t_cache_info[0].stream_pipeline);
-		t_peer[n].t_cache_info[0].stream_pipeline = NULL;
+		gst_object_unref(t_peer[n].t_cache_info.stream_pipeline);
+		t_peer[n].t_cache_info.stream_pipeline = NULL;
 	}
-	t_peer[n].t_cache_info[0].playing = 0;
-	pthread_rwlock_unlock(&cache_info_mutex);
+	t_peer[n].t_cache_info.playing = 0;
 
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
@@ -4653,79 +4646,93 @@ void tor_log_cb_ui(char *message)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
-static void *playback_threaded(void* arg)
-{ // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
+
+static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
+{
+	(void)bus;
 	struct play_info *play_info = (struct play_info *)arg;
-	while(1)
-	{
-		playback_start(play_info->pipeline,play_info->mutex,play_info->data,play_info->data_len);
-		if(!play_info->loop)
-			break; // play only once
+	switch (GST_MESSAGE_TYPE(msg))
+	{ // Options: https://gstreamer.freedesktop.org/documentation/gstreamer/gstmessage.html?gi-language=c#enumerations
+		case GST_MESSAGE_EOS:
+		{
+			if(play_info->loop)
+			{ // Ex: Ring
+				if(play_info->n > -1) // This should never trigger because loop and n should never both be set
+					t_peer[play_info->n].t_cache_info.playing = 1;
+				playback_start(play_info);
+			}
+			else if(play_info->n > -1 && torx_allocation_len(t_peer[play_info->n].t_cache_info.audio_cache)/sizeof(unsigned char *))
+			{ // Ex: Streaming audio
+				torx_free((void*)&play_info->data); // necessary to free
+				t_peer[play_info->n].t_cache_info.playing = 0; // necessary or cache_play will not function
+				cache_play(play_info->n);
+			}
+			else
+			{ // Ex: Voice message
+				if(play_info->n > -1)
+					t_peer[play_info->n].t_cache_info.playing = 0;
+				playback_stop(play_info);
+			}
+			break;
+		}
+		case GST_MESSAGE_ERROR:
+		{
+			gchar *debug_info = NULL;
+			GError *error = NULL;
+			gst_message_parse_error(msg, &error, &debug_info);
+			g_free(debug_info);
+			error_printf(0,"GstMessage: %s",error->message);
+			g_error_free(error);
+			break;
+		}
+		default:
+			break;
 	}
-	torx_free((void*)&play_info->data);
-	torx_free((void*)&play_info);
-	pthread_exit(NULL);
-	return NULL;
+//	gst_message_unref(msg); // NO, causes errors, unnecessary here
+	return TRUE;
 }
 
-static void playback_async(GstElement **passed_pipeline, pthread_rwlock_t *mutex,const uint8_t loop,const unsigned char *data, const size_t data_len)
-{ // Play audio in a pthread.
-	pthread_t thread_playback = {0};
-	struct play_info *play_info = torx_insecure_malloc(sizeof(struct play_info));
-	play_info->data = torx_secure_malloc(data_len);
+void playback_async(struct play_info *play_info,const uint8_t loop,const unsigned char *data, const size_t data_len)
+{ // Play audio, without checking whether there is already audio playing.
+	if(!play_info || !data || !data_len || play_info->pipeline)
+	{
+		error_simple(0,"Sanity check failed in playback_async. Coding error. Report this.");
+		return;
+	}
+	play_info->data = torx_secure_malloc(data_len); // will be free'd by bus_callback
 	memcpy(play_info->data,data,data_len);
 	play_info->data_len = data_len;
-	play_info->pipeline = passed_pipeline;
-	play_info->mutex = mutex;
+//	play_info->pipeline = NULL; // redundant
 	play_info->loop = loop;
-	if(pthread_create(&thread_playback,&ATTR_DETACHED,&playback_threaded,play_info))
-		error_simple(0,"Failed to create thread");
+	play_info->n = -1;
+	play_info->callback = play_callback;
+	playback_start(play_info);
 }
 
-static void *cache_play_threaded(void* arg)
-{ // XXX NOT IN UI THREAD, DO NOT ACCESS t_peer STRUCT XXX
-	struct t_cache_info *cache_info = (struct t_cache_info *)arg; // DO NOT FREE. This is on t_peer struct.
-	if(cache_info)
+void cache_play(const int n)
+{ // For streaming audio.
+	size_t count;
+	if(!t_peer[n].t_cache_info.playing && (count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *)))
 	{
-		pthread_rwlock_wrlock(&cache_info_mutex);
-		cache_info->playing = 1;
-		for(size_t count; cache_info->playing && (count = torx_allocation_len(cache_info->audio_cache)/sizeof(unsigned char *)); )
-		{ // Repeatedly checking size is necessary because more data may have been added
-			// First, take one set of data off
-			unsigned char *data = cache_info->audio_cache[0];
-			const size_t data_len = cache_info->audio_cache_len[0];
-			const time_t audio_time = cache_info->audio_time[0];
-			const time_t audio_nstime = cache_info->audio_nstime[0];
-			cache_info->last_played_time = audio_time; // Important
-			cache_info->last_played_nstime = audio_nstime; // Important
-			// Second, realloc_shift to remove the data
-			cache_info->audio_cache = torx_realloc_shift(cache_info->audio_cache,(count - 1) * sizeof(unsigned char *),1); // torx_realloc(
-			cache_info->audio_cache_len = torx_realloc_shift(cache_info->audio_cache_len,(count - 1) * sizeof(size_t),1);
-			cache_info->audio_time = torx_realloc_shift(cache_info->audio_time,(count - 1) * sizeof(time_t),1);
-			cache_info->audio_nstime = torx_realloc_shift(cache_info->audio_nstime,(count - 1) * sizeof(time_t),1);
-			// Third, unlock and play the removed data
-			pthread_rwlock_unlock(&cache_info_mutex);
-			playback_start(&cache_info->stream_pipeline,&cache_info->stream_mutex,data,data_len);
-			torx_free((void*)&data);
-			pthread_rwlock_wrlock(&cache_info_mutex);
-		}
-		cache_info->playing = 0;
-		pthread_rwlock_unlock(&cache_info_mutex);
-	}
-	pthread_exit(NULL);
-	return NULL;
-}
+		t_peer[n].t_cache_info.last_played_time = t_peer[n].t_cache_info.audio_time[0]; // Important
+		t_peer[n].t_cache_info.last_played_nstime = t_peer[n].t_cache_info.audio_nstime[0]; // Important
 
-static void cache_play(const int n)
-{ // For streaming audio
-	pthread_rwlock_rdlock(&cache_info_mutex);
-	const uint8_t playing_local = t_peer[n].t_cache_info[0].playing;
-	pthread_rwlock_unlock(&cache_info_mutex);
-	if(!playing_local)
-	{ // Prevent starting more than one thread per peer
-		pthread_t thread_playback = {0};
-		if(pthread_create(&thread_playback,&ATTR_DETACHED,&cache_play_threaded,t_peer[n].t_cache_info))
-			error_simple(0,"Failed to create thread");
+		struct play_info play_info = {0}; // will be free'd by bus_callback
+		play_info.data = t_peer[n].t_cache_info.audio_cache[0]; // will be free'd by bus_callback
+		t_peer[n].t_cache_info.audio_cache[0] = NULL; // highly necessary!!!
+		play_info.data_len = t_peer[n].t_cache_info.audio_cache_len[0];
+		play_info.pipeline = t_peer[n].t_cache_info.stream_pipeline;
+		play_info.loop = 0;
+		play_info.n = n;
+		play_info.callback = play_callback;
+
+		t_peer[n].t_cache_info.audio_cache = torx_realloc_shift(t_peer[n].t_cache_info.audio_cache,(count - 1) * sizeof(unsigned char *),1); // torx_realloc(
+		t_peer[n].t_cache_info.audio_cache_len = torx_realloc_shift(t_peer[n].t_cache_info.audio_cache_len,(count - 1) * sizeof(size_t),1);
+		t_peer[n].t_cache_info.audio_time = torx_realloc_shift(t_peer[n].t_cache_info.audio_time,(count - 1) * sizeof(time_t),1);
+		t_peer[n].t_cache_info.audio_nstime = torx_realloc_shift(t_peer[n].t_cache_info.audio_nstime,(count - 1) * sizeof(time_t),1);
+
+		t_peer[n].t_cache_info.playing = 1;
+		playback_start(&play_info);
 	}
 }
 
@@ -4735,9 +4742,9 @@ static void playback_message(void* arg)
 		error_simple(0,"Playback_message passed null. Coding error. Report this.");
 	const int n = vptoii_n(arg);
 	const int i = vptoii_i(arg);
-	if(global_pipeline)
+	if(current_play_pausable.pipeline)
 	{
-		playback_stop(&global_pipeline,&global_pipeline_mutex);
+		playback_stop(&current_play_pausable);
 		if(last_played_n == n && last_played_i == i)
 			return;
 	}
@@ -4745,7 +4752,7 @@ static void playback_message(void* arg)
 	last_played_i = i;
 	uint32_t len;
 	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
-	playback_async(&global_pipeline,&global_pipeline_mutex,0,(unsigned char *)&message[4],len-4);
+	playback_async(&current_play_pausable,0,(unsigned char *)&message[4],len-4);
 	torx_free((void*)&message);
 	if(t_peer[n].t_message[i].unheard && getter_uint8(n,i,-1,offsetof(struct message_list,stat)) == ENUM_MESSAGE_RECV)
 	{
@@ -4757,9 +4764,9 @@ static void playback_message(void* arg)
 
 void ring_start(void)
 { // Start ringing
-	if(ring_pipeline)
+	if(current_play_ringtone.pipeline)
 		return; // Already ringing
-	if(global_pipeline)
+	if(current_play_pausable.pipeline)
 	{
 		error_simple(0,"Not ringing because other audio is playing.");
 		return; // Don't ring if something else is playing (such as playback_message)
@@ -4767,21 +4774,23 @@ void ring_start(void)
 	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 	size_t size = 0;
 	const void *data = g_bytes_get_data(bytes,&size);
-	playback_async(&ring_pipeline,&ring_pipeline_mutex,1,data,size);
+	playback_async(&current_play_ringtone,1,data,size);
 }
 
 void ring_stop(void)
 { // Stop ringing
-	if(ring_pipeline)
-		playback_stop(&ring_pipeline,&ring_pipeline_mutex);
+	if(current_play_ringtone.pipeline)
+		playback_stop(&current_play_ringtone);
 }
 
 static void beep(void)
 { // This function currently does not need to run in the UI thread, which is why it is not ui_prefixed
+	if(current_play_beep.pipeline)
+		return; // Already beeping
 	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
 	size_t size = 0;
 	const void *data = g_bytes_get_data(bytes,&size);
-	playback_async(NULL,NULL,0,data,size);
+	playback_async(&current_play_beep,0,data,size);
 /*	#ifdef WIN32
 	{ // call PlaySound asyncronously to prevent having to CreateProcess
 		PlaySound(FILENAME_BEEP, NULL, SND_FILENAME | SND_ASYNC);
@@ -6997,17 +7006,15 @@ void message_deleted_cb_ui(const int n,const int i)
 
 static void cache_add(const int n,const time_t time,const time_t nstime,const char *data,const size_t data_len)
 { // Handles ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE data
-	pthread_rwlock_wrlock(&cache_info_mutex);
-	if(time < t_peer[n].t_cache_info[0].last_played_time || (time == t_peer[n].t_cache_info[0].last_played_time && nstime < t_peer[n].t_cache_info[0].last_played_nstime))
+	if(time < t_peer[n].t_cache_info.last_played_time || (time == t_peer[n].t_cache_info.last_played_time && nstime < t_peer[n].t_cache_info.last_played_nstime))
 	{
-		pthread_rwlock_unlock(&cache_info_mutex);
 		error_simple(0,"Received audio older than last played. Disgarding it. Carry on.");
 		return;
 	}
-	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info[0].audio_cache);
+	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info.audio_cache);
 	const size_t prior_count = current_allocation_size/sizeof(unsigned char *);
 printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],(unsigned char)data[1],(unsigned char)data[data_len-2],(unsigned char)data[data_len-1]);
-	if(prior_count && (t_peer[n].t_cache_info[0].audio_time[prior_count-1] > time || (t_peer[n].t_cache_info[0].audio_time[prior_count-1] == time && t_peer[n].t_cache_info[0].audio_nstime[prior_count-1] > nstime)))
+	if(prior_count && (t_peer[n].t_cache_info.audio_time[prior_count-1] > time || (t_peer[n].t_cache_info.audio_time[prior_count-1] == time && t_peer[n].t_cache_info.audio_nstime[prior_count-1] > nstime)))
 	{ // Received audio is older than something we already have in our struct, so we need to re-order it.
 		unsigned char **audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
 		size_t *audio_cache_len = torx_insecure_malloc((prior_count + 1) * sizeof(size_t));
@@ -7016,12 +7023,12 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 		uint8_t already_placed_new_data = 0; // must avoid placing more than once
 		for(int old = (int)prior_count-1,new = (int)prior_count; old > -1; new--)
 		{
-			if(already_placed_new_data || t_peer[n].t_cache_info[0].audio_time[old] > time || (t_peer[n].t_cache_info[0].audio_time[old] == time && t_peer[n].t_cache_info[0].audio_nstime[old] > nstime))
+			if(already_placed_new_data || t_peer[n].t_cache_info.audio_time[old] > time || (t_peer[n].t_cache_info.audio_time[old] == time && t_peer[n].t_cache_info.audio_nstime[old] > nstime))
 			{ // Existing is newer, place it (may occur many times)
-				audio_cache[new] = t_peer[n].t_cache_info[0].audio_cache[old];
-				audio_cache_len[new] = t_peer[n].t_cache_info[0].audio_cache_len[old];
-				audio_time[new] = t_peer[n].t_cache_info[0].audio_time[old];
-				audio_nstime[new] = t_peer[n].t_cache_info[0].audio_nstime[old];
+				audio_cache[new] = t_peer[n].t_cache_info.audio_cache[old];
+				audio_cache_len[new] = t_peer[n].t_cache_info.audio_cache_len[old];
+				audio_time[new] = t_peer[n].t_cache_info.audio_time[old];
+				audio_nstime[new] = t_peer[n].t_cache_info.audio_nstime[old];
 				old--; // only -- when utilizing old data
 			}
 			else
@@ -7034,40 +7041,39 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 				already_placed_new_data = 1;
 			}
 		}
-		torx_free((void*)&t_peer[n].t_cache_info[0].audio_cache);
-		torx_free((void*)&t_peer[n].t_cache_info[0].audio_cache_len);
-		torx_free((void*)&t_peer[n].t_cache_info[0].audio_time);
-		torx_free((void*)&t_peer[n].t_cache_info[0].audio_nstime);
+		torx_free((void*)&t_peer[n].t_cache_info.audio_cache);
+		torx_free((void*)&t_peer[n].t_cache_info.audio_cache_len);
+		torx_free((void*)&t_peer[n].t_cache_info.audio_time);
+		torx_free((void*)&t_peer[n].t_cache_info.audio_nstime);
 
-		t_peer[n].t_cache_info[0].audio_cache = audio_cache;
-		t_peer[n].t_cache_info[0].audio_cache_len = audio_cache_len;
-		t_peer[n].t_cache_info[0].audio_time = audio_time;
-		t_peer[n].t_cache_info[0].audio_nstime = audio_nstime;
+		t_peer[n].t_cache_info.audio_cache = audio_cache;
+		t_peer[n].t_cache_info.audio_cache_len = audio_cache_len;
+		t_peer[n].t_cache_info.audio_time = audio_time;
+		t_peer[n].t_cache_info.audio_nstime = audio_nstime;
 	}
 	else
 	{ // Add the new data at the end because it is newest
-		if(t_peer[n].t_cache_info[0].audio_cache)
+		if(t_peer[n].t_cache_info.audio_cache)
 		{ // Only checking one for efficiency
 printf("Checkpoint prior_count=%lu making new size %lu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
-			t_peer[n].t_cache_info[0].audio_cache = torx_realloc(t_peer[n].t_cache_info[0].audio_cache, (prior_count + 1) * sizeof(unsigned char *));
-			t_peer[n].t_cache_info[0].audio_cache_len = torx_realloc(t_peer[n].t_cache_info[0].audio_cache_len, (prior_count + 1) * sizeof(size_t));
-			t_peer[n].t_cache_info[0].audio_time = torx_realloc(t_peer[n].t_cache_info[0].audio_time, (prior_count + 1) * sizeof(time_t));
-			t_peer[n].t_cache_info[0].audio_nstime = torx_realloc(t_peer[n].t_cache_info[0].audio_nstime, (prior_count + 1) * sizeof(time_t));
+			t_peer[n].t_cache_info.audio_cache = torx_realloc(t_peer[n].t_cache_info.audio_cache, (prior_count + 1) * sizeof(unsigned char *));
+			t_peer[n].t_cache_info.audio_cache_len = torx_realloc(t_peer[n].t_cache_info.audio_cache_len, (prior_count + 1) * sizeof(size_t));
+			t_peer[n].t_cache_info.audio_time = torx_realloc(t_peer[n].t_cache_info.audio_time, (prior_count + 1) * sizeof(time_t));
+			t_peer[n].t_cache_info.audio_nstime = torx_realloc(t_peer[n].t_cache_info.audio_nstime, (prior_count + 1) * sizeof(time_t));
 		}
 		else
 		{
-			t_peer[n].t_cache_info[0].audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
-			t_peer[n].t_cache_info[0].audio_cache_len = torx_insecure_malloc((prior_count + 1) * sizeof(size_t));
-			t_peer[n].t_cache_info[0].audio_time = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
-			t_peer[n].t_cache_info[0].audio_nstime = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
+			t_peer[n].t_cache_info.audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
+			t_peer[n].t_cache_info.audio_cache_len = torx_insecure_malloc((prior_count + 1) * sizeof(size_t));
+			t_peer[n].t_cache_info.audio_time = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
+			t_peer[n].t_cache_info.audio_nstime = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 		}
-		t_peer[n].t_cache_info[0].audio_cache[prior_count] = torx_secure_malloc(data_len);
-		memcpy(t_peer[n].t_cache_info[0].audio_cache[prior_count],data,data_len);
-		t_peer[n].t_cache_info[0].audio_cache_len[prior_count] = data_len;
-		t_peer[n].t_cache_info[0].audio_time[prior_count] = time;
-		t_peer[n].t_cache_info[0].audio_nstime[prior_count] = nstime;
+		t_peer[n].t_cache_info.audio_cache[prior_count] = torx_secure_malloc(data_len);
+		memcpy(t_peer[n].t_cache_info.audio_cache[prior_count],data,data_len);
+		t_peer[n].t_cache_info.audio_cache_len[prior_count] = data_len;
+		t_peer[n].t_cache_info.audio_time[prior_count] = time;
+		t_peer[n].t_cache_info.audio_nstime[prior_count] = nstime;
 	}
-	pthread_rwlock_unlock(&cache_info_mutex);
 }
 
 static int stream_idle(void *arg)
@@ -7881,14 +7887,14 @@ static void ui_send_pressed(GtkGestureClick *gesture, int n_press, double x, dou
 	(void)arg;
 	if(!show_keyboard)
 	{
-		if(current_recording)
+		if(current_recording.pipeline)
 		{ // TODO should also call_leave_all_except(-1,-1);
 			error_simple(0,"An existing recording was detected and disposed of. Coding error. Report this to UI Devs.");
 			unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
 			torx_free((void*)&to_free);
 			call_mute_all_except(-1,-1); // mute active calls, both mic and speaker
 		}
-		current_recording = record_start(16000,NULL,NULL); // 8000, 12000, 16000 works
+		record_start(&current_recording,16000,NULL,NULL); // 8000, 12000, 16000 works
 	}
 }
 
@@ -7898,7 +7904,7 @@ static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, do
 	(void)n_press;
 	if(show_keyboard)
 		ui_keypress(NULL, 0, 0, 0, itovp(global_n));
-	else if(button && global_n > -1 && current_recording)
+	else if(button && global_n > -1 && current_recording.pipeline)
 	{
 		size_t data_len;
 		uint32_t duration; // milliseconds
@@ -8997,18 +9003,18 @@ static void ui_activate(GtkApplication *application,void *arg)
 	gst_init(NULL, NULL);
 
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,2*sizeof(uint32_t),crypto_sign_BYTES,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
+	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,1,1,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,0);
 	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,ENUM_STREAM_NON_DISCARDABLE); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 2*sizeof(uint32_t), crypto_sign_BYTES, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 1, 1, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, "AAC Audio Message Private", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN, "AAC Audio Stream Join", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_JOIN_PRIVATE, "AAC Audio Stream Join Private", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_PEERS, "AAC Audio Stream Peers", "", 0, 0, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE, "AAC Audio Stream Leave", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 2*sizeof(uint32_t), 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
+	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 1, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 
 	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];

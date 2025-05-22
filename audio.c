@@ -80,25 +80,24 @@ struct rec_info {
 };
 
 struct play_info {
-	GstElement **pipeline;
-	pthread_rwlock_t *mutex;
+	GstElement *pipeline;
 	unsigned char *data;
 	size_t data_len;
 	uint8_t loop; // play on repeat
+	int n; // for cache play ONLY, NOT for voice messages
+	gboolean (*callback)(GstBus *bus, GstMessage *msg, gpointer arg);
+//	gpointer *callback_arg; // play_info is passed
 };
 
-GstElement *ring_pipeline = NULL; // for ringtone (sending / receiving calls)
-pthread_rwlock_t ring_pipeline_mutex = PTHREAD_RWLOCK_INITIALIZER; // for ringtone (sending / receiving calls)
+struct rec_info current_recording = {0};
+struct play_info current_play_pausable = {0}; // This is for 'pausable' audio (such as voice messages), not streaming.
+struct play_info current_play_ringtone = {0}; // for ringtone (sending / receiving calls)
+struct play_info current_play_beep = {0}; // for beeps
 
-GstElement *global_pipeline = NULL; // This is for 'pausable' audio (such as voice messages), not streaming.
-pthread_rwlock_t global_pipeline_mutex = PTHREAD_RWLOCK_INITIALIZER; // This is for 'pausable' audio (such as voice messages), not streaming.
-
-struct rec_info *current_recording = NULL;
-
-struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg);
-unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info **rec_info);
-void playback_start(GstElement **passed_pipeline, pthread_rwlock_t *mutex, const unsigned char *data, const size_t data_len);
-void playback_stop(GstElement **passed_pipeline, pthread_rwlock_t *mutex);
+void record_start(struct rec_info *rec_info,const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg);
+unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *rec_info);
+void playback_start(struct play_info *play_info);
+void playback_stop(struct play_info *play_info); // must be double so function can null it
 /*static void
 print_one_tag (const GstTagList * list, const gchar * tag, gpointer user_data)
 {
@@ -134,32 +133,6 @@ print_one_tag (const GstTagList * list, const gchar * tag, gpointer user_data)
   }
 }*/
 
-static inline void handle_gst_message_and_free(GstMessage *msg)
-{ // Do not modify. This works well.
-	if(msg != NULL)
-	{
-	/*	if(GST_MESSAGE_TYPE (msg) == GST_MESSAGE_TAG)
-		{
-			GstTagList *tags = NULL;
-			gst_message_parse_tag (msg, &tags);
-			g_print("Metadata: %s\n", GST_OBJECT_NAME (msg->src));
-			gst_tag_list_foreach (tags, print_one_tag, NULL);
-			g_print("\n");
-			gst_tag_list_unref (tags);
-		}
-		else*/ if(GST_MESSAGE_TYPE (msg) == GST_MESSAGE_ERROR)
-		{
-			gchar *debug_info;
-			GError *error;
-			gst_message_parse_error(msg, &error, &debug_info);
-			g_free(debug_info);
-			error_printf(0,"GstMessage: %s",error->message);
-			g_error_free(error);
-		}
-		gst_message_unref(msg);
-	}
-}
-
 static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *sink)
 { // Callback function to link the decoder dynamically
 	(void)src;
@@ -186,109 +159,80 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 	//}
 } */
 
-void playback_stop(GstElement **passed_pipeline, pthread_rwlock_t *mutex)
-{
-	if(mutex)
-		pthread_rwlock_wrlock(mutex);
-	if(!passed_pipeline || !*passed_pipeline)
-	{ // Bad args or already stopped
-		pthread_rwlock_unlock(mutex);
-		return;
+void playback_stop(struct play_info *play_info)
+{ // If calling to stop a stream, remember to t_peer[n].t_cache_info.playing = 0;
+	if(!play_info || !play_info->pipeline)
+	{ // Could be caused by play_info->pipeline = NULL in playback_async?
+		error_simple(0,"Nothing to stop yet playback_stop was called. Possible coding error. Report to UI Devs.");
+		return; // Bad args or already stopped
 	}
-	gst_element_set_state(*passed_pipeline, GST_STATE_NULL);
-	gst_object_unref(*passed_pipeline);
-	*passed_pipeline = NULL;
-	if(mutex)
-		pthread_rwlock_unlock(mutex);
+	gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
+	gst_object_unref(play_info->pipeline);
+	play_info->pipeline = NULL;
+	torx_free((void*)&play_info->data);
 }
 
-void playback_start(GstElement **passed_pipeline, pthread_rwlock_t *mutex, const unsigned char *data, const size_t data_len)
+void playback_start(struct play_info *play_info)
 { // Play any type of audio file, from memory, syncronously (this function WILL BLOCK until playing completes)
-//	write_bytes("fishing.aac",data,data_len);
+//	write_bytes("fishing.aac",play_info->data,play_info->data_len);
 //	print_metadata("fishing.aac");
-	#define local_wrlock if(mutex) pthread_rwlock_wrlock(mutex);
-	#define local_unlock if(mutex) pthread_rwlock_unlock(mutex);
-	#define local_cleanup if(passed_pipeline && *passed_pipeline) *passed_pipeline = NULL;
-	if(!data || !data_len)
+	#define local_cleanup if(play_info->pipeline) { gst_object_unref(play_info->pipeline); play_info->pipeline = NULL; }
+	if(!play_info || !play_info->data || !play_info->data_len || !play_info->callback)
 	{
-		error_simple(0, "Playback was passed no data.");
+		error_simple(0, "Playback failed sanity check");
 		return;
 	}
 	GstElement *appsrc = gst_element_factory_make("appsrc", "audio-source");
 	GstElement *decoder = gst_element_factory_make("decodebin", "decoder");
 	GstElement *convert = gst_element_factory_make("audioconvert", "converter");
 	GstElement *sink = gst_element_factory_make("autoaudiosink", "audio-output");
-	GstElement *pipeline;
-	local_wrlock // XXX
-	if(passed_pipeline && *passed_pipeline)
-		pipeline = *passed_pipeline;
-	else if(passed_pipeline)
-		pipeline = *passed_pipeline = gst_pipeline_new("audio-playback");
-	else
-		pipeline = gst_pipeline_new("audio-playback");
-	if(!pipeline || !appsrc || !decoder || !convert || !sink)
+	if(!play_info->pipeline)
+		play_info->pipeline = gst_pipeline_new("audio-playback");
+	if(!play_info->pipeline || !appsrc || !decoder || !convert || !sink)
 	{
-		if(pipeline)
-			gst_object_unref(pipeline);
 		local_cleanup
-		local_unlock // XXX
 		error_simple(0, "Failed to create GStreamer elements.");
 		return;
 	}
-	gst_bin_add_many(GST_BIN(pipeline), appsrc, decoder, convert, sink, NULL);
+	gst_bin_add_many(GST_BIN(play_info->pipeline), appsrc, decoder, convert, sink, NULL);
 	if(!gst_element_link(appsrc, decoder))
 	{
-		gst_object_unref(pipeline);
 		local_cleanup
-		local_unlock // XXX
 		error_simple(0, "Failed to link appsrc to decoder.");
 		return;
 	}
 	g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), convert);
 	if(!gst_element_link(convert, sink))
 	{
-		gst_object_unref(pipeline);
 		local_cleanup
-		local_unlock // XXX
 		error_simple(0, "Failed to link converter to sink.");
 		return;
 	}
 //	g_object_set(G_OBJECT(appsrc),"stream-type", GST_APP_STREAM_TYPE_STREAM,"format", GST_FORMAT_TIME,"is-live", FALSE,NULL); // XXX TRUE here means no buffering. Must include #include <gst/app/gstappsrc.h>
-	GstBuffer *buffer = gst_buffer_new_allocate(NULL, data_len, NULL);
-	gst_buffer_fill(buffer, 0, data, data_len);
+	GstBuffer *buffer = gst_buffer_new_allocate(NULL, play_info->data_len, NULL);
+	gst_buffer_fill(buffer, 0, play_info->data, play_info->data_len);
 	GstFlowReturn ret;
 	g_signal_emit_by_name(appsrc, "push-buffer", buffer, &ret);
 	gst_buffer_unref(buffer);
 	if(ret != GST_FLOW_OK)
 	{
-		gst_object_unref(pipeline);
 		local_cleanup
-		local_unlock // XXX
 		error_simple(0, "Failed to push buffer to appsrc.");
 		return;
 	}
-	g_signal_emit_by_name(appsrc, "end-of-stream", &ret);
-	if(gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
+	g_signal_emit_by_name(appsrc, "end-of-stream", &ret); // TODO ??? necessary??
+	if(gst_element_set_state(play_info->pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
 	{
-		gst_object_unref(pipeline);
 		local_cleanup
-		local_unlock // XXX
 		error_simple(0, "Unable to set the pipeline to the playing state.");
 		return;
 	}
-	GstBus *bus = gst_element_get_bus(pipeline);
-	local_unlock // XXX
-	// Wait for error or end of stream // XXX THIS BLOCKS (gst_bus_timed_pop_filtered)
-	GstMessage *msg = gst_bus_timed_pop_filtered(bus, GST_CLOCK_TIME_NONE, GST_MESSAGE_ERROR | GST_MESSAGE_EOS/* | GST_MESSAGE_TAG*/);
+	GstBus *bus = gst_element_get_bus(play_info->pipeline);
+	gst_bus_add_signal_watch(bus);
+	g_signal_connect(bus, "message", G_CALLBACK(play_info->callback), play_info); // TODO move this before gst_element_set_state ??
 /*	print_duration(pipeline); */
-	handle_gst_message_and_free(msg);
 	// Cleanup
 	gst_object_unref(bus);
-	local_wrlock // XXX
-	gst_element_set_state(pipeline, GST_STATE_NULL);
-	gst_object_unref(pipeline);
-	local_cleanup
-	local_unlock // XXX
 }
 
 static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
@@ -318,9 +262,14 @@ static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
 	return GST_FLOW_OK;
 }
 
-struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg)
+void record_start(struct rec_info *rec_info,const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg)
 {
-	GstElement *pipeline = gst_pipeline_new("audio_stream");
+	if(!rec_info || sample_rate < 1 || rec_info->pipeline)
+	{ // Note that we require rec_info->pipeline to be NULL
+		error_simple(0,"Sanity check failed in record_start. Perhaps there is an existing recording?");
+		return;
+	}
+	rec_info->pipeline = gst_pipeline_new("audio_stream");
 	GstElement *audio_source = gst_element_factory_make("autoaudiosrc", "audio_source");
 	GstElement *sink = gst_element_factory_make("appsink", "audio_sink");
 	GstElement *encoder = gst_element_factory_make("avenc_aac", "aac_enc");
@@ -329,13 +278,11 @@ struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const
 	GstElement *audioconvert = gst_element_factory_make("audioconvert", "audio_convert");
 	GstElement *capsfilter = gst_element_factory_make("capsfilter", "caps_filter");
 	GstElement *queue = gst_element_factory_make("queue", "queue");
-	if(!pipeline || !audio_source || !encoder || !sink || !aacparse || !aac_caps || !audioconvert || !capsfilter || !queue)
+	if(!rec_info->pipeline || !audio_source || !encoder || !sink || !aacparse || !aac_caps || !audioconvert || !capsfilter || !queue)
 	{
-		error_simple(0,"Audio: Element could not be obtained");
-		return NULL;
+		error_simple(0,"Audio: Element could not be obtained, or sanity check otherwise failed.");
+		return;
 	}
-	struct rec_info *rec_info = torx_insecure_malloc(sizeof(struct rec_info));
-	rec_info->pipeline = pipeline;
 	rec_info->buffer = NULL;
 	rec_info->buffer_len = 0;
 	rec_info->start_time = 0; // must initialize
@@ -346,33 +293,35 @@ struct rec_info *record_start(const int sample_rate,void (*callback)(void*,const
 	g_object_set(G_OBJECT(sink), "emit-signals", TRUE, "sync", FALSE, NULL);
 	g_signal_connect(sink, "new-sample", G_CALLBACK(new_sample), rec_info);
 	// Add a bus watch
-	GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+	GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(rec_info->pipeline));
 	gst_object_unref(bus);
 	// Build the pipeline
-	gst_bin_add_many(GST_BIN(pipeline), audio_source, encoder, sink, NULL);
+	gst_bin_add_many(GST_BIN(rec_info->pipeline), audio_source, encoder, sink, NULL);
 	GstCaps *caps = gst_caps_new_simple("audio/mpeg","mpegversion", G_TYPE_INT, 4,"stream-format",G_TYPE_STRING,"adts","rate", G_TYPE_INT, sample_rate,"channels", G_TYPE_INT, 1,NULL);
 	g_object_set(G_OBJECT(aac_caps), "caps", caps, NULL);
 	gst_caps_unref(caps);
-	gst_bin_add_many(GST_BIN(pipeline), audio_source, capsfilter, audioconvert, encoder, aacparse, aac_caps, queue,sink, NULL);
+	gst_bin_add_many(GST_BIN(rec_info->pipeline), audio_source, capsfilter, audioconvert, encoder, aacparse, aac_caps, queue,sink, NULL);
 	if(gst_element_link_many(audio_source, capsfilter, audioconvert, encoder, aacparse, aac_caps, queue,sink, NULL) != TRUE)
 	{
-		g_printerr("Linked elements failed.\n");
-		gst_object_unref(pipeline);
-		return NULL;
+		error_simple(0,"Linked elements failed. Coding error. Report this.");
+		gst_object_unref(rec_info->pipeline);
+		rec_info->pipeline = NULL;
+		return;
 	}
 	// Start playing
 	set_time(&rec_info->start_time,&rec_info->start_nstime);
-	if(gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
+	if(gst_element_set_state(rec_info->pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
 	{
-		error_simple(0,"Unable to set the pipeline to the playing state.");
-		return NULL;
+		error_simple(0,"Unable to set the pipeline to the playing state. Coding error. Report this.");
+		gst_object_unref(rec_info->pipeline);
+		rec_info->pipeline = NULL;
+		return;
 	}
-	return rec_info;
 }
 
-unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info **rec_info)
+unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *rec_info)
 { // XXX WARNING: Frees rec_info
-	if(!rec_info || !*rec_info || !(*rec_info)->pipeline)
+	if(!rec_info || !rec_info->pipeline)
 	{
 		error_simple(0,"Bad arguments passed to record_stop. Coding error. Report this.");
 		if(data_len)
@@ -386,17 +335,14 @@ unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *
 		time_t end_time = 0;
 		time_t end_nstime = 0;
 		set_time(&end_time,&end_nstime);
-		const double diff = (double)(end_time - (*rec_info)->start_time) * 1e9 + (double)(end_nstime - (*rec_info)->start_nstime);
+		const double diff = (double)(end_time - rec_info->start_time) * 1e9 + (double)(end_nstime - rec_info->start_nstime);
 		*duration = (uint32_t)(diff / 1e6); // convert nanoseconds to milliseconds
 	}
-	gst_element_send_event((*rec_info)->pipeline, gst_event_new_eos());
-	gst_element_set_state((*rec_info)->pipeline, GST_STATE_NULL);
+	gst_element_send_event(rec_info->pipeline, gst_event_new_eos());
+	gst_element_set_state(rec_info->pipeline, GST_STATE_NULL);
 /*	print_duration(rec_info->pipeline); */
-	gst_object_unref(GST_OBJECT((*rec_info)->pipeline));
+	gst_object_unref(GST_OBJECT(rec_info->pipeline));
 	if(data_len)
-		*data_len = (*rec_info)->buffer_len;
-	unsigned char *buffer = (*rec_info)->buffer;
-	torx_free((void*)rec_info);
-	*rec_info = NULL;
-	return buffer;
+		*data_len = rec_info->buffer_len;
+	return rec_info->buffer;
 }
