@@ -72,7 +72,6 @@ severable if found in contradiction with the License or applicable law.
 struct rec_info {
 	GstElement *pipeline;
 	unsigned char *buffer;
-	size_t buffer_len;
 	time_t start_time;
 	time_t start_nstime;
 	void (*callback)(void*,const unsigned char*,const size_t);
@@ -195,7 +194,7 @@ void playback_start(struct play_info *play_info)
 		return;
 	}
 	gst_bin_add_many(GST_BIN(play_info->pipeline), appsrc, decoder, convert, sink, NULL);
-	if(!gst_element_link(appsrc, decoder))
+	if(!gst_element_link(appsrc, decoder)) // TODO gst_element_link_pads_full: assertion 'GST_IS_ELEMENT (src)' failed
 	{
 		local_cleanup
 		error_simple(0, "Failed to link appsrc to decoder.");
@@ -249,12 +248,12 @@ static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
 			rec_info->callback(rec_info->callback_arg,map.data, map.size);
 		else
 		{ // Audio message, keep buffering
+			const uint32_t buffer_len = torx_allocation_len(rec_info->buffer);
 			if(rec_info->buffer)
-				rec_info->buffer = torx_realloc(rec_info->buffer,rec_info->buffer_len + map.size);
+				rec_info->buffer = torx_realloc(rec_info->buffer,buffer_len + map.size);
 			else
-				rec_info->buffer = torx_secure_malloc(rec_info->buffer_len + map.size);
-			memcpy(&rec_info->buffer[rec_info->buffer_len], map.data, map.size);
-			rec_info->buffer_len += map.size;
+				rec_info->buffer = torx_secure_malloc(map.size);
+			memcpy(&rec_info->buffer[buffer_len], map.data, map.size);
 		}
 		gst_buffer_unmap(buffer, &map);
 	}
@@ -284,7 +283,6 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 		return;
 	}
 	rec_info->buffer = NULL;
-	rec_info->buffer_len = 0;
 	rec_info->start_time = 0; // must initialize
 	rec_info->start_nstime = 0; // must initialize
 	rec_info->callback = callback;
@@ -342,7 +340,8 @@ unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *
 	gst_element_set_state(rec_info->pipeline, GST_STATE_NULL);
 /*	print_duration(rec_info->pipeline); */
 	gst_object_unref(GST_OBJECT(rec_info->pipeline));
+	rec_info->pipeline = NULL;
 	if(data_len)
-		*data_len = rec_info->buffer_len;
+		*data_len = torx_allocation_len(rec_info->buffer);
 	return rec_info->buffer;
 }

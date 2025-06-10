@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.27 2025/05/21 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.33 2025/06/10 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -492,7 +492,9 @@ enum spin { // for spin_change
 	ENUM_SPIN_SUFFIX_LENGTH,
 	ENUM_SPIN_LOG_DAYS,
 	ENUM_SPIN_SING_EXPIRATION,
-	ENUM_SPIN_MULT_EXPIRATION
+	ENUM_SPIN_MULT_EXPIRATION,
+	ENUM_SPIN_TOR_PORT_SOCKS,
+	ENUM_SPIN_TOR_PORT_CONTROL
 };
 
 enum ui_protocols {
@@ -687,6 +689,9 @@ static const char *text_set_suffix = {0};
 static const char *text_set_validity_sing = {0};
 static const char *text_set_validity_mult = {0};
 static const char *text_set_auto_mult = {0};
+static const char *text_set_tor_port_socks = {0};
+static const char *text_set_tor_port_ctrl = {0};
+static const char *text_set_tor_password = {0};
 static const char *text_set_externally_generated = {0};
 static const char *text_tor_log = {0};
 static const char *text_torx_log = {0};
@@ -742,6 +747,7 @@ static void ui_decorate_panel_left_top(void);
 GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
 GtkWidget *ui_button_generate(const int type,const int n)__attribute__((warn_unused_result));
 GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *label_text)__attribute__((warn_unused_result));
+GtkWidget *ui_setting_entry(void (*callback)(GtkWidget *,void*), const char *description,const char *existing)__attribute__((warn_unused_result));
 static inline uint8_t is_image_file(const char *filename)__attribute__((warn_unused_result));
 static void ui_print_message(const int n,const int i,const int scroll);
 int print_message_idle(void *arg);
@@ -873,8 +879,6 @@ struct printing { // XXX Do not sodium_malloc structs unless they contain sensit
 struct notification { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
 	char *heading;
 	char *message;
-//	size_t heading_len;
-//	size_t message_len;
 };
 
 struct custom_setting { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
@@ -1660,7 +1664,7 @@ static int shrinkage_idle(void *arg)
 	const int shrinkage = vptoii_i(arg);
 	if(shrinkage)
 	{
-		const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location); // XXX Note this shift
+		const uint32_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location); // XXX Note this shift
 		const size_t current_shift = (size_t)abs(shrinkage);
 		if(shrinkage > 0) // We shift everything forward
 			t_peer[n].t_message = (struct t_message_list*)torx_realloc_shift(t_peer[n].t_message + t_peer[n].pointer_location, current_allocation_size - sizeof(struct t_message_list) *current_shift,1) - t_peer[n].pointer_location - current_shift;
@@ -1679,7 +1683,7 @@ static int expand_file_struc_idle(void *arg)
 {
 	const int n = vptoii_n(arg);
 //	const int f = vptoii_i(arg);
-	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_file);
+	const uint32_t current_allocation_size = torx_allocation_len(t_peer[n].t_file);
 	t_peer[n].t_file = torx_realloc(t_peer[n].t_file,current_allocation_size + sizeof(struct t_file_list) *10);
 	return 0;
 }
@@ -1693,7 +1697,7 @@ static int expand_message_struc_idle(void *arg)
 { // XXX DO NOT DELETE XXX
 	const int n = vptoii_n(arg);
 	const int i = vptoii_i(arg);
-	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location);
+	const uint32_t current_allocation_size = torx_allocation_len(t_peer[n].t_message + t_peer[n].pointer_location);
 	int current_shift = 0;
 	if(i < 0)
 	{
@@ -1714,7 +1718,7 @@ void expand_message_struc_cb_ui(const int n,const int i)
 static int expand_peer_struc_idle(void *arg)
 {
 	(void) arg;
-	const size_t current_allocation_size = torx_allocation_len(t_peer);
+	const uint32_t current_allocation_size = torx_allocation_len(t_peer);
 	t_peer = torx_realloc(t_peer,current_allocation_size + sizeof(struct t_peer_list) *10);
 	return 0;
 }
@@ -1799,8 +1803,6 @@ static inline int display_notification_idle(void *arg)
 	g_application_send_notification (G_APPLICATION (gtk_application_gtk4), NULL, gnotification); // was g_application_gtk4
 	g_object_unref (icon_logo);
 	g_object_unref (gnotification);
-//	sodium_memzero(notification->heading,notification->heading_len);
-//	sodium_memzero(notification->message,notification->message_len);
 	torx_free((void*)&notification->heading);
 	torx_free((void*)&notification->message);
 	torx_free((void*)&arg);
@@ -2096,7 +2098,7 @@ static int onion_deleted_idle(void *arg)
 	if(t_peer[n].buffer_write)
 		t_peer[n].buffer_write = NULL; // g_free(t_peer[n].buffer_write); // Causes issues when sending a kill. Do not g_free before NULLing.
 
-	for(size_t count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *); count ; ) // do not change logic without thinking
+	for(uint32_t count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *); count ; ) // do not change logic without thinking
 		torx_free((void*)&t_peer[n].t_cache_info.audio_cache[--count]); // clear out all unplayed audio data
 	torx_free((void*)&t_peer[n].t_cache_info.audio_cache);
 	torx_free((void*)&t_peer[n].t_cache_info.audio_cache_len);
@@ -2529,7 +2531,7 @@ static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,cha
 	snprintf(*global_location,len+1,"%s",path);
 	pthread_rwlock_unlock(&mutex_global_variable);
 	sql_setting(1,-1,name,path,len);
-	if(tor_running && !strncmp(name,"tor_location",12)) // restart if running
+	if(threadsafe_read_uint8(&mutex_global_variable,&keyed) && !strncmp(name,"tor_location",12)) // restart if running
 		start_tor();
 	g_free(path); path = NULL;
 }
@@ -3896,6 +3898,9 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_validity_sing = "Single-Use TorX-ID expiration time (days)";
 		text_set_validity_mult = "Multiple-Use TorX-ID expiration time (days)";
 		text_set_auto_mult = "Automatically Accept Incoming Mult Requests";
+		text_set_tor_port_socks = "Tor SOCKS5 Port";
+		text_set_tor_port_ctrl = "Tor Control Port";
+		text_set_tor_password = "Tor Control Password";
 		text_set_externally_generated = "Enter a externally generated vanity OnionID or TorX-ID (Advanced)";
 		text_tor_log = "Tor Log";
 		text_torx_log = "TorX Log";
@@ -4088,6 +4093,9 @@ after each comes online and receives the code.";
 		text_set_validity_sing = "一次性TorX-ID有效期（天）";
 		text_set_validity_mult = "多次TorX-ID有效期（天）";
 		text_set_auto_mult = "自动接受收到的多次请求";
+		text_set_tor_port_socks = "Tor SOCKS5 端口";
+		text_set_tor_port_ctrl = "Tor Control 端口";
+		text_set_tor_password = "Tor Control 暗语";
 		text_set_externally_generated = "输入外部生成的自定义洋葱ID或TorX-ID";
 		text_tor_log = "Tor日志";
 		text_torx_log = "TorX日志";
@@ -4226,6 +4234,10 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		value_original = (int)sing_expiration_days;
 	else if(spin == ENUM_SPIN_MULT_EXPIRATION)
 		value_original = (int)mult_expiration_days;
+	else if(spin == ENUM_SPIN_TOR_PORT_SOCKS)
+		value_original = (int)tor_socks_port;
+	else if(spin == ENUM_SPIN_TOR_PORT_CONTROL)
+		value_original = (int)tor_ctrl_port;
 	else
 	{
 		pthread_rwlock_unlock(&mutex_global_variable);
@@ -4269,8 +4281,39 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 			pthread_rwlock_unlock(&mutex_global_variable);
 			sql_setting(0,-1,"mult_expiration_days",p1,strlen(p1));
 		}
+		else if(spin == ENUM_SPIN_TOR_PORT_SOCKS)
+		{
+			const uint16_t tor_socks_port_local = tor_socks_port = (uint16_t)value_current;
+			pthread_rwlock_unlock(&mutex_global_variable);
+			printf("Checkpoint UI socks port change and restarting tor!!!\n");
+			start_tor();
+			if(tor_socks_port_local)
+			{
+				snprintf(p1,sizeof(p1),"%u",tor_socks_port_local);
+				sql_setting(0,-1,"tor_socks_port",p1,strlen(p1));
+			}
+			else // if 0, delete setting
+				sql_delete_setting(0,-1,"tor_socks_port");
+		}
+		else if(spin == ENUM_SPIN_TOR_PORT_CONTROL)
+		{
+			const uint16_t tor_ctrl_port_local = tor_ctrl_port = (uint16_t)value_current;
+			pthread_rwlock_unlock(&mutex_global_variable);
+			printf("Checkpoint UI ctrl port change and restarting tor!!!\n");
+			start_tor();
+			if(tor_ctrl_port_local)
+			{
+				snprintf(p1,sizeof(p1),"%u",tor_ctrl_port_local);
+				sql_setting(0,-1,"tor_ctrl_port",p1,strlen(p1));
+			}
+			else // if 0, delete setting
+				sql_delete_setting(0,-1,"tor_ctrl_port");
+		}
 		else
+		{
 			pthread_rwlock_unlock(&mutex_global_variable); // unknown spinner, coding error
+			error_simple(0,"Unknown spinner. Coding error. Report this.");
+		}
 	}
 }
 
@@ -4420,6 +4463,52 @@ GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *
 	return box;
 }
 
+GtkWidget *ui_setting_entry(void (*callback)(GtkWidget *,void*), const char *description,const char *existing)
+{
+	if(!description || !existing || !callback)
+		return NULL;
+	GtkWidget *box = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
+	GtkWidget *label = gtk_label_new(description);
+	gtk_widget_set_halign(label, GTK_ALIGN_START);
+	gtk_widget_set_hexpand(label, TRUE);	// works, do not remove
+	gtk_box_append (GTK_BOX (box), label);
+	GtkWidget *entry = gtk_entry_new();
+	if(existing) // must null check
+		gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(entry)),existing,-1);
+	g_signal_connect(entry, "unrealize", G_CALLBACK(callback),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	gtk_box_append (GTK_BOX (box), entry);
+	return box;
+}
+
+static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
+{ // Setting
+	(void)data;
+	const char *text = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(entry)));
+	const size_t text_len = text ? strlen(text) : 0;
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	const size_t current_len = control_password_clear ? strlen(control_password_clear) : 0;
+	uint8_t changed = 0;
+	if((text_len || current_len) && (current_len != text_len || strcmp(text,control_password_clear)))
+		changed = 1;
+	pthread_rwlock_unlock(&mutex_global_variable);
+	if(!changed)
+		return;
+	pthread_rwlock_wrlock(&mutex_global_variable);
+	torx_free((void*)&control_password_clear);
+	if(text_len)
+	{
+		control_password_clear = torx_secure_malloc(text_len+1);
+		memcpy(control_password_clear,text,text_len+1);
+	}
+	pthread_rwlock_unlock(&mutex_global_variable);
+	if(text_len)
+		sql_setting(0,-1,"control_password_clear",text,text_len);
+	else
+		sql_delete_setting(0,-1,"control_password_clear");
+	printf("Checkpoint UI password change and restarting tor!!!\n");
+	start_tor();
+}
+
 static void ui_show_settings(void)
 { // Do not permit debug level as an option. Could make life easier but could also be very dangerous for people.
 	if(vertical_mode > 0)
@@ -4522,6 +4611,17 @@ static void ui_show_settings(void)
 
 	// Automatically Accept Mult
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_mult,&ui_change_auto_accept_mult,auto_accept_mult,text_no,text_yes,NULL));
+
+	// Tor SOCKS5 Port
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_tor_port_socks,ENUM_SPIN_TOR_PORT_SOCKS,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_socks_port),0,65536));
+
+	// Tor Control Port
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_tor_port_ctrl,ENUM_SPIN_TOR_PORT_CONTROL,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_ctrl_port),0,65536));
+
+	// Tor Control Password
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear));
+	pthread_rwlock_unlock(&mutex_global_variable);
 
 	// Custom Input
 	GtkWidget *box8 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
@@ -4630,6 +4730,7 @@ static int tor_log_idle(void *data)
 		gtk_text_buffer_insert(t_main.tor_log_buffer,&end,data,(int)len);
 		if(t_main.window == window_log_tor)
 			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+		printf(WHITE"CHECKPOINT TOR LOG: %s\n"RESET,(char*)data);
 		torx_free((void*)&data);
 	}
 /*	if(t_main.window == window_log_tor)
@@ -4639,10 +4740,22 @@ static int tor_log_idle(void *data)
 	return 0;
 }
 
+/* static void tor_call_async_cb_ui(char *message)
+{ // Do not delete
+	printf("Checkpoint async_cb: %s\n",message);
+	torx_free((void*)&message);
+} */
+
 void tor_log_cb_ui(char *message)
 {
 	if(!message)
 		return;
+/*	const char msg1[] = "GETINFO network-liveness\r\n";
+	const char msg2[] = "GETINFO dormant\r\n";
+	const char msg3[] = "GETINFO status/bootstrap-phase\r\n";
+	tor_call_async(&tor_call_async_cb_ui,msg1);
+	tor_call_async(&tor_call_async_cb_ui,msg2);
+	tor_call_async(&tor_call_async_cb_ui,msg3);	*/
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
@@ -4711,7 +4824,7 @@ void playback_async(struct play_info *play_info,const uint8_t loop,const unsigne
 
 void cache_play(const int n)
 { // For streaming audio.
-	size_t count;
+	uint32_t count;
 	if(!t_peer[n].t_cache_info.playing && (count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *)))
 	{
 		t_peer[n].t_cache_info.last_played_time = t_peer[n].t_cache_info.audio_time[0]; // Important
@@ -7011,7 +7124,7 @@ static void cache_add(const int n,const time_t time,const time_t nstime,const ch
 		error_simple(0,"Received audio older than last played. Disgarding it. Carry on.");
 		return;
 	}
-	const size_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info.audio_cache);
+	const uint32_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info.audio_cache);
 	const size_t prior_count = current_allocation_size/sizeof(unsigned char *);
 printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],(unsigned char)data[1],(unsigned char)data[data_len-2],(unsigned char)data[data_len-1]);
 	if(prior_count && (t_peer[n].t_cache_info.audio_time[prior_count-1] > time || (t_peer[n].t_cache_info.audio_time[prior_count-1] == time && t_peer[n].t_cache_info.audio_nstime[prior_count-1] > nstime)))
@@ -7417,7 +7530,7 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 static int ui_populate_peers(void *arg)
 { /* Search Letters Entered */ // Takes 0 or ENUM_STATUS_BLOCKED / ENUM_STATUS_FRIEND as argument
 // TODO should probably save the scroll point, or not scroll if not at bottom, since this will be triggered on every message in/out
-	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
+	if(threadsafe_read_uint8(&mutex_global_variable,&lockout))
 		return 0;
 	else if(!t_main.entry_search)
 		return 0;
@@ -8648,7 +8761,9 @@ static void ui_show_main_screen(GtkWidget *window)
 static int login_act_idle(void *arg)
 {
 	const int value = vptoi(arg);
-	if(value == 0)
+	if(!threadsafe_read_uint8(&mutex_global_variable,&tor_running))
+		ui_show_missing_binaries();
+	else if(value == 0)
 		ui_show_main_screen(t_main.main_window);
 	else
 	{
@@ -8670,7 +8785,7 @@ static void ui_send_login(GtkWidget *widget, gpointer data)
 {
 	(void) widget;
 	(void) data;
-	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
+	if(threadsafe_read_uint8(&mutex_global_variable,&lockout))
 		return;
 	gtk_button_set_label(GTK_BUTTON(t_main.auth_button),text_wait);
 //	GtkWidget **entry_field = (GtkWidget **)data;
@@ -8704,7 +8819,7 @@ static gboolean switch_state_set(GtkSwitch *self,gboolean state,gpointer data)
 
 void ui_show_auth_screen(void)
 { // Note: This runs twice if there is a saved language setting.
-	if(!tor_location)
+	if(!tor_location) // shouldn't need mutex
 	{
 		error_simple(0,"Must set Tor location.");
 		return;
@@ -8748,7 +8863,7 @@ void ui_show_auth_screen(void)
 // TESTING TODO
 	GtkWidget *auth_text_next_logo = gtk_label_new(text_title);
 	gtk_box_append (GTK_BOX(auth_logo_box), auth_text_next_logo);
-	if(threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout))
+	if(threadsafe_read_uint8(&mutex_global_variable,&lockout))
 		t_main.auth_button = gtk_button_new_with_label (text_wait);
 	else
 		t_main.auth_button = gtk_button_new_with_label (text_enter);
@@ -8799,6 +8914,18 @@ void ui_show_auth_screen(void)
 	gtk_window_set_child (GTK_WINDOW(t_main.main_window),auth_background);
 }
 
+static void try_now(void)
+{
+	const uint8_t tor_running_local = threadsafe_read_uint8(&mutex_global_variable,&tor_running);
+	const uint8_t keyed_local = threadsafe_read_uint8(&mutex_global_variable,&keyed);
+	if(!keyed_local)
+		ui_show_auth_screen();
+	else if(tor_running_local) // This is not a certainty. The binary could be bad.
+		ui_show_main_screen(t_main.main_window);
+	else // Bad binary, clear it
+		ui_show_missing_binaries();
+}
+
 void ui_show_missing_binaries(void)
 { // Shows on startup if tor_location is unset
 	t_main.window = window_auth; // Auth
@@ -8819,11 +8946,19 @@ void ui_show_missing_binaries(void)
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&lyrebird_location,"lyrebird_location",text_lyrebird));
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&conjure_location,"conjure_location",text_conjure));
+	gtk_box_append (GTK_BOX (auth_background), ui_spinbutton(text_set_tor_port_socks,ENUM_SPIN_TOR_PORT_SOCKS,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_socks_port),0,65536));
+	gtk_box_append (GTK_BOX (auth_background), ui_spinbutton(text_set_tor_port_ctrl,ENUM_SPIN_TOR_PORT_CONTROL,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_ctrl_port),0,65536));
+
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	gtk_box_append (GTK_BOX (auth_background), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear));
+	pthread_rwlock_unlock(&mutex_global_variable);
 
 	GtkWidget *button = gtk_button_new_with_label (text_enter);
 	gtk_widget_set_size_request(button, size_button_auth_width, size_button_auth_height);
 	gtk_widget_set_margin_top(button, size_margin_fifteen);
-	g_signal_connect(button, "clicked", G_CALLBACK (ui_show_auth_screen), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+
+	g_signal_connect(button, "clicked", G_CALLBACK (try_now), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+
 	gtk_widget_add_css_class(button,"auth_button");
 	gtk_box_append (GTK_BOX(auth_background), button);
 
@@ -8878,10 +9013,9 @@ static void *icon_communicator(void* arg)
 	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
 	evutil_socket_t sockfd;
-	struct sockaddr_in servaddr;
 	if ((sockfd = SOCKET_CAST_IN socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		goto end;
-	memset(&servaddr, 0, sizeof(servaddr));
+	struct sockaddr_in servaddr = {0};
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_port = htons(icon_port);
 	if (inet_pton(AF_INET, "127.0.0.1", &servaddr.sin_addr) <= 0)
@@ -8962,7 +9096,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	binary_path = path_generator(starting_dir,argv_0);
 
 	/* Options configurable by client */
-	debug = 0;
+	torx_debug_level(4);
 	reduced_memory = 2; // TODO probably remove before release
 
 	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
@@ -9173,7 +9307,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	volume_up_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_474747.svg");
 	volume_up_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_D2D2D2.svg");
 
-	if(tor_location) // shouldn't need mutex
+	pthread_rwlock_rdlock(&mutex_global_variable);
+	const char *tor_location_local = tor_location;
+	pthread_rwlock_unlock(&mutex_global_variable);
+	if(tor_location_local) // shouldn't need mutex
 		ui_show_auth_screen();
 	else // missing a required binary
 		ui_show_missing_binaries();
@@ -9196,7 +9333,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	t_main.torx_log_buffer = gtk_text_buffer_new(NULL);
 	t_main.textbuffer_torrc = gtk_text_buffer_new(NULL);
 
-	const int8_t lockout_local = threadsafe_read_int8(&mutex_global_variable,(int8_t*)&lockout);
+	const uint8_t lockout_local = threadsafe_read_uint8(&mutex_global_variable,&lockout);
 	if(tor_location && no_password && !lockout_local) // shouldn't need mutex // UI setting, relevant to first_run only because otherwise login_start is called by sql_populate_setting
 		login_start("");
 
