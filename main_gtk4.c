@@ -1985,9 +1985,9 @@ static void ui_set_image_lock(const int n)
 			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,onion));
 		}
 		const int g = set_g(n,NULL);
-		pthread_rwlock_rdlock(&mutex_expand_group);
+		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		char *groupid = b64_encode(group[g].id,GROUP_ID_SIZE);
-		pthread_rwlock_unlock(&mutex_expand_group);
+		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 		char tooltip[256];
 		snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",text_groupid,groupid,identifier,onion);
 		gtk_widget_set_tooltip_text(t_main.image_header,tooltip);
@@ -2284,9 +2284,9 @@ static void ui_copy_qr(const void *arg)
 	{
 		const int g = set_g(n,NULL); // just looking up existing
 		unsigned char id[GROUP_ID_SIZE];
-		pthread_rwlock_rdlock(&mutex_expand_group);
+		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		memcpy(id,group[g].id,sizeof(id));
-		pthread_rwlock_unlock(&mutex_expand_group);
+		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 		char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 		sodium_memzero(id,sizeof(id));
 		qr_data = qr_bool(group_id_encoded,1);
@@ -2321,9 +2321,9 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		{
 			const int g = set_g(n,NULL); // just looking up existing
 			unsigned char id[GROUP_ID_SIZE];
-			pthread_rwlock_rdlock(&mutex_expand_group);
+			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
-			pthread_rwlock_unlock(&mutex_expand_group);
+			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 			char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 			sodium_memzero(id,sizeof(id));
 			qr_data = qr_bool(group_id_encoded,8);
@@ -2525,11 +2525,11 @@ static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,cha
 		return;
 	gtk_button_set_label ( GTK_BUTTON(button),path);
 	const size_t len = strlen(path);
-	pthread_rwlock_wrlock(&mutex_global_variable);
+	pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 	torx_free((void*)global_location);
 	*global_location = torx_insecure_malloc(len+1);
 	snprintf(*global_location,len+1,"%s",path);
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	sql_setting(1,-1,name,path,len);
 	if(threadsafe_read_uint8(&mutex_global_variable,&keyed) && !strncmp(name,"tor_location",12)) // restart if running
 		start_tor();
@@ -2605,23 +2605,23 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 		const size_t len = strlen(folder_path);
 		char *allocation = torx_secure_malloc(len+1);
 		memcpy(allocation,folder_path,len+1);
-		pthread_rwlock_wrlock(&mutex_global_variable);
+		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 		torx_free((void*)&download_dir);
 		download_dir = allocation;
-		pthread_rwlock_unlock(&mutex_global_variable);
+		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		sql_setting(0,-1,"download_dir",folder_path,len);
 		g_free(folder_path); folder_path = NULL;
 	}
 	else
 	{ // Unset if cancelled
-		pthread_rwlock_wrlock(&mutex_global_variable);
+		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 		torx_free((void*)&download_dir);
-		pthread_rwlock_unlock(&mutex_global_variable);
+		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		sql_delete_setting(0,-1,"download_dir");
 	}
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	gtk_button_set_label (GTK_BUTTON(data),download_dir);
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 }
 
 static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer data)
@@ -2893,9 +2893,9 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	}
 	else if(file_path == NULL)
 	{
-		pthread_rwlock_rdlock(&mutex_global_variable);
+		pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 		const char *download_dir_local = download_dir;
-		pthread_rwlock_unlock(&mutex_global_variable);
+		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		if(file_path == NULL && download_dir_local == NULL)
 		{ // this should only be for received files that are not started, otherwise should accept/pause/cancel via file_accept
 			GtkFileDialog *dialog = gtk_file_dialog_new();
@@ -3662,9 +3662,9 @@ static void ui_show_edit_torrc(void)
 	GtkWidget *button_save_torrc = gtk_button_new_with_label (text_save);
 	g_signal_connect(button_save_torrc, "clicked", G_CALLBACK (ui_save_torrc), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_box_append (GTK_BOX (t_main.chat_headerbar_right),button_save_torrc);
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	gtk_text_buffer_set_text(t_main.textbuffer_torrc,torrc_content,-1);
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	GtkWidget *view = gtk_text_view_new_with_buffer (t_main.textbuffer_torrc);
 	gtk_widget_set_hexpand(view, TRUE);	// redundant/default
 	gtk_widget_set_vexpand(view, TRUE);	// required
@@ -4223,7 +4223,7 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 	const int spin = vptoi(data);
 	double value_current; // double is returned by gtk_spin_button_get_value
 	int value_original;
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	if(spin == ENUM_SPIN_DEBUG)
 		value_original = (int)torx_debug_level(-1);
 	else if(spin == ENUM_SPIN_CPU_THREADS)
@@ -4240,51 +4240,51 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		value_original = (int)tor_ctrl_port;
 	else
 	{
-		pthread_rwlock_unlock(&mutex_global_variable);
+		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		return; // unknown spinner, coding error
 	}
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	if((int)(value_current = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spinbutton))) != value_original)
 	{
 		char p1[21];
-		pthread_rwlock_wrlock(&mutex_global_variable);
+		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 		if(spin == ENUM_SPIN_DEBUG)
 		{
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			torx_debug_level((int8_t)value_current); // Does not save to file because safety
 		}
 		else if(spin == ENUM_SPIN_CPU_THREADS)
 		{
 			global_threads = (uint32_t)value_current;
 			snprintf(p1,sizeof(p1),"%u",global_threads);
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			sql_setting(0,-1,"global_threads",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_SUFFIX_LENGTH)
 		{
 			suffix_length = (uint8_t)value_current;
 			snprintf(p1,sizeof(p1),"%u",suffix_length);
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			sql_setting(0,-1,"suffix_length",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_SING_EXPIRATION)
 		{
 			sing_expiration_days = (uint32_t)value_current;
 			snprintf(p1,sizeof(p1),"%u",sing_expiration_days);
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			sql_setting(0,-1,"sing_expiration_days",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_MULT_EXPIRATION)
 		{
 			mult_expiration_days = (uint32_t)value_current;
 			snprintf(p1,sizeof(p1),"%u",mult_expiration_days);
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			sql_setting(0,-1,"mult_expiration_days",p1,strlen(p1));
 		}
 		else if(spin == ENUM_SPIN_TOR_PORT_SOCKS)
 		{
 			const uint16_t tor_socks_port_local = tor_socks_port = (uint16_t)value_current;
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			printf("Checkpoint UI socks port change and restarting tor!!!\n");
 			start_tor();
 			if(tor_socks_port_local)
@@ -4298,7 +4298,7 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		else if(spin == ENUM_SPIN_TOR_PORT_CONTROL)
 		{
 			const uint16_t tor_ctrl_port_local = tor_ctrl_port = (uint16_t)value_current;
-			pthread_rwlock_unlock(&mutex_global_variable);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			printf("Checkpoint UI ctrl port change and restarting tor!!!\n");
 			start_tor();
 			if(tor_ctrl_port_local)
@@ -4311,7 +4311,7 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		}
 		else
 		{
-			pthread_rwlock_unlock(&mutex_global_variable); // unknown spinner, coding error
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 			error_simple(0,"Unknown spinner. Coding error. Report this.");
 		}
 	}
@@ -4450,9 +4450,9 @@ GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *
 	GtkWidget *label = gtk_label_new(label_text);
 	gtk_widget_set_halign(label, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label, TRUE); // works, do not remove
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	GtkWidget *button = gtk_button_new_with_label (*location);
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	GtkWidget *inner_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	gtk_widget_set_halign(inner_box, GTK_ALIGN_END);
 	gtk_box_append (GTK_BOX (inner_box), button);
@@ -4485,22 +4485,22 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 	(void)data;
 	const char *text = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(entry)));
 	const size_t text_len = text ? strlen(text) : 0;
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	const size_t current_len = control_password_clear ? strlen(control_password_clear) : 0;
 	uint8_t changed = 0;
 	if((text_len || current_len) && (current_len != text_len || strcmp(text,control_password_clear)))
 		changed = 1;
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	if(!changed)
 		return;
-	pthread_rwlock_wrlock(&mutex_global_variable);
+	pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 	torx_free((void*)&control_password_clear);
 	if(text_len)
 	{
 		control_password_clear = torx_secure_malloc(text_len+1);
 		memcpy(control_password_clear,text,text_len+1);
 	}
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	if(text_len)
 		sql_setting(0,-1,"control_password_clear",text,text_len);
 	else
@@ -4574,9 +4574,9 @@ static void ui_show_settings(void)
 	GtkWidget *label0 = gtk_label_new(text_set_download_directory);
 	gtk_widget_set_halign(label0, GTK_ALIGN_START);
 	gtk_widget_set_hexpand(label0, TRUE);	// works, do not remove
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	GtkWidget *button_download_dir = gtk_button_new_with_label (download_dir);
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	GtkWidget *inner_box1  = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	gtk_widget_set_halign(inner_box1, GTK_ALIGN_END);
 	gtk_box_append (GTK_BOX (inner_box1), button_download_dir);
@@ -4619,9 +4619,11 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_tor_port_ctrl,ENUM_SPIN_TOR_PORT_CONTROL,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_ctrl_port),0,65536));
 
 	// Tor Control Password
-	pthread_rwlock_rdlock(&mutex_global_variable);
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear));
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
+	char *control_password_clear_local = torx_copy(NULL,control_password_clear);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear_local));
+	torx_free((void*)&control_password_clear_local);
 
 	// Custom Input
 	GtkWidget *box8 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
@@ -5177,9 +5179,9 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 		if(!g_invite_required)
 		{ // Public gropu, copy group_id
 			unsigned char id[GROUP_ID_SIZE];
-			pthread_rwlock_rdlock(&mutex_expand_group);
+			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
-			pthread_rwlock_unlock(&mutex_expand_group);
+			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 			char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 			sodium_memzero(id,sizeof(id));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),group_id_encoded);
@@ -5572,9 +5574,9 @@ static void ui_group_generate(const void *arg)
 		else
 		{ // public group, show ID and QR code
 			unsigned char id[GROUP_ID_SIZE];
-			pthread_rwlock_rdlock(&mutex_expand_group);
+			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
-			pthread_rwlock_unlock(&mutex_expand_group);
+			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 			char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 			sodium_memzero(id,sizeof(id));
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_group,group_id_encoded,-1);
@@ -5959,9 +5961,9 @@ static int custom_setting_idle(void *arg)
 			ui_initialize_language(NULL);
 			if(t_main.window == window_auth)
 			{ // Making sure we don't try to show auth when we have already passed it
-				pthread_rwlock_rdlock(&mutex_global_variable);
+				pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 				const char *tor_location_local = tor_location;
-				pthread_rwlock_unlock(&mutex_global_variable);
+				pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 				if(tor_location_local)
 					ui_show_auth_screen();
 				else // missing a required binary
@@ -6033,9 +6035,9 @@ static void ui_message_copy(const gpointer data)
 		breakpoint();
 		return; // message is deleted or buggy
 	}
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	if(null_terminated_len == 1)
 	{
 		char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
@@ -6057,9 +6059,9 @@ static void ui_message_resend(const gpointer data)
 		breakpoint();
 		return; // message is deleted or buggy
 	}
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint16_t protocol = protocols[p_iter].protocol;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	printf("Checkpoint ui_message_resend owner==%d\n",owner);
 	int target_n = n;
@@ -6227,9 +6229,9 @@ static void ui_activity_edit(const gpointer data)
 		breakpoint();
 		return; // message is deleted or buggy
 	}
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	if(null_terminated_len == 1)
 	{
 		char *message = getter_string(NULL,t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
@@ -6263,14 +6265,14 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		breakpoint();
 		return; // message is deleted or buggy
 	}
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint16_t protocol = protocols[p_iter].protocol;
 	const uint8_t file_checksum = protocols[p_iter].file_checksum;
 	const uint8_t group_msg = protocols[p_iter].group_msg;
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 	const uint32_t date_len = protocols[p_iter].date_len;
 	const uint32_t signature_len = protocols[p_iter].signature_len;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 
 	GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	gtk_widget_add_css_class(box, "popover_inner");
@@ -6395,12 +6397,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		error_simple(0,"ui_message_generator called on p_iter < 0. Coding error. Report this.");
 		return gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	}
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint16_t protocol = protocols[p_iter].protocol;
 	const uint8_t group_pm = protocols[p_iter].group_pm;
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 	const uint8_t group_msg = protocols[p_iter].group_msg;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	torx_read(n) // 🟧🟧🟧
 	const uint8_t owner = peer[n].owner;
 	const uint8_t stat = peer[n].message[i].stat;
@@ -6462,9 +6464,9 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			else
 			{ // We have not joined yet, so no name. Use encoded GroupID instead
 				unsigned char id[GROUP_ID_SIZE];
-				pthread_rwlock_rdlock(&mutex_expand_group);
+				pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 				memcpy(id,group[g].id,sizeof(id));
-				pthread_rwlock_unlock(&mutex_expand_group);
+				pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 				char *group_encoded = b64_encode(id,GROUP_ID_SIZE);
 				sodium_memzero(id,sizeof(id));
 				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,group_encoded);
@@ -6725,14 +6727,14 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		t_peer[n].t_message[i].message_box = NULL;
 	}
 	#endif
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint16_t protocol = protocols[p_iter].protocol;
 	const uint8_t notifiable = protocols[p_iter].notifiable;
 	const uint8_t group_pm = protocols[p_iter].group_pm;
 	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 	const uint8_t file_offer = protocols[p_iter].file_offer;
 //	const uint8_t group_msg = protocols[p_iter].group_msg;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	uint32_t message_len;
 	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
@@ -6938,9 +6940,9 @@ int print_message_idle(void *arg)
 				torx_free((void*)&printing);
 				return 0;
 			}
-			pthread_rwlock_rdlock(&mutex_protocols);
+			pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 			const uint16_t protocol = protocols[p_iter].protocol;
-			pthread_rwlock_unlock(&mutex_protocols);
+			pthread_rwlock_unlock(&mutex_protocols); // 🟩
 			if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
 			{ // Received sticker
 				uint32_t message_len;
@@ -7198,9 +7200,9 @@ static int stream_idle(void *arg)
 	const uint32_t data_len = stream_data->data_len;
 	if(data == NULL || data_len == 0 || n < 0 || p_iter < 0)
 		goto end;
-	pthread_rwlock_rdlock(&mutex_protocols);
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 	const uint16_t protocol = protocols[p_iter].protocol;
-	pthread_rwlock_unlock(&mutex_protocols);
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
@@ -7234,9 +7236,9 @@ static int stream_idle(void *arg)
 					const int p_iter_local = peer[n].message[i].p_iter;
 					if(p_iter_local > -1)
 					{
-						pthread_rwlock_rdlock(&mutex_protocols);
+						pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 						const uint16_t protocol_local = protocols[p_iter_local].protocol;
-						pthread_rwlock_unlock(&mutex_protocols);
+						pthread_rwlock_unlock(&mutex_protocols); // 🟩
 						if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
 						&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
 						{ // Find the first relevant message and update it TODO this might not work in groups
@@ -7349,9 +7351,9 @@ static int message_extra_idle(void *arg)
 		error_simple(0,"message_extra_idle called on p_iter < 0. Coding error. Report this.");
 	else
 	{
-		pthread_rwlock_rdlock(&mutex_protocols);
+		pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 		const uint16_t protocol = protocols[p_iter].protocol;
-		pthread_rwlock_unlock(&mutex_protocols);
+		pthread_rwlock_unlock(&mutex_protocols); // 🟩
 		unsigned char *data = (unsigned char *)stream_data->data;
 		const uint32_t data_len = stream_data->data_len;
 		if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
@@ -7670,9 +7672,9 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 	else
 	{ // Public Group, show QR and Group ID TODO consider having also popover_invite as an option
 		unsigned char id[GROUP_ID_SIZE];
-		pthread_rwlock_rdlock(&mutex_expand_group);
+		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		memcpy(id,group[g].id,sizeof(id));
-		pthread_rwlock_unlock(&mutex_expand_group);
+		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 		char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 		sodium_memzero(id,sizeof(id));
 		GtkWidget *generated_qr_code;
@@ -8241,9 +8243,9 @@ static void ui_select_changed(const void *arg)
 		const uint32_t peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
 		for(uint32_t nn = 0 ; nn < peercount ; nn++)
 		{
-			pthread_rwlock_rdlock(&mutex_expand_group);
+			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			const int peer_n = group[g].peerlist[nn];
-			pthread_rwlock_unlock(&mutex_expand_group);
+			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 			for(size_t c = 0; c < sizeof(t_peer[peer_n].t_call)/sizeof(struct t_call_list) ; c++)
 				if(t_peer[peer_n].t_call[c].column)
 					gtk_box_append(GTK_BOX(t_main.call_box), t_peer[peer_n].t_call[c].column);
@@ -8278,9 +8280,9 @@ static void ui_select_changed(const void *arg)
 
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
-		pthread_rwlock_rdlock(&mutex_expand_group);
+		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		struct msg_list *page = group[g].msg_first;
-		pthread_rwlock_unlock(&mutex_expand_group);
+		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
 		while(page)
 		{
 			if(page->message_next)
@@ -8534,11 +8536,11 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 			if(last_message_i > INT_MIN && (p_iter = getter_int(last_message_n,last_message_i,-1,offsetof(struct message_list,p_iter))) > -1)
 			{
 				const int max_i = getter_int(last_message_n,INT_MIN,-1,offsetof(struct peer_list,max_i));
-				pthread_rwlock_rdlock(&mutex_protocols);
+				pthread_rwlock_rdlock(&mutex_protocols); // 🟧
 				const uint16_t protocol = protocols[p_iter].protocol;
 				const uint8_t file_offer = protocols[p_iter].file_offer;
 				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
-				pthread_rwlock_unlock(&mutex_protocols);
+				pthread_rwlock_unlock(&mutex_protocols); // 🟩
 				const char *message = getter_string(NULL,last_message_n,last_message_i,-1,offsetof(struct message_list,message));
 				if(max_i > INT_MIN/* && protocol > 0*/ && message)
 				{
@@ -8949,9 +8951,9 @@ void ui_show_missing_binaries(void)
 	gtk_box_append (GTK_BOX (auth_background), ui_spinbutton(text_set_tor_port_socks,ENUM_SPIN_TOR_PORT_SOCKS,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_socks_port),0,65536));
 	gtk_box_append (GTK_BOX (auth_background), ui_spinbutton(text_set_tor_port_ctrl,ENUM_SPIN_TOR_PORT_CONTROL,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_ctrl_port),0,65536));
 
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	gtk_box_append (GTK_BOX (auth_background), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear));
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 
 	GtkWidget *button = gtk_button_new_with_label (text_enter);
 	gtk_widget_set_size_request(button, size_button_auth_width, size_button_auth_height);
@@ -9307,9 +9309,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 	volume_up_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_474747.svg");
 	volume_up_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_D2D2D2.svg");
 
-	pthread_rwlock_rdlock(&mutex_global_variable);
+	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
 	const char *tor_location_local = tor_location;
-	pthread_rwlock_unlock(&mutex_global_variable);
+	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	if(tor_location_local) // shouldn't need mutex
 		ui_show_auth_screen();
 	else // missing a required binary
