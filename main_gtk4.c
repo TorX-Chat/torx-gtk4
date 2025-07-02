@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.33 2025/06/10 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.34 2025/07/02 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -4465,8 +4465,8 @@ GtkWidget *ui_choose_binary(char **location,const char *widget_name,const char *
 
 GtkWidget *ui_setting_entry(void (*callback)(GtkWidget *,void*), const char *description,const char *existing)
 {
-	if(!description || !existing || !callback)
-		return NULL;
+	if(!description || !callback)
+		return NULL; // This will cause failure, bad.
 	GtkWidget *box = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 	GtkWidget *label = gtk_label_new(description);
 	gtk_widget_set_halign(label, GTK_ALIGN_START);

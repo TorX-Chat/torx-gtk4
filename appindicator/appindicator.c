@@ -68,7 +68,7 @@ severable if found in contradiction with the License or applicable law.
 #include <unistd.h>
 #include <event2/event.h> // for evutil_socket_t
 
-#ifdef WIN32 // NOTE: This must also be in appindicator.c file
+#ifdef WIN32
 #define SOCKET_CAST_IN (evutil_socket_t)
 #define SOCKET_CAST_OUT (SOCKET)
 #else

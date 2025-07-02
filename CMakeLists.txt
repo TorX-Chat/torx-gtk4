@@ -56,21 +56,23 @@ set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINA
 if(BUILD_SHARED_LIBS)
 	add_library(torx SHARED IMPORTED)
 	set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.so)
+	set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
 else()
 	add_library(torx STATIC IMPORTED)
 	set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.a)
+	set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
 endif()
 
 ExternalProject_Add(
 	torx-download
 	GIT_REPOSITORY ${REPO_TORX}
 	GIT_TAG ${TAG_REPO}
-	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS} -D LAN_REPO=${LAN_REPO}
+	CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS} -D QR_GENERATOR=1 -D LAN_REPO=${LAN_REPO}
 	INSTALL_COMMAND "" ## TODO should install the .so/.a and place the torx.h
 	BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
 )
 
-execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml)
+execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml --target ${CMAKE_CURRENT_BINARY_DIR}/torx-gtk4.c WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
 #find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
@@ -82,9 +84,10 @@ target_link_libraries(gif_animation ${GTK4_LIBRARIES}) # necessary on Windows, u
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib") # Critical for install commands later
 add_executable( ${PROJECT_NAME} main_gtk4.c )
-target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/ ${CMAKE_CURRENT_SOURCE_DIR}/include/)
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_CFLAGS_OTHER})
-add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant
+add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant (NOTE: at least QR_GENERATOR is NOT redundant because it affects torx.h)
 
 if(WIN32)
 target_link_libraries(
@@ -94,11 +97,12 @@ target_link_libraries(
 		gif_animation
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		sodium
-	#	event
-		event_core
-	#	event_pthreads
+		torx
 		png
+		sodium
+	##	event
+		event_core
+	##	event_pthreads
 		sqlcipher
 )
 else()
@@ -107,14 +111,17 @@ target_link_libraries(
 		gif_animation
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		sodium
-	#	event
-		event_core
-		event_pthreads
-		png
-		sqlcipher
+		torx
+		png		## TODO required ONLY when BUILD_SHARED_LIBS=0
+		sodium		## TODO required ALWAYS for sodium_memzero
+	##	event
+		event_core	## TODO required ALWAYS for evutil_closesocket (and probably things like evutil_socket_t)
+		event_pthreads	## TODO required ONLY when BUILD_SHARED_LIBS=0
+		sqlcipher	## TODO required ONLY when BUILD_SHARED_LIBS=0
 )
 endif()
+
+add_dependencies(${PROJECT_NAME} torx-download)
 
 # Install the executables
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
