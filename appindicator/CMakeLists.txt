@@ -13,16 +13,16 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${GTK3_INCLUDE_DIRS} ${CMAKE_
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK3_CFLAGS_OTHER})
 
 if(WIN32)
-target_link_libraries(
-	${PROJECT_NAME} PRIVATE
-	${GTK3_LIBRARIES}
-	event_core
-	Ws2_32
-)
+	target_link_libraries(
+		${PROJECT_NAME} PRIVATE
+		${GTK3_LIBRARIES}
+		event_core
+		Ws2_32
+	)
 else()
-target_link_libraries(
-	${PROJECT_NAME} PRIVATE
-	${GTK3_LIBRARIES}
-	event_core
-)
+	target_link_libraries(
+		${PROJECT_NAME} PRIVATE
+		${GTK3_LIBRARIES}
+		event_core
+	)
 endif()

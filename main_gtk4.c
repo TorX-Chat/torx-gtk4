@@ -151,7 +151,7 @@ static GtkWidget *popover_level_one = NULL; // XXX For working-around GTK bug on
 #define MINIMUM_AUDIO_MESSAGE_LENGTH_IN_MILLISECONDS 500
 #define REALISTIC_MINIMUM_BINARY_SIZE 15360 // minimum realistic binary size... 10kb (this is smaller than hello-world... this is to prevent confusion between binaries and folders). Warning: SVG files and soft links can be less than this.
 
-#define ICON_COMMUNICATION_ATTEMPTS 3 // currently must be 1+
+#define ICON_COMMUNICATION_ATTEMPTS 10 // currently must be 4+ on a ThinkPad X200. Setting to 10 in anticipation of slower systems.
 #define ENABLE_APPINDICATOR 1 // DO NOT USE TO VERIFY FUNCTIONALITY
 
 static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will be set upon successful connection.
@@ -9010,7 +9010,7 @@ static int icon_communicator_idle(void *arg)
 }
 
 static void *icon_communicator(void* arg)
-{ // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff directly XXX
+{ // XXX NOT IN UI THREAD, but is threadsafe because we don't access any GTK stuff or global variables directly XXX
 	pusher(zero_pthread,(void*)&thread_icon_communicator)
 	setcanceltype(TORX_PHTREAD_CANCEL_TYPE,NULL);
 	const uint16_t icon_port = (uint16_t) vptoi(arg);
@@ -9037,12 +9037,16 @@ static void *icon_communicator(void* arg)
 		return 0;
 	}
 	end: {}
-	error_simple(0,"Icon_communicator failed before successful connection");
 	if(sockfd > 0)
 		evutil_closesocket(sockfd);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,icon_failure_idle,arg,NULL); // XXX
 	if(tray_pid > 0)
+	{ // Do not remove this error message. It can be triggered on very slow systems, indicating that ICON_COMMUNICATION_ATTEMPTS must be increased.
+		error_printf(0,"Icon communicator failed to connect in %d seconds, despite a PID existing. Killing PID.",ICON_COMMUNICATION_ATTEMPTS);
 		pid_kill(tray_pid,SIGTERM);
+	}
+	else
+		error_simple(0,"Icon_communicator failed before successful connection.");
 	pthread_exit(NULL);
 	return NULL;
 }
@@ -9404,7 +9408,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 			{ // try for GDB
 				snprintf(appindicator_path,sizeof(appindicator_path),"%s\\torx-tray.exe -p %s -P %s",current_binary_directory,port_array,binary_path);
 				if(!CreateProcess(NULL,appindicator_path,NULL,NULL,TRUE,0,NULL,NULL,&siStartInfo,&process_info))
-					error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+					error_printf(0,"Failed to start appindicator on port %s",port_array);
 			}
 		}
 		#else
@@ -9423,7 +9427,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 				{ // try for GDB
 					snprintf(appindicator_path,sizeof(appindicator_path),"%s%ctorx-tray",current_binary_directory,platform_slash);
 					if(execl(appindicator_path,"torx-tray","-p",port_array,"-P",binary_path,NULL))
-						error_printf(0,"Failed to start appindicator on port %s\n",port_array);
+						fprintf(stderr,"Failed to start appindicator on port %s\n",port_array);
 				}
 			}
 			exit(0);
