@@ -73,37 +73,37 @@ add_executable( ${PROJECT_NAME} main_gtk4.c )
 
 find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS /usr/local/include /usr/include)
 find_library(torx NAMES torx PATHS /usr/local/lib /usr/lib)
-if (TORX_INCLUDE_DIR AND torx)
-        message(STATUS "Existing TorX library found; NOT building.")
-elseif()
-        message(STATUS "Existing TorX library NOT found; Building.")
-        if(BUILD_SHARED_LIBS)
-                add_library(torx SHARED IMPORTED)
-                set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.so)
-                set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
-                install(TARGETS torx LIBRARY DESTINATION lib) ## if BUILD_SHARED_LIBS, we need to install this
-                install(FILES ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/include/torx.h DESTINATION include)
-        else()
-                add_library(torx STATIC IMPORTED)
-                set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.a)
-                set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
-        endif()
-        ExternalProject_Add(
-                torx-download
-                GIT_REPOSITORY ${REPO_TORX}
-                GIT_TAG ${TORX_TAG}
-                CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS} -D QR_GENERATOR=1 -D LAN_REPO=${LAN_REPO}
-                INSTALL_COMMAND "" ## TODO Maybe we just comment this and the above install() then let the library install be processed?
-                BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
-        )
-        add_dependencies(${PROJECT_NAME} torx-download)
-        set(TORX_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
+
+if(TORX_INCLUDE_DIR AND torx)
+	message(STATUS "Existing TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
+else()
+	message(STATUS "Existing TorX library NOT found; Building.")
+	if(BUILD_SHARED_LIBS)
+		add_library(torx SHARED IMPORTED)
+		set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.so)
+		set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
+		install(PROGRAMS ${TORX_BUILD_BYPRODUCT} DESTINATION lib) # MUST be "PROGRAMS" not TARGETS or fatal error will occur
+		install(FILES ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/torx.h DESTINATION include)
+	else()
+		add_library(torx STATIC IMPORTED)
+		set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.a)
+		set_target_properties(torx PROPERTIES IMPORTED_LOCATION ${TORX_BUILD_BYPRODUCT})
+	endif()
+	ExternalProject_Add(
+		torx-download
+		GIT_REPOSITORY ${REPO_TORX}
+		GIT_TAG ${TORX_TAG}
+		CMAKE_ARGS ${CMAKE_ARGS} -D BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} -D BUILD_TORX_DEPS=${BUILD_TORX_DEPS} -D QR_GENERATOR=1 -D LAN_REPO=${LAN_REPO}
+		INSTALL_COMMAND "" ## it doesn't wait for `make install`
+		BUILD_BYPRODUCTS ${TORX_BUILD_BYPRODUCT}
+	)
+	add_dependencies(torx torx-download)
+	set(TORX_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download/include/)
 endif()
 
 execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml --target ${CMAKE_CURRENT_BINARY_DIR}/torx-gtk4.c WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
-#find_package(PNG REQUIRED)		# Requires libpng-dev to exist on local system
 pkg_check_modules(GTK4 REQUIRED gtk4 gstreamer-1.0 gstreamer-app-1.0)
 
 add_library(gif_animation SHARED gif_animation.c) # XXX XXX XXX BEWARE: The contents of this file *may* be constrained by the LGPLv2 license, therefore it is compiled seperately
@@ -151,7 +151,7 @@ install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 install(TARGETS torx-tray DESTINATION bin)
 
 # Install dynamically linked library files (if they exist)
-install(TARGETS gif_animation LIBRARY DESTINATION lib)
+install(TARGETS gif_animation DESTINATION lib)
 
 # Install the desktop file
 install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
