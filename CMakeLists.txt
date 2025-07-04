@@ -17,33 +17,34 @@ set(CMAKE_TLS_VERIFY TRUE)
 
 if(DEFINED ENV{BUILD_SHARED_LIBS} AND NOT DEFINED BUILD_SHARED_LIBS)
 	set(BUILD_SHARED_LIBS $ENV{BUILD_SHARED_LIBS})
-elseif(NOT DEFINED BUILD_SHARED_LIBS)
-	set(BUILD_SHARED_LIBS 0) ## 2024: static works, shared works other than libcrypto.a (which we statically compile on android/linux)
+elseif(NOT DEFINED BUILD_SHARED_LIBS) # Set default as static. Static works, shared works other than libcrypto.a (which we statically compile on android/linux).
+	set(BUILD_SHARED_LIBS 0)
 endif()
+message(STATUS "TorX shared libs: ${BUILD_SHARED_LIBS}")
 
 if(DEFINED ENV{BUILD_TORX_DEPS} AND NOT DEFINED BUILD_TORX_DEPS)
 	set(BUILD_TORX_DEPS $ENV{BUILD_TORX_DEPS})
-elseif(NOT DEFINED BUILD_TORX_DEPS)
+elseif(NOT DEFINED BUILD_TORX_DEPS) # Set default
 	set(BUILD_TORX_DEPS 0)
 endif()
+message(STATUS "TorX dependencies: ${BUILD_TORX_DEPS}")
 
 if(DEFINED ENV{TORX_TAG} AND NOT DEFINED TORX_TAG)
 	set(TORX_TAG $ENV{TORX_TAG})
-elseif(NOT DEFINED TORX_TAG)
+elseif(NOT DEFINED TORX_TAG) # Set default
 	set(TORX_TAG "main")
 endif()
+message(STATUS "TorX tag: ${TORX_TAG}")
 
 if(DEFINED ENV{LAN_REPO} AND NOT DEFINED LAN_REPO)
 	set(LAN_REPO $ENV{LAN_REPO})
-	message(STATUS "Using LAN repository: ${LAN_REPO}")
 	set(REPO_TORX "${LAN_REPO}/libtorx.git")
-elseif(NOT DEFINED LAN_REPO)
-	message(STATUS "Using default remote repositories instead of LAN (GTK).")
+elseif(NOT DEFINED LAN_REPO) # Set default
 	set(REPO_TORX "https://github.com/TorX-Chat/libtorx/")
 else()
-	message(STATUS "Using LAN repository: ${LAN_REPO}")
 	set(REPO_TORX "${LAN_REPO}/libtorx.git")
 endif()
+message(STATUS "TorX repository: ${LAN_REPO}")
 
 	#### C90 crap: -Wvla -Wdeclaration-after-statement
 	#### Unimportant: -Waggregate-return
@@ -56,7 +57,7 @@ if(NOT WIN32)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined -fsanitize=float-cast-overflow -fsanitize=float-divide-by-zero")
 endif()
 
-message(STATUS "Using compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "TorX compiler: ${CMAKE_C_COMPILER}")
 string(FIND ${CMAKE_C_COMPILER} "clang" found_clang)
 if(found_clang GREATER -1)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage")
@@ -75,9 +76,9 @@ find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS /usr/local/include /usr/include)
 find_library(torx NAMES torx PATHS /usr/local/lib /usr/lib)
 
 if(TORX_INCLUDE_DIR AND torx)
-	message(STATUS "Existing TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
+	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
 else()
-	message(STATUS "Existing TorX library NOT found; Building.")
+	message(STATUS "TorX library NOT found; Building.")
 	if(BUILD_SHARED_LIBS)
 		add_library(torx SHARED IMPORTED)
 		set(TORX_BUILD_BYPRODUCT ${CMAKE_CURRENT_BINARY_DIR}/torx-download-prefix/src/torx-download-build/libtorx.so)
@@ -115,10 +116,10 @@ target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_
 add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant (NOTE: at least QR_GENERATOR is NOT redundant because it affects torx.h)
 
 if(WIN32)
+message(STATUS "TorX Win32")
 target_link_libraries(
 	${PROJECT_NAME} PRIVATE
-		Winmm
-		Ws2_32
+		Winmm		## For Wave audio output
 		gif_animation
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
@@ -129,8 +130,10 @@ target_link_libraries(
 		event_core
 	##	event_pthreads
 		sqlcipher
+		Ws2_32		## This MUST be last, or linking errors WILL occur.
 )
 else()
+message(STATUS "TorX Unix")
 target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		gif_animation

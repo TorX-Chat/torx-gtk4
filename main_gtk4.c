@@ -849,10 +849,10 @@ static GdkTexture *mic_off_dark;
 //static GdkTexture *person_dark; // TODO unused so far, for replacing "Peer"
 //static GdkTexture *phone_callback_light; // TODO unused so far, might not use
 //static GdkTexture *phone_callback_dark; // TODO unused so far, might not use
-static GdkTexture *phone_callback_green;
+//static GdkTexture *phone_callback_green; // unused so far
 //static GdkTexture *phone_missed_light; // TODO unused so far, might not use
 //static GdkTexture *phone_missed_dark; // TODO unused so far, might not use
-static GdkTexture *phone_missed_red;
+//static GdkTexture *phone_missed_red; // unused so far
 static GdkTexture *volume_off_light;
 static GdkTexture *volume_off_dark;
 static GdkTexture *volume_up_light;
@@ -7170,7 +7170,7 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 	{ // Add the new data at the end because it is newest
 		if(t_peer[n].t_cache_info.audio_cache)
 		{ // Only checking one for efficiency
-printf("Checkpoint prior_count=%lu making new size %lu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
+printf("Checkpoint prior_count=%zu making new size %zu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info.audio_cache = torx_realloc(t_peer[n].t_cache_info.audio_cache, (prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info.audio_cache_len = torx_realloc(t_peer[n].t_cache_info.audio_cache_len, (prior_count + 1) * sizeof(size_t));
 			t_peer[n].t_cache_info.audio_time = torx_realloc(t_peer[n].t_cache_info.audio_time, (prior_count + 1) * sizeof(time_t));
@@ -9304,10 +9304,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 //	person_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/person_200dp_D2D2D2.svg"); // TODO unused so far, for replacing "Peer"
 //	phone_callback_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_474747.svg"); // TODO unused so far, might not use
 //	phone_callback_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_D2D2D2.svg"); // TODO unused so far, might not use
-	phone_callback_green = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_00C80A.svg");
+//	phone_callback_green = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_callback_200dp_00C80A.svg"); // TODO unused so far
 //	phone_missed_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_474747.svg"); // TODO unused so far, might not use
 //	phone_missed_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_D2D2D2.svg"); // TODO unused so far, might not use
-	phone_missed_red = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_DE3131.svg");
+//	phone_missed_red = gdk_texture_new_from_resource("/org/torx/gtk4/other/phone_missed_200dp_DE3131.svg"); // TODO unused so far
 	volume_off_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_off_200dp_474747.svg");
 	volume_off_dark = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_off_200dp_D2D2D2.svg");
 	volume_up_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/volume_up_200dp_474747.svg");
