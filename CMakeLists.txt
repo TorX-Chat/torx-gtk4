@@ -61,18 +61,16 @@ endif()
 message(STATUS "${PROJECT_NAME} C_FLAGS being set to: ${CMAKE_C_FLAGS}")
 ## END BLOCK
 
-add_subdirectory(appindicator)
-set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib/torx) ## THIS MUST OCCUR BEFORE add_executable or related, to account for /torx
 
-add_executable( ${PROJECT_NAME} main_gtk4.c )
-
-find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS /usr/local/include /usr/include)
-find_library(torx NAMES torx PATHS /usr/local/lib/torx /usr/lib/torx)
+find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_PREFIX}/lib/torx)
+find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS ${CMAKE_INSTALL_PREFIX}/include)
 
 if(TORX_INCLUDE_DIR AND torx)
 	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
 else()
 	message(STATUS "TorX library NOT found; Building.")
+	set(torx torx) # Necessary because torx is currently NOTFOUND and will not change through FetchContent_Declare, resulting in issue in target_link_libraries
 	include(FetchContent)
 	FetchContent_Declare(
 		torx
@@ -82,6 +80,11 @@ else()
 	set(QR_GENERATOR 1)
 	FetchContent_MakeAvailable(torx)
 endif()
+
+add_subdirectory(appindicator)
+set_target_properties(torx-tray PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable( ${PROJECT_NAME} main_gtk4.c )
 
 execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml --target ${CMAKE_CURRENT_BINARY_DIR}/torx-gtk4.c WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -103,7 +106,7 @@ target_link_libraries(
 		Winmm		## For Wave audio output
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		torx
+		${torx}		## MUST be ${torx} because this is the full path which may have been detected as already installed
 		png
 		sodium
 	##	event
@@ -118,7 +121,7 @@ target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		torx
+		${torx}		## MUST be ${torx} because this is the full path which may have been detected as already installed
 		png		## TODO required ONLY when BUILD_SHARED_LIBS=0
 		sodium		## TODO required ALWAYS for sodium_memzero
 	##	event
