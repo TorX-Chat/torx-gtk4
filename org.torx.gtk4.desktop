@@ -8,10 +8,9 @@ Type=Application
 Icon=org.torx.gtk4
 StartupWMClass=TorX
 Comment=A chat software for those on the Interpol Red List
-MimeType=x-scheme-handler/org.torx.gtk4.desktop;x-scheme-handler/torx;
 Categories=GNOME;GTK;Network;InstantMessaging;Chat;
 Keywords=Internet;Tor;InstantMessaging;Chat;
-X-MultipleArgs=true
+X-MultipleArgs=false
 StartupNotify=true
 X-GNOME-UsesNotifications=true
 ## Overview: https://wiki.archlinux.org/title/Desktop_entries#Basics
