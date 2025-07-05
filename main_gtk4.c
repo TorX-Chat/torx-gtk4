@@ -3755,7 +3755,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 	if(combobox != NULL) // from settings page
 	{
 		const unsigned int selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
-		snprintf(language,sizeof(language),languages_available_code[selected]);
+		snprintf(language,sizeof(language),"%s",languages_available_code[selected]);
 		sql_setting(1,-1,"language",language,strlen(language));
 	}
 	if(language[0] == '\0' || !strncmp(language,"en_US",5))
