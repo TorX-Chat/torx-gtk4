@@ -5952,7 +5952,7 @@ static int custom_setting_idle(void *arg)
 			ui_theme(global_theme);
 	}
 	else if(!strncmp(setting_name,"language",8) && sizeof(language) == setting_value_len+1)
-	{
+	{ // We are requiring the language to be exactly 5 characters long to be considered valid (ex: en_US)
 	//	printf("Checkpoint language %s vs %s\n",language,setting_value);
 		if(memcmp(language,setting_value,sizeof(language)))
 		{ // Loading a different language setting. This check is to avoid unnecessarily calling ui_show_auth_screen twice.
@@ -8763,10 +8763,10 @@ static void ui_show_main_screen(GtkWidget *window)
 static int login_act_idle(void *arg)
 {
 	const int value = vptoi(arg);
-	if(!threadsafe_read_uint8(&mutex_global_variable,&tor_running))
-		ui_show_missing_binaries();
-	else if(value == 0)
+	if(value == 0 && threadsafe_read_uint8(&mutex_global_variable,&tor_running))
 		ui_show_main_screen(t_main.main_window);
+	else if(value == 0)
+		ui_show_missing_binaries();
 	else
 	{
 		gtk_button_set_label(GTK_BUTTON(t_main.auth_button),text_enter);
