@@ -61,16 +61,13 @@ endif()
 message(STATUS "${PROJECT_NAME} C_FLAGS being set to: ${CMAKE_C_FLAGS}")
 ## END BLOCK
 
-set(CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib/torx) ## THIS MUST OCCUR BEFORE add_executable or related, to account for /torx
-
-find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_PREFIX}/lib/torx)
+find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_PREFIX}/lib)
 find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS ${CMAKE_INSTALL_PREFIX}/include)
 
 if(TORX_INCLUDE_DIR AND torx)
 	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
 else()
 	message(STATUS "TorX library NOT found; Building.")
-	set(torx torx) # Necessary because torx is currently NOTFOUND and will not change through FetchContent_Declare, resulting in issue in target_link_libraries
 	include(FetchContent)
 	FetchContent_Declare(
 		torx
@@ -106,7 +103,7 @@ target_link_libraries(
 		Winmm		## For Wave audio output
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		${torx}		## MUST be ${torx} because this is the full path which may have been detected as already installed
+		torx
 		png
 		sodium
 	##	event
@@ -121,7 +118,7 @@ target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		${torx}		## MUST be ${torx} because this is the full path which may have been detected as already installed
+		torx
 		png		## TODO required ONLY when BUILD_SHARED_LIBS=0
 		sodium		## TODO required ALWAYS for sodium_memzero
 	##	event
@@ -135,8 +132,8 @@ endif()
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 install(TARGETS torx-tray DESTINATION bin)
 
-# Install dynamically linked library files (if they exist)
-install(TARGETS gifanimation DESTINATION lib/torx)
+# Install dynamically linked module library files (if they exist), in a subdirectory to comply with https://udd.debian.org/lintian-tag/custom-library-search-path
+install(TARGETS gifanimation DESTINATION lib/${PROJECT_NAME})
 
 # Install the desktop file
 install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
