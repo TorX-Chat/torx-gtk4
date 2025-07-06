@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 set(CMAKE_TLS_VERIFY TRUE)
 
+include(GNUInstallDirs)
+
 if(DEFINED ENV{BUILD_SHARED_LIBS} AND NOT DEFINED BUILD_SHARED_LIBS)
 	set(BUILD_SHARED_LIBS $ENV{BUILD_SHARED_LIBS})
 elseif(NOT DEFINED BUILD_SHARED_LIBS) # Set default as static. Static works, shared works other than libcrypto.a (which we statically compile on android/linux).
@@ -61,8 +63,8 @@ endif()
 message(STATUS "${PROJECT_NAME} C_FLAGS being set to: ${CMAKE_C_FLAGS}")
 ## END BLOCK
 
-find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_PREFIX}/lib)
-find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS ${CMAKE_INSTALL_PREFIX}/include)
+find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_LIBDIR})
+find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS ${CMAKE_INSTALL_INCLUDEDIR})
 
 if(TORX_INCLUDE_DIR AND torx)
 	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
@@ -129,14 +131,14 @@ target_link_libraries(
 endif()
 
 # Install the executables
-install(TARGETS ${PROJECT_NAME} DESTINATION bin)
-install(TARGETS torx-tray DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS torx-tray DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# Install dynamically linked module library files (if they exist), in a subdirectory to comply with https://udd.debian.org/lintian-tag/custom-library-search-path
-install(TARGETS gifanimation DESTINATION lib/${PROJECT_NAME})
+# Install dynamically linked module library files (if they exist), in a subdirectory to comply with https://lintian.debian.org/tags/custom-library-search-path.html
+install(TARGETS gifanimation DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME})
 
 # Install the desktop file
-install(FILES org.torx.gtk4.desktop DESTINATION share/applications)
+install(FILES org.torx.gtk4.desktop DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
 
 # Install the icon
-install(FILES other/org.torx.gtk4.png DESTINATION share/icons/hicolor/128x128/apps)
+install(FILES other/org.torx.gtk4.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps)
