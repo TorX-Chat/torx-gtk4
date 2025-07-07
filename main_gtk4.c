@@ -3419,7 +3419,7 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 			gtk_overlay_set_child(GTK_OVERLAY(overlay),button);
 
 			GtkWidget *overlay2 = gtk_overlay_new();
-			gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/1.5),(int)(size_peerlist_icon_size/1.5));
+			gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
 			gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 			gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
 			GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
@@ -3491,7 +3491,7 @@ static void ui_decorate_panel_left_top(void)
 	if(totalIncoming > 0)
 	{ // Badge on home button (Note: some of it starts before)
 		GtkWidget *overlay2 = gtk_overlay_new();
-		gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/1.5),(int)(size_peerlist_icon_size/1.5));
+		gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
 		gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 		gtk_widget_set_valign(overlay2, GTK_ALIGN_START);
 		GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
@@ -4766,10 +4766,11 @@ static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 {
 	(void)bus;
 	struct play_info *play_info = (struct play_info *)arg;
+	gchar *debug_info = NULL;
+	GError *error = NULL;
 	switch (GST_MESSAGE_TYPE(msg))
 	{ // Options: https://gstreamer.freedesktop.org/documentation/gstreamer/gstmessage.html?gi-language=c#enumerations
 		case GST_MESSAGE_EOS:
-		{
 			if(play_info->loop)
 			{ // Ex: Ring
 				if(play_info->n > -1) // This should never trigger because loop and n should never both be set
@@ -4789,17 +4790,12 @@ static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 				playback_stop(play_info);
 			}
 			break;
-		}
 		case GST_MESSAGE_ERROR:
-		{
-			gchar *debug_info = NULL;
-			GError *error = NULL;
 			gst_message_parse_error(msg, &error, &debug_info);
 			g_free(debug_info);
 			error_printf(0,"GstMessage: %s",error->message);
 			g_error_free(error);
 			break;
-		}
 		default:
 			break;
 	}
@@ -7262,7 +7258,7 @@ static int stream_idle(void *arg)
 	//	printf("Checkpoint received host: %ld %ld\n",time,nstime);
 		int call_n = n;
 		int call_c = -1;
-		int group_n;
+		int group_n = -1;
 		for(size_t c = 0; c < sizeof(t_peer[call_n].t_call)/sizeof(struct t_call_list); c++)
 			if(t_peer[call_n].t_call[c].start_time == time && t_peer[call_n].t_call[c].start_nstime == nstime)
 				call_c = (int)c;
@@ -7282,7 +7278,7 @@ static int stream_idle(void *arg)
 			call_c = set_c(call_n,time,nstime); // reserve
 			t_peer[call_n].t_call[call_c].waiting = 1;
 			call_peer_joining(call_n, call_c, n); // should call before call_update
-			if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[call_n].mute == 0)
+			if((owner != ENUM_OWNER_GROUP_PEER || (group_n > -1 && t_peer[group_n].mute == 0)) && t_peer[call_n].mute == 0)
 				ring_start(); // XXX start ringing
 			char *peernick = getter_string(NULL,call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			ui_notify(text_incoming_call,peernick);
@@ -8461,7 +8457,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 		if(t_peer[n].unread > 0)
 		{ // Handle "Badges"
 			GtkWidget *overlay2 = gtk_overlay_new();
-			gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/1.5),(int)(size_peerlist_icon_size/1.5));
+			gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
 			gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 			gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
 			GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
@@ -8486,7 +8482,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 		//	if(currently speaking) // TODO
 		//	{ // Handle "Badges"
 				GtkWidget *overlay2 = gtk_overlay_new();
-				gtk_widget_set_size_request(overlay2,(int)(size_peerlist_icon_size/2/1.5),(int)(size_peerlist_icon_size/2/1.5));
+				gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/2/1.5),(int)((double)size_peerlist_icon_size/2/1.5));
 				gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 				gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
 				GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
@@ -9098,7 +9094,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 	}
 	running = 1;
 
-	getcwd(starting_dir,sizeof(starting_dir));
+	if(getcwd(starting_dir,sizeof(starting_dir))) // Must be before initial
+		error_printf(4,"Starting directory: %s\n",starting_dir);
 	binary_path = path_generator(starting_dir,argv_0);
 
 	/* Options configurable by client */
@@ -9156,13 +9153,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_LEAVE, "AAC Audio Stream Leave", "", 0, 0, 0, 0, 1, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_NON_DISCARDABLE);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_STREAM_DATA_DATE, "AAC Audio Data Date", "", 0, 1, 0, 0, 0, 0, 0, ENUM_EXCLUSIVE_NONE, 0, 1, ENUM_STREAM_DISCARDABLE);
 
-	const char *tdd = "tor_data_directory";
 	char current_working_directory[PATH_MAX];
-	getcwd(current_working_directory,sizeof(current_working_directory));
-	char tdd_full_path[PATH_MAX];
-	const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%c%s",current_working_directory,platform_slash,tdd) + 1;
-	if(tdd_len > 1)
-	{
+	if(getcwd(current_working_directory,sizeof(current_working_directory)))
+	{ // Do not use starting_dir because cwd has been changed by initial
+		char tdd_full_path[PATH_MAX];
+		const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%ctor_data_directory",current_working_directory,platform_slash) + 1;
 		tor_data_directory = torx_insecure_malloc((size_t)tdd_len);
 		memcpy(tor_data_directory,tdd_full_path,(size_t)tdd_len);
 	}
