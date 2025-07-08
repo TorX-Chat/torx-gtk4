@@ -232,7 +232,6 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	GtkTextBuffer* buffer_write;
 	struct t_cache_info {
 		unsigned char **audio_cache;
-		size_t *audio_cache_len;
 		time_t *audio_time;
 		time_t *audio_nstime;
 		time_t last_played_time;
@@ -1597,7 +1596,6 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].buffer_write = NULL;
 
 	t_peer[n].t_cache_info.audio_cache = NULL;
-	t_peer[n].t_cache_info.audio_cache_len = NULL;
 	t_peer[n].t_cache_info.audio_time = NULL;
 	t_peer[n].t_cache_info.audio_nstime = NULL;
 	t_peer[n].t_cache_info.last_played_time = 0;
@@ -2101,7 +2099,6 @@ static int onion_deleted_idle(void *arg)
 	for(uint32_t count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *); count ; ) // do not change logic without thinking
 		torx_free((void*)&t_peer[n].t_cache_info.audio_cache[--count]); // clear out all unplayed audio data
 	torx_free((void*)&t_peer[n].t_cache_info.audio_cache);
-	torx_free((void*)&t_peer[n].t_cache_info.audio_cache_len);
 	torx_free((void*)&t_peer[n].t_cache_info.audio_time);
 	torx_free((void*)&t_peer[n].t_cache_info.audio_nstime);
 	t_peer[n].t_cache_info.last_played_time = 0;
@@ -4773,8 +4770,9 @@ static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 		case GST_MESSAGE_EOS:
 			if(play_info->loop)
 			{ // Ex: Ring
+				printf("Checkpoint ring 2: play_callback\n");
 				if(play_info->n > -1) // This should never trigger because loop and n should never both be set
-					t_peer[play_info->n].t_cache_info.playing = 1;
+					error_simple(0,"Loop and n should never be both set. Coding error. Report this to UI devs."); // t_peer[play_info->n].t_cache_info.playing = 1;
 				playback_start(play_info);
 			}
 			else if(play_info->n > -1 && torx_allocation_len(t_peer[play_info->n].t_cache_info.audio_cache)/sizeof(unsigned char *))
@@ -4805,18 +4803,17 @@ static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 
 void playback_async(struct play_info *play_info,const uint8_t loop,const unsigned char *data, const size_t data_len)
 { // Play audio, without checking whether there is already audio playing.
-	if(!play_info || !data || !data_len || play_info->pipeline)
+	if(!play_info || !data || !data_len || play_info->pipeline || play_info->appsrc)
 	{
 		error_simple(0,"Sanity check failed in playback_async. Coding error. Report this.");
 		return;
 	}
 	play_info->data = torx_secure_malloc(data_len); // will be free'd by bus_callback
 	memcpy(play_info->data,data,data_len);
-	play_info->data_len = data_len;
-//	play_info->pipeline = NULL; // redundant
 	play_info->loop = loop;
 	play_info->n = -1;
 	play_info->callback = play_callback;
+printf("Checkpoint ring 0: playback_async\n");
 	playback_start(play_info);
 }
 
@@ -4831,14 +4828,13 @@ void cache_play(const int n)
 		struct play_info play_info = {0}; // will be free'd by bus_callback
 		play_info.data = t_peer[n].t_cache_info.audio_cache[0]; // will be free'd by bus_callback
 		t_peer[n].t_cache_info.audio_cache[0] = NULL; // highly necessary!!!
-		play_info.data_len = t_peer[n].t_cache_info.audio_cache_len[0];
+
 		play_info.pipeline = t_peer[n].t_cache_info.stream_pipeline;
 		play_info.loop = 0;
 		play_info.n = n;
 		play_info.callback = play_callback;
 
 		t_peer[n].t_cache_info.audio_cache = torx_realloc_shift(t_peer[n].t_cache_info.audio_cache,(count - 1) * sizeof(unsigned char *),1); // torx_realloc(
-		t_peer[n].t_cache_info.audio_cache_len = torx_realloc_shift(t_peer[n].t_cache_info.audio_cache_len,(count - 1) * sizeof(size_t),1);
 		t_peer[n].t_cache_info.audio_time = torx_realloc_shift(t_peer[n].t_cache_info.audio_time,(count - 1) * sizeof(time_t),1);
 		t_peer[n].t_cache_info.audio_nstime = torx_realloc_shift(t_peer[n].t_cache_info.audio_nstime,(count - 1) * sizeof(time_t),1);
 
@@ -7128,7 +7124,6 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 	if(prior_count && (t_peer[n].t_cache_info.audio_time[prior_count-1] > time || (t_peer[n].t_cache_info.audio_time[prior_count-1] == time && t_peer[n].t_cache_info.audio_nstime[prior_count-1] > nstime)))
 	{ // Received audio is older than something we already have in our struct, so we need to re-order it.
 		unsigned char **audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
-		size_t *audio_cache_len = torx_insecure_malloc((prior_count + 1) * sizeof(size_t));
 		time_t *audio_time = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 		time_t *audio_nstime = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 		uint8_t already_placed_new_data = 0; // must avoid placing more than once
@@ -7137,7 +7132,6 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 			if(already_placed_new_data || t_peer[n].t_cache_info.audio_time[old] > time || (t_peer[n].t_cache_info.audio_time[old] == time && t_peer[n].t_cache_info.audio_nstime[old] > nstime))
 			{ // Existing is newer, place it (may occur many times)
 				audio_cache[new] = t_peer[n].t_cache_info.audio_cache[old];
-				audio_cache_len[new] = t_peer[n].t_cache_info.audio_cache_len[old];
 				audio_time[new] = t_peer[n].t_cache_info.audio_time[old];
 				audio_nstime[new] = t_peer[n].t_cache_info.audio_nstime[old];
 				old--; // only -- when utilizing old data
@@ -7146,19 +7140,16 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 			{ // Ours is newer, place it (must only occur once)
 				audio_cache[new] = torx_secure_malloc(data_len);
 				memcpy(audio_cache[new],data,data_len);
-				audio_cache_len[new] = data_len;
 				audio_time[new] = time;
 				audio_nstime[new] = nstime;
 				already_placed_new_data = 1;
 			}
 		}
 		torx_free((void*)&t_peer[n].t_cache_info.audio_cache);
-		torx_free((void*)&t_peer[n].t_cache_info.audio_cache_len);
 		torx_free((void*)&t_peer[n].t_cache_info.audio_time);
 		torx_free((void*)&t_peer[n].t_cache_info.audio_nstime);
 
 		t_peer[n].t_cache_info.audio_cache = audio_cache;
-		t_peer[n].t_cache_info.audio_cache_len = audio_cache_len;
 		t_peer[n].t_cache_info.audio_time = audio_time;
 		t_peer[n].t_cache_info.audio_nstime = audio_nstime;
 	}
@@ -7168,20 +7159,17 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 		{ // Only checking one for efficiency
 printf("Checkpoint prior_count=%zu making new size %zu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info.audio_cache = torx_realloc(t_peer[n].t_cache_info.audio_cache, (prior_count + 1) * sizeof(unsigned char *));
-			t_peer[n].t_cache_info.audio_cache_len = torx_realloc(t_peer[n].t_cache_info.audio_cache_len, (prior_count + 1) * sizeof(size_t));
 			t_peer[n].t_cache_info.audio_time = torx_realloc(t_peer[n].t_cache_info.audio_time, (prior_count + 1) * sizeof(time_t));
 			t_peer[n].t_cache_info.audio_nstime = torx_realloc(t_peer[n].t_cache_info.audio_nstime, (prior_count + 1) * sizeof(time_t));
 		}
 		else
 		{
 			t_peer[n].t_cache_info.audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
-			t_peer[n].t_cache_info.audio_cache_len = torx_insecure_malloc((prior_count + 1) * sizeof(size_t));
 			t_peer[n].t_cache_info.audio_time = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 			t_peer[n].t_cache_info.audio_nstime = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 		}
 		t_peer[n].t_cache_info.audio_cache[prior_count] = torx_secure_malloc(data_len);
 		memcpy(t_peer[n].t_cache_info.audio_cache[prior_count],data,data_len);
-		t_peer[n].t_cache_info.audio_cache_len[prior_count] = data_len;
 		t_peer[n].t_cache_info.audio_time[prior_count] = time;
 		t_peer[n].t_cache_info.audio_nstime[prior_count] = nstime;
 	}

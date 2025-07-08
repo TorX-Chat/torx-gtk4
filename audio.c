@@ -80,8 +80,8 @@ struct rec_info {
 
 struct play_info {
 	GstElement *pipeline;
+	GstElement *appsrc;
 	unsigned char *data;
-	size_t data_len;
 	uint8_t loop; // play on repeat
 	int n; // for cache play ONLY, NOT for voice messages
 	gboolean (*callback)(GstBus *bus, GstMessage *msg, gpointer arg);
@@ -160,69 +160,73 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 
 void playback_stop(struct play_info *play_info)
 { // If calling to stop a stream, remember to t_peer[n].t_cache_info.playing = 0;
-	if(!play_info || !play_info->pipeline)
+	if(!play_info || !play_info->pipeline || !play_info->appsrc)
 	{ // Could be caused by play_info->pipeline = NULL in playback_async?
 		error_simple(0,"Nothing to stop yet playback_stop was called. Possible coding error. Report to UI Devs.");
 		return; // Bad args or already stopped
 	}
 	gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
 	gst_object_unref(play_info->pipeline);
+//	gst_object_unref(play_info->appsrc);
 	play_info->pipeline = NULL;
+//	play_info->appsrc = NULL;
 	torx_free((void*)&play_info->data);
 }
 
 void playback_start(struct play_info *play_info)
 { // Play any type of audio file, from memory, syncronously (this function WILL BLOCK until playing completes)
-//	write_bytes("fishing.aac",play_info->data,play_info->data_len);
-//	print_metadata("fishing.aac");
-	#define local_cleanup if(play_info->pipeline) { gst_object_unref(play_info->pipeline); play_info->pipeline = NULL; }
-	if(!play_info || !play_info->data || !play_info->data_len || !play_info->callback)
+	if(!play_info || !play_info->data || !play_info->callback)
 	{
 		error_simple(0, "Playback failed sanity check");
 		return;
 	}
-	GstElement *appsrc = gst_element_factory_make("appsrc", "audio-source");
-	GstElement *decoder = gst_element_factory_make("decodebin", "decoder");
-	GstElement *convert = gst_element_factory_make("audioconvert", "converter");
-	GstElement *sink = gst_element_factory_make("autoaudiosink", "audio-output");
-	if(!play_info->pipeline)
+printf("Checkpoint ring 1: playback_start pipeline ? %s appsrc ? %s\n",play_info->pipeline ? "YES" : "NO",play_info->appsrc ? "YES" : "NO");
+//	write_bytes("fishing.aac",play_info->data,torx_allocation_len(play_info->data));
+//	print_metadata("fishing.aac");
+	if(!play_info->pipeline || !play_info->appsrc)
+	{
 		play_info->pipeline = gst_pipeline_new("audio-playback");
-	if(!play_info->pipeline || !appsrc || !decoder || !convert || !sink)
-	{
-		local_cleanup
-		error_simple(0, "Failed to create GStreamer elements.");
-		return;
+		play_info->appsrc = gst_element_factory_make("appsrc", "audio-source");
+		GstElement *decoder = gst_element_factory_make("decodebin", "decoder");
+		GstElement *convert = gst_element_factory_make("audioconvert", "converter");
+		GstElement *sink = gst_element_factory_make("autoaudiosink", "audio-output");
+		if(!play_info->pipeline || !play_info->appsrc || !decoder || !convert || !sink)
+		{
+			playback_stop(play_info);
+			error_simple(0, "Failed to create GStreamer elements.");
+			return;
+		}
+		gst_bin_add_many(GST_BIN(play_info->pipeline), play_info->appsrc, decoder, convert, sink, NULL);
+		if(!gst_element_link(play_info->appsrc, decoder))
+		{
+			playback_stop(play_info);
+			error_simple(0, "Failed to link appsrc to decoder.");
+			return;
+		}
+		g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), convert);
+		if(!gst_element_link(convert, sink))
+		{
+			playback_stop(play_info);
+			error_simple(0, "Failed to link converter to sink.");
+			return;
+		}
 	}
-	gst_bin_add_many(GST_BIN(play_info->pipeline), appsrc, decoder, convert, sink, NULL);
-	if(!gst_element_link(appsrc, decoder)) // TODO gst_element_link_pads_full: assertion 'GST_IS_ELEMENT (src)' failed
-	{
-		local_cleanup
-		error_simple(0, "Failed to link appsrc to decoder.");
-		return;
-	}
-	g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), convert);
-	if(!gst_element_link(convert, sink))
-	{
-		local_cleanup
-		error_simple(0, "Failed to link converter to sink.");
-		return;
-	}
-//	g_object_set(G_OBJECT(appsrc),"stream-type", GST_APP_STREAM_TYPE_STREAM,"format", GST_FORMAT_TIME,"is-live", FALSE,NULL); // XXX TRUE here means no buffering. Must include #include <gst/app/gstappsrc.h>
-	GstBuffer *buffer = gst_buffer_new_allocate(NULL, play_info->data_len, NULL);
-	gst_buffer_fill(buffer, 0, play_info->data, play_info->data_len);
+//	g_object_set(G_OBJECT(play_info->appsrc),"stream-type", GST_APP_STREAM_TYPE_STREAM,"format", GST_FORMAT_TIME,"is-live", FALSE,NULL); // XXX TRUE here means no buffering. Must include #include <gst/app/gstappsrc.h>
+	GstBuffer *buffer = gst_buffer_new_allocate(NULL, torx_allocation_len(play_info->data), NULL);
+	gst_buffer_fill(buffer, 0, play_info->data, torx_allocation_len(play_info->data));
 	GstFlowReturn ret;
-	g_signal_emit_by_name(appsrc, "push-buffer", buffer, &ret);
+	g_signal_emit_by_name(play_info->appsrc, "push-buffer", buffer, &ret);
 	gst_buffer_unref(buffer);
 	if(ret != GST_FLOW_OK)
 	{
-		local_cleanup
+		playback_stop(play_info);
 		error_simple(0, "Failed to push buffer to appsrc.");
 		return;
 	}
-	g_signal_emit_by_name(appsrc, "end-of-stream", &ret); // TODO ??? necessary??
+	g_signal_emit_by_name(play_info->appsrc, "end-of-stream", &ret); // TODO ??? necessary??
 	if(gst_element_set_state(play_info->pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
 	{
-		local_cleanup
+		playback_stop(play_info);
 		error_simple(0, "Unable to set the pipeline to the playing state.");
 		return;
 	}
