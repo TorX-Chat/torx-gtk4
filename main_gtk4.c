@@ -236,8 +236,7 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		time_t *audio_nstime;
 		time_t last_played_time;
 		time_t last_played_nstime;
-		GstElement *stream_pipeline;
-		uint8_t playing; // can't use stream_pipeline because it is repeatedly created and null'd every ~20-50ms of playback
+		uint8_t playing;
 	} t_cache_info; // MUST BE AN ALLOCATED POINTER which is NEVER free'd or realloc'd because we *cannot* have this moving if we realloc the t_peer or t_cache_info struct since t_cache_info sees multi-threaded usage
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		int pos;
@@ -547,7 +546,6 @@ void ui_show_auth_screen(void);
 void ui_show_missing_binaries(void);
 void ring_start(void);
 void ring_stop(void);
-void playback_async(struct play_info *play_info,const uint8_t loop,const unsigned char *data, const size_t data_len);
 void cache_play(const int n);
 
 /* Global Text Declarations for ui_initialize_language() */
@@ -1600,7 +1598,6 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].t_cache_info.audio_nstime = NULL;
 	t_peer[n].t_cache_info.last_played_time = 0;
 	t_peer[n].t_cache_info.last_played_nstime = 0;
-	t_peer[n].t_cache_info.stream_pipeline = NULL;
 	t_peer[n].t_cache_info.playing = 0;
 
 	t_peer[n].pointer_location = -10;
@@ -2103,11 +2100,6 @@ static int onion_deleted_idle(void *arg)
 	torx_free((void*)&t_peer[n].t_cache_info.audio_nstime);
 	t_peer[n].t_cache_info.last_played_time = 0;
 	t_peer[n].t_cache_info.last_played_nstime = 0;
-	if(t_peer[n].t_cache_info.stream_pipeline)
-	{
-		gst_object_unref(t_peer[n].t_cache_info.stream_pipeline);
-		t_peer[n].t_cache_info.stream_pipeline = NULL;
-	}
 	t_peer[n].t_cache_info.playing = 0;
 
 	t_peer[n].pointer_location = -10;
@@ -3277,6 +3269,8 @@ static int cleanup_idle(void *arg)
 		torx_debug_level(2); // For safety, to avoid sensitive things being written to stderr by error_cb
 	}
 	t_main.window = none; // must be first, maybe even earlier
+	torx_free((void*)&current_play_ringtone.data);
+	torx_free((void*)&current_play_beep.data);
 	cleanup_lib(sig_num);
 	gtk_window_destroy(GTK_WINDOW (t_main.main_window));
 	exit(sig_num); // 2024/02/06 better than returning, which sometimes lead to gtk criticals
@@ -4758,89 +4752,70 @@ void tor_log_cb_ui(char *message)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
-
 static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 {
 	(void)bus;
 	struct play_info *play_info = (struct play_info *)arg;
 	gchar *debug_info = NULL;
 	GError *error = NULL;
-	switch (GST_MESSAGE_TYPE(msg))
-	{ // Options: https://gstreamer.freedesktop.org/documentation/gstreamer/gstmessage.html?gi-language=c#enumerations
-		case GST_MESSAGE_EOS:
-			if(play_info->loop)
-			{ // Ex: Ring
-				printf("Checkpoint ring 2: play_callback\n");
-				if(play_info->n > -1) // This should never trigger because loop and n should never both be set
-					error_simple(0,"Loop and n should never be both set. Coding error. Report this to UI devs."); // t_peer[play_info->n].t_cache_info.playing = 1;
+	const int type = GST_MESSAGE_TYPE(msg);
+	if(type == GST_MESSAGE_EOS || type == GST_MESSAGE_ERROR)
+	{ // We still need to free the data and try the next data if there is an error
+		if(play_info->loop)
+		{ // Ex: Ring
+			if(type == GST_MESSAGE_EOS) // NOT else if. We only continue looping if the first loop was successful.
 				playback_start(play_info);
-			}
-			else if(play_info->n > -1 && torx_allocation_len(t_peer[play_info->n].t_cache_info.audio_cache)/sizeof(unsigned char *))
-			{ // Ex: Streaming audio
-				torx_free((void*)&play_info->data); // necessary to free
-				t_peer[play_info->n].t_cache_info.playing = 0; // necessary or cache_play will not function
-				cache_play(play_info->n);
-			}
-			else
-			{ // Ex: Voice message
-				if(play_info->n > -1)
-					t_peer[play_info->n].t_cache_info.playing = 0;
-				playback_stop(play_info);
-			}
-			break;
-		case GST_MESSAGE_ERROR:
+		}
+		else if(play_info->n > -1)
+		{ // Ex: Streaming audio
+printf("Checkpoint setting n=%d playing to zero\n",play_info->n);
+			t_peer[play_info->n].t_cache_info.playing = 0; // necessary or cache_play will not function
+			cache_play(play_info->n);
+			torx_free((void*)&play_info->data); // necessary to free
+			torx_free((void*)&play_info); // necessary to free
+		}
+		else
+		{ // Ex: Voice message
+			playback_stop(play_info);
+			torx_free((void*)&play_info->data);
+		}
+		if(type == GST_MESSAGE_ERROR)
+		{ // Probably corrupt data, or data of a strange type
 			gst_message_parse_error(msg, &error, &debug_info);
 			g_free(debug_info);
 			error_printf(0,"GstMessage: %s",error->message);
 			g_error_free(error);
-			break;
-		default:
-			break;
+		}
 	}
-//	gst_message_unref(msg); // NO, causes errors, unnecessary here
 	return TRUE;
-}
-
-void playback_async(struct play_info *play_info,const uint8_t loop,const unsigned char *data, const size_t data_len)
-{ // Play audio, without checking whether there is already audio playing.
-	if(!play_info || !data || !data_len || play_info->pipeline || play_info->appsrc)
-	{
-		error_simple(0,"Sanity check failed in playback_async. Coding error. Report this.");
-		return;
-	}
-	play_info->data = torx_secure_malloc(data_len); // will be free'd by bus_callback
-	memcpy(play_info->data,data,data_len);
-	play_info->loop = loop;
-	play_info->n = -1;
-	play_info->callback = play_callback;
-printf("Checkpoint ring 0: playback_async\n");
-	playback_start(play_info);
 }
 
 void cache_play(const int n)
 { // For streaming audio.
 	uint32_t count;
-	if(!t_peer[n].t_cache_info.playing && (count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *)))
+	if(n > -1 && !t_peer[n].t_cache_info.playing && (count = torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *)))
 	{
+printf(YELLOW"Checkpoint cache_play count=%u\n"RESET,count);
 		t_peer[n].t_cache_info.last_played_time = t_peer[n].t_cache_info.audio_time[0]; // Important
 		t_peer[n].t_cache_info.last_played_nstime = t_peer[n].t_cache_info.audio_nstime[0]; // Important
 
-		struct play_info play_info = {0}; // will be free'd by bus_callback
-		play_info.data = t_peer[n].t_cache_info.audio_cache[0]; // will be free'd by bus_callback
-		t_peer[n].t_cache_info.audio_cache[0] = NULL; // highly necessary!!!
+		struct play_info *play_info = torx_insecure_malloc(sizeof(struct play_info)); // DO NOT STORE IN STACK because playback_start and its callbacks operate asyncronously. Must be global or heap.
+		play_info->data = t_peer[n].t_cache_info.audio_cache[0]; // will be free'd by bus_callback
 
-		play_info.pipeline = t_peer[n].t_cache_info.stream_pipeline;
-		play_info.loop = 0;
-		play_info.n = n;
-		play_info.callback = play_callback;
+		play_info->pipeline = NULL; // redundant
+		play_info->loop = 0;
+		play_info->n = n;
+		play_info->callback = play_callback;
 
 		t_peer[n].t_cache_info.audio_cache = torx_realloc_shift(t_peer[n].t_cache_info.audio_cache,(count - 1) * sizeof(unsigned char *),1); // torx_realloc(
 		t_peer[n].t_cache_info.audio_time = torx_realloc_shift(t_peer[n].t_cache_info.audio_time,(count - 1) * sizeof(time_t),1);
 		t_peer[n].t_cache_info.audio_nstime = torx_realloc_shift(t_peer[n].t_cache_info.audio_nstime,(count - 1) * sizeof(time_t),1);
 
 		t_peer[n].t_cache_info.playing = 1;
-		playback_start(&play_info);
+		playback_start(play_info);
 	}
+	else
+		printf(RED"Checkpoint NO cache_play n=%d count=%lu playing=%u\n"RESET,n,torx_allocation_len(t_peer[n].t_cache_info.audio_cache)/sizeof(unsigned char *),t_peer[n].t_cache_info.playing);
 }
 
 static void playback_message(void* arg)
@@ -4852,6 +4827,7 @@ static void playback_message(void* arg)
 	if(current_play_pausable.pipeline)
 	{
 		playback_stop(&current_play_pausable);
+		torx_free((void*)&current_play_pausable.data);
 		if(last_played_n == n && last_played_i == i)
 			return;
 	}
@@ -4859,7 +4835,14 @@ static void playback_message(void* arg)
 	last_played_i = i;
 	uint32_t len;
 	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
-	playback_async(&current_play_pausable,0,(unsigned char *)&message[4],len-4);
+
+	current_play_pausable.data = torx_secure_malloc(len-4); // will be free'd by play_callback
+	memcpy(current_play_pausable.data,(unsigned char *)&message[4],len-4);
+	current_play_pausable.loop = 0;
+	current_play_pausable.n = -1; // important
+	current_play_pausable.callback = play_callback;
+	playback_start(&current_play_pausable);
+
 	torx_free((void*)&message);
 	if(t_peer[n].t_message[i].unheard && getter_uint8(n,i,-1,offsetof(struct message_list,stat)) == ENUM_MESSAGE_RECV)
 	{
@@ -4878,26 +4861,44 @@ void ring_start(void)
 		error_simple(0,"Not ringing because other audio is playing.");
 		return; // Don't ring if something else is playing (such as playback_message)
 	}
-	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
-	size_t size = 0;
-	const void *data = g_bytes_get_data(bytes,&size);
-	playback_async(&current_play_ringtone,1,data,size);
+	if(current_play_ringtone.data == NULL)
+	{
+		GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
+		size_t data_len = 0;
+		const void *data = g_bytes_get_data(bytes,&data_len);
+
+		current_play_ringtone.data = torx_insecure_malloc(data_len); // will be free'd on shutdown
+		memcpy(current_play_ringtone.data,data,data_len);
+		current_play_ringtone.loop = 1;
+		current_play_ringtone.n = -1; // important
+		current_play_ringtone.callback = play_callback;
+	}
+	playback_start(&current_play_ringtone);
 }
 
 void ring_stop(void)
 { // Stop ringing
 	if(current_play_ringtone.pipeline)
-		playback_stop(&current_play_ringtone);
+		playback_stop(&current_play_ringtone); // Do not free data
 }
 
 static void beep(void)
 { // This function currently does not need to run in the UI thread, which is why it is not ui_prefixed
 	if(current_play_beep.pipeline)
 		return; // Already beeping
-	GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
-	size_t size = 0;
-	const void *data = g_bytes_get_data(bytes,&size);
-	playback_async(&current_play_beep,0,data,size);
+	if(current_play_beep.data == NULL)
+	{
+		GBytes *bytes = g_resources_lookup_data("/org/torx/gtk4/other/beep.wav",G_RESOURCE_LOOKUP_FLAGS_NONE,NULL);
+		size_t data_len = 0;
+		const void *data = g_bytes_get_data(bytes,&data_len);
+
+		current_play_beep.data = torx_insecure_malloc(data_len); // will be free'd on shutdown
+		memcpy(current_play_beep.data,data,data_len);
+		current_play_beep.loop = 0;
+		current_play_beep.n = -1; // important
+		current_play_beep.callback = play_callback;
+	}
+	playback_start(&current_play_beep);
 /*	#ifdef WIN32
 	{ // call PlaySound asyncronously to prevent having to CreateProcess
 		PlaySound(FILENAME_BEEP, NULL, SND_FILENAME | SND_ASYNC);
@@ -7121,8 +7122,9 @@ static void cache_add(const int n,const time_t time,const time_t nstime,const ch
 	const uint32_t current_allocation_size = torx_allocation_len(t_peer[n].t_cache_info.audio_cache);
 	const size_t prior_count = current_allocation_size/sizeof(unsigned char *);
 printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],(unsigned char)data[1],(unsigned char)data[data_len-2],(unsigned char)data[data_len-1]);
-	if(prior_count && (t_peer[n].t_cache_info.audio_time[prior_count-1] > time || (t_peer[n].t_cache_info.audio_time[prior_count-1] == time && t_peer[n].t_cache_info.audio_nstime[prior_count-1] > nstime)))
+	if(prior_count && (time < t_peer[n].t_cache_info.audio_time[prior_count-1] || (time == t_peer[n].t_cache_info.audio_time[prior_count-1] && nstime < t_peer[n].t_cache_info.audio_nstime[prior_count-1])))
 	{ // Received audio is older than something we already have in our struct, so we need to re-order it.
+printf("Checkpoint prior_count=%zu re-ordering data\n",prior_count);
 		unsigned char **audio_cache = torx_insecure_malloc((prior_count + 1) * sizeof(unsigned char *));
 		time_t *audio_time = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
 		time_t *audio_nstime = torx_insecure_malloc((prior_count + 1) * sizeof(time_t));
@@ -7155,9 +7157,9 @@ printf("Checkpoint cache_add First: %u.%u Last: %u.%u\n",(unsigned char)data[0],
 	}
 	else
 	{ // Add the new data at the end because it is newest
+printf("Checkpoint prior_count=%zu appending new data\n",prior_count);
 		if(t_peer[n].t_cache_info.audio_cache)
 		{ // Only checking one for efficiency
-printf("Checkpoint prior_count=%zu making new size %zu\n",prior_count,(prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info.audio_cache = torx_realloc(t_peer[n].t_cache_info.audio_cache, (prior_count + 1) * sizeof(unsigned char *));
 			t_peer[n].t_cache_info.audio_time = torx_realloc(t_peer[n].t_cache_info.audio_time, (prior_count + 1) * sizeof(time_t));
 			t_peer[n].t_cache_info.audio_nstime = torx_realloc(t_peer[n].t_cache_info.audio_nstime, (prior_count + 1) * sizeof(time_t));
@@ -7173,6 +7175,7 @@ printf("Checkpoint prior_count=%zu making new size %zu\n",prior_count,(prior_cou
 		t_peer[n].t_cache_info.audio_time[prior_count] = time;
 		t_peer[n].t_cache_info.audio_nstime[prior_count] = nstime;
 	}
+	cache_play(n);
 }
 
 static int stream_idle(void *arg)
@@ -7290,7 +7293,6 @@ static int stream_idle(void *arg)
 					const time_t audio_time = be32toh(align_uint32((void*)&data[data_len])); // NOTE: this is intentionally reading outside data_len because that is where *message* date/time is stored by library
 					const time_t audio_nstime = be32toh(align_uint32((void*)&data[data_len+sizeof(uint32_t)])); // NOTE: this is intentionally reading outside data_len because that is where *message* date/time is stored by library
 					cache_add(n,audio_time,audio_nstime,&data[8],data_len-8);
-					cache_play(n);
 				}
 				else
 					printf("Checkpoint Disgarding streaming audio because speaker is off\n");
