@@ -1073,7 +1073,7 @@ static void toggle_mic(GtkWidget *button,void *arg)
 		if(t_peer[call_n].t_call[call_c].joined && t_peer[call_n].t_call[call_c].mic_on && current_recording.pipeline)
 		{
 			unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
-			torx_free((void*)&to_free);
+			torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call
 		}
 		toggle_int8(&t_peer[call_n].t_call[call_c].mic_on); // safe usage
 	}
@@ -1195,7 +1195,7 @@ static void audio_ready(void *arg,const unsigned char *data,const size_t data_le
 	if(!recipient_count)
 	{
 		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
-		torx_free((void*)&to_free);
+		torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call
 		return;
 	}
 	const uint32_t message_len = (uint32_t)(8 + data_len);
@@ -1251,7 +1251,7 @@ void call_update(const int n,const int c)
 				if(t_peer[n].t_call[c].mic_on)
 				{
 					if(!current_recording.pipeline)
-						record_start(&current_recording,16000,audio_ready,iitovp(n,c));
+						record_start(&current_recording,16000,audio_ready,iitovp(n,c)); // 8000, 12000, 16000 works
 					if(global_theme == DARK_THEME)
 						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
 					else
@@ -1307,7 +1307,7 @@ void call_update(const int n,const int c)
 			else if(t_peer[n].t_call[c].mic_on && current_recording.pipeline) // + no participants
 			{ // NOTE: This probably won't trigger, or certainly won't always. Its more likely that record_stop triggers elsewhere.
 				unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
-				torx_free((void*)&to_free);
+				torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call
 			}
 			GtkWidget *button_hangup = gtk_button_new();
 			gtk_widget_add_css_class(button_hangup, "invisible");
@@ -1420,7 +1420,7 @@ void call_ignore(void *arg)
 	if(t_peer[n].t_call[c].joined && t_peer[n].t_call[c].mic_on && current_recording.pipeline)
 	{
 		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
-		torx_free((void*)&to_free);
+		torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call
 	}
 	t_peer[n].t_call[c].waiting = 0;
 	t_peer[n].t_call[c].joined = 0;
@@ -1484,7 +1484,7 @@ static void call_mute_all_except(const int except_n,const int except_c)
 						if(t_peer[call_n].t_call[c].joined && t_peer[call_n].t_call[c].mic_on && current_recording.pipeline)
 						{ // This isn't 100% certainty that the current_recording is for this call but it's a very good indication
 							unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
-							torx_free((void*)&to_free);
+							torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call
 						}
 						t_peer[call_n].t_call[c].mic_on = 0;
 						t_peer[call_n].t_call[c].speaker_on = 0;
@@ -8006,7 +8006,7 @@ static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, do
 	if(show_keyboard)
 		ui_keypress(NULL, 0, 0, 0, itovp(global_n));
 	else if(button && global_n > -1 && current_recording.pipeline)
-	{
+	{ // Handle voice message
 		size_t data_len;
 		uint32_t duration; // milliseconds
 		unsigned char *data = record_stop(&data_len,&duration,&current_recording);

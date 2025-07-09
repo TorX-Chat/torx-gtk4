@@ -242,7 +242,8 @@ static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
 	GstBuffer *buffer = gst_sample_get_buffer(sample);
 	GstMapInfo map;
 	if(gst_buffer_map(buffer, &map, GST_MAP_READ))
-	{ // Add new data to the current global buffer
+	{ // Handle new data
+printf("Checkpoint new_sample %zu\n",map.size);
 		if(rec_info->callback) // Streaming audio, handle immediately
 			rec_info->callback(rec_info->callback_arg,map.data, map.size);
 		else
@@ -287,13 +288,9 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 	rec_info->callback = callback;
 	rec_info->callback_arg = callback_arg;
 	// Configure appsink
-	g_object_set(G_OBJECT(sink), "emit-signals", TRUE, "sync", FALSE, NULL);
+	g_object_set(G_OBJECT(sink), "emit-signals", TRUE, NULL);
 	g_signal_connect(sink, "new-sample", G_CALLBACK(new_sample), rec_info);
-	// Add a bus watch
-	GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(rec_info->pipeline));
-	gst_object_unref(bus);
 	// Build the pipeline
-	gst_bin_add_many(GST_BIN(rec_info->pipeline), audio_source, encoder, sink, NULL);
 	GstCaps *caps = gst_caps_new_simple("audio/mpeg","mpegversion", G_TYPE_INT, 4,"stream-format",G_TYPE_STRING,"adts","rate", G_TYPE_INT, sample_rate,"channels", G_TYPE_INT, 1,NULL);
 	g_object_set(G_OBJECT(aac_caps), "caps", caps, NULL);
 	gst_caps_unref(caps);
@@ -305,7 +302,7 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 		rec_info->pipeline = NULL;
 		return;
 	}
-	// Start playing
+	// Start recording
 	set_time(&rec_info->start_time,&rec_info->start_nstime);
 	if(gst_element_set_state(rec_info->pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
 	{
