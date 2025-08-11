@@ -154,14 +154,22 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 } */
 
 void playback_stop(struct play_info *play_info)
-{ // If calling to stop a stream, remember to t_peer[n].t_cache_info.playing = 0;
+{ // If calling to stop a stream, remember to t_peer[n].audio_playing = 0;
 	if(!play_info || !play_info->pipeline)
 	{
 		error_simple(0,"Nothing to stop yet playback_stop was called. Possible coding error. Report to UI Devs.");
 		return; // Bad args or already stopped
 	}
+printf("Checkpoint playback_stop 1\n");
+//	GstState current_state, pending_state;
+//	gst_element_get_state(play_info->pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
+//	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
+//	{
+//		printf("Checkpoint playback_stop 2\n");
 	gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
-	gst_object_unref(play_info->pipeline);
+//	}
+printf("Checkpoint playback_stop 3\n");
+	gst_object_unref(play_info->pipeline); // TODO this may not trigger when playback_stop is called from play_callback
 	play_info->pipeline = NULL;
 }
 
@@ -176,12 +184,8 @@ void playback_start(struct play_info *play_info)
 printf("Checkpoint playback_start data_len=%u\n",data_len);
 //	write_bytes("fishing.aac",play_info->data,data_len);
 //	print_metadata("fishing.aac");
-	if(play_info->pipeline)
-	{ // There is nothing we can do with this from here; we need a fresh one.
-		gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
-		gst_object_unref(play_info->pipeline);
-		play_info->pipeline = NULL;
-	}
+	if(play_info->pipeline) // There is nothing we can do with this from here; we need a fresh one.
+		playback_stop(play_info);
 	play_info->pipeline = gst_pipeline_new("audio-playback");
 	GstElement *appsrc = gst_element_factory_make("appsrc", "audio-source");
 	GstElement *decoder = gst_element_factory_make("decodebin", "decoder");
@@ -234,16 +238,15 @@ printf("Checkpoint playback_start data_len=%u\n",data_len);
 }
 
 static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
-{
+{ // Recording
 	struct rec_info *rec_info = (struct rec_info*)data;
 	GstSample *sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
-	if(!sample)
+	if(!sample || !data)
 		return GST_FLOW_ERROR;
 	GstBuffer *buffer = gst_sample_get_buffer(sample);
 	GstMapInfo map;
 	if(gst_buffer_map(buffer, &map, GST_MAP_READ))
 	{ // Handle new data
-printf("Checkpoint new_sample %zu\n",map.size);
 		if(rec_info->callback) // Streaming audio, handle immediately
 			rec_info->callback(rec_info->callback_arg,map.data, map.size);
 		else
@@ -268,7 +271,11 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 		error_simple(0,"Sanity check failed in record_start. Perhaps there is an existing recording?");
 		return;
 	}
-	rec_info->pipeline = gst_pipeline_new("audio_stream");
+	else if(!(rec_info->pipeline = gst_pipeline_new("audio_stream")))
+	{
+		error_simple(0,"Audio: pipeline could not be obtained.");
+		return;
+	}
 	GstElement *audio_source = gst_element_factory_make("autoaudiosrc", "audio_source");
 	GstElement *sink = gst_element_factory_make("appsink", "audio_sink");
 	GstElement *encoder = gst_element_factory_make("avenc_aac", "aac_enc");
@@ -277,9 +284,11 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 	GstElement *audioconvert = gst_element_factory_make("audioconvert", "audio_convert");
 	GstElement *capsfilter = gst_element_factory_make("capsfilter", "caps_filter");
 	GstElement *queue = gst_element_factory_make("queue", "queue");
-	if(!rec_info->pipeline || !audio_source || !encoder || !sink || !aacparse || !aac_caps || !audioconvert || !capsfilter || !queue)
+	if(!audio_source || !encoder || !sink || !aacparse || !aac_caps || !audioconvert || !capsfilter || !queue)
 	{
 		error_simple(0,"Audio: Element could not be obtained, or sanity check otherwise failed.");
+		gst_object_unref(rec_info->pipeline);
+		rec_info->pipeline = NULL;
 		return;
 	}
 	rec_info->buffer = NULL;
@@ -314,10 +323,10 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 }
 
 unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *rec_info)
-{ // XXX WARNING: Frees rec_info
+{
 	if(!rec_info || !rec_info->pipeline)
 	{
-		error_simple(0,"Bad arguments passed to record_stop. Coding error. Report this.");
+		error_simple(0,"Recording is already stopped (not an error).");
 		if(data_len)
 			*data_len = 0;
 		if(duration)
@@ -332,11 +341,21 @@ unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *
 		const double diff = (double)(end_time - rec_info->start_time) * 1e9 + (double)(end_nstime - rec_info->start_nstime);
 		*duration = (uint32_t)(diff / 1e6); // convert nanoseconds to milliseconds
 	}
-	gst_element_send_event(rec_info->pipeline, gst_event_new_eos());
-	gst_element_set_state(rec_info->pipeline, GST_STATE_NULL);
-/*	print_duration(rec_info->pipeline); */
-	gst_object_unref(GST_OBJECT(rec_info->pipeline));
+	/* XXX DO NOT CHANGE THE ORDER OR CONTENTS OF THIS BLOCK XXX START */
+	GstElement *pipeline = rec_info->pipeline;
 	rec_info->pipeline = NULL;
+//	print_duration(rec_info->pipeline);
+	printf("Checkpoint record_stop 1\n");
+//	GstState current_state, pending_state;
+//	gst_element_get_state(pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
+//	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
+//	{
+//		printf("Checkpoint record_stop 2\n");
+	gst_element_set_state(pipeline, GST_STATE_NULL); // XXX HARD STOP. If used on streams, function will NOT continue, will NOT return.
+//	}
+	printf("Checkpoint record_stop 3\n");
+	gst_object_unref(GST_OBJECT(pipeline)); // THIS WILL NOT TRIGGER WHEN STOPPING STREAMS
+	/* XXX DO NOT CHANGE THE ORDER OR CONTENTS OF THIS BLOCK XXX END */
 	if(data_len)
 		*data_len = torx_allocation_len(rec_info->buffer);
 	return rec_info->buffer;

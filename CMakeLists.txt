@@ -76,7 +76,6 @@ else()
 		GIT_REPOSITORY ${REPO_TORX}
 		GIT_TAG ${TORX_TAG}
 	)
-	set(QR_GENERATOR 1)
 	FetchContent_MakeAvailable(torx)
 endif()
 
@@ -96,7 +95,7 @@ target_link_libraries(gifanimation ${GTK4_LIBRARIES}) # necessary on Windows, un
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_CFLAGS_OTHER})
-add_compile_definitions(SQLITE_HAS_CODEC QR_GENERATOR SECURE_MALLOC) # necessary, not redundant (NOTE: at least QR_GENERATOR is NOT redundant because it affects torx.h)
+add_compile_definitions(SQLITE_HAS_CODEC SECURE_MALLOC) # necessary, not redundant
 
 if(WIN32)
 message(STATUS "TorX Win32")
