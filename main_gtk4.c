@@ -174,8 +174,6 @@ static int global_theme = -1;
 static int log_unread = 1;
 static int vertical_mode = 0; // see ui_determine_orientation()
 static int8_t force_sign = 0; // TODO Should be 0. Global value for testing only. This should be per-peer. can add timestamp to message (as a salt to prevent relay attacks in groups), Tor project does this with all signed messages.
-static uint8_t save_all_stickers = 0; // Do not default to 1 for legal reasons
-static uint8_t send_sticker_data = 1; // not really that useful because if we don't send stickers, people can't request stickers.
 static uint8_t close_to_tray = 0; // works well but currently not offered as UI option, in favor of minimize_to_tray
 static uint8_t minimize_to_tray = 1;
 static uint8_t display_images = 1; // TODO should be clickable (to show larger), should automatically render after 100%. Gifs are a problem if corrupt (because we don't have sufficient sanity checks). Other corrupt images are fine.
@@ -205,22 +203,9 @@ static pthread_t thread_icon_communicator = {0};
 
 const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".svg"}; // case insensitive
 
-#define MAX_PEERS 4096 // TODO this isnt ideal because library has no such limitation. this is just laziness.
-#define MAX_STICKER_REQUESTS 15 // Concurrent number, per peer. keep it low for RAM reasons and to avoid spamming people. this is just laziness.
-#define STICKERS_LIST_SIZE 500
 #define ARBITRARY_ARRAY_SIZE 512
 
 #define ENUM_STATUS_GROUP_CTRL 4
-
-static struct sticker_list {
-	GdkPaintable *paintable_animated; // Check before printing
-	GdkPaintable *paintable_static; // DO NOT FREE upon delete UNTIL shutdown. // TODO display except when mouseover, in ui_sticker_chooser
-	unsigned char checksum[CHECKSUM_BIN_LEN];
-	int peers[MAX_PEERS]; // must initialize as -1. This is a list of peers we sent this sticker to. Only these peers can request data, to prevent fingerprinting by sticker list.
-	unsigned char *data; // Only exists for unsaved stickers
-	size_t data_len; // Only exists for unsaved stickers
-	GtkWidget *outer_box; // this is for sticker popover, which holds the green square
-} sticker [STICKERS_LIST_SIZE] = {0};
 
 static struct t_peer_list { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
 	size_t unread; // number of new unread messages (currently since startup only, otherwise this needs to be in peer not t_peer
@@ -250,7 +235,6 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 		GtkWidget *column; // Vertical box, contains who is calling and then a row of applicable widgets related to the call
 		uint8_t ringing;
 	} *t_call;
-	unsigned char stickers_requested[MAX_STICKER_REQUESTS][CHECKSUM_BIN_LEN];
 } *t_peer; // TODO do not initialize automatically, but upon use
 
 #define create_button(text,callback,vp)\
@@ -481,12 +465,7 @@ enum spin { // for spin_change
 enum ui_protocols { // XXX Do NOT move AAC_AUDIO_MSG* to library. Leave them as examples of UI implemented protocols. XXX
 	ENUM_PROTOCOL_AAC_AUDIO_MSG = 43474, // uint32_t duration (milliseconds, big endian) + data
 	ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE = 29304, // uint32_t duration (milliseconds, big endian) + data
-	ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED = 47904, // uint32_t duration (milliseconds, big endian) + data
-	ENUM_PROTOCOL_STICKER_HASH = 29812,		// Sticker will be sending a sticker hash. If peer doesn't have the sticker, request.
-	ENUM_PROTOCOL_STICKER_HASH_PRIVATE = 40505,
-	ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED = 1891,
-	ENUM_PROTOCOL_STICKER_REQUEST = 24931,		// hash
-	ENUM_PROTOCOL_STICKER_DATA_GIF = 46093		// hash + data
+	ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED = 47904 // uint32_t duration (milliseconds, big endian) + data
 	// TODO vibration... but do it only in flutter as a UI specific protocol
 };
 
@@ -651,7 +630,7 @@ static const char *text_set_select_language = {0};
 static const char *text_set_onionid_or_torxid = {0};
 static const char *text_set_global_log = {0};
 static const char *text_set_auto_resume_inbound = {0};
-static const char *text_set_save_all_stickers = {0};
+static const char *text_set_stickers_save_all = {0};
 static const char *text_set_download_directory = {0};
 static const char *text_tor = {0};
 static const char *text_snowflake = {0};
@@ -1275,7 +1254,6 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
 	t_peer[n].t_file = torx_insecure_malloc(sizeof(struct t_file_list) *11);
-	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	return 0;
 }
 
@@ -1815,7 +1793,6 @@ static int onion_deleted_idle(void *arg)
 		initialize_i_idle(iitovp(n,i)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
 	for(int f = 0 ; f <= 10 ; f++) // re-initialize t_file
 		initialize_f_idle(iitovp(n,f)); // TODO Note: this doesn't g_free things if they aren't already NULL (neither did the realloc above). We maybe should if(stuff) g_free(stuff) before the realloc.
-	sodium_memzero(t_peer[n].stickers_requested,sizeof(t_peer[n].stickers_requested));
 	if(generated_n == n)
 	{
 		generated_n = -1;
@@ -2113,14 +2090,14 @@ void onion_ready_cb_ui(const int n)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,onion_ready_idle,itovp(n),NULL);
 }
 
-static GdkPaintable *gif_static_new_from_data(const unsigned char *data,const size_t data_len)
-{
+/* static GdkPaintable *gif_static_new_from_data(const unsigned char *data,const size_t data_len)
+{ // XXX DO NO DELETE. This will be used when not mousing over stickers, to save CPU XXX
 	if(!data || !data_len)
 		return NULL;
 	GBytes* bytes = g_bytes_new_static(data,data_len);
 	GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 	return GDK_PAINTABLE(texture);
-}
+} */
 
 static GdkPaintable *gif_animated_new_from_data(const unsigned char *data,const size_t data_len)
 {
@@ -2133,79 +2110,6 @@ static GdkPaintable *gif_animated_new_from_data(const unsigned char *data,const 
 	GdkPaintable *paintable = g_object_new(GTK_MAKES_ME_RAGE,"gif-data",&gif_data,NULL);
 //	g_object_unref(paintable);
 	return paintable;
-}
-
-static int ui_sticker_set(const unsigned char checksum[CHECKSUM_BIN_LEN])
-{
-	if(!checksum)
-	{
-		error_simple(0,"Null passed to set_sticker. Coding error. Report this.");
-		breakpoint();
-		return -1;
-	}
-	int s = 0;
-	while(s < STICKERS_LIST_SIZE && sticker[s].paintable_static && memcmp(sticker[s].checksum,checksum,CHECKSUM_BIN_LEN))
-		s++;
-	if(s == STICKERS_LIST_SIZE)
-	{
-		error_simple(0,"Hit STICKERS_LIST_SIZE, cannot search more stickers.");
-		breakpoint();
-		return -1;
-	}
-	else if (sticker[s].paintable_static == NULL)
-		return -1; // Does not exist yet
-	return s;
-}
-
-static void ui_sticker_save(const void *arg)
-{
-	const int s = vptoi(arg);
-	if(s < 0 || !sticker[s].data || !sticker[s].data_len)
-	{
-		error_simple(0,"Cannot save sticker. No data. Coding error. Report this.");
-		breakpoint();
-		return;
-	}
-	char setting_name[256];
-	char *encoded = b64_encode(sticker[s].checksum,sizeof(sticker[s].checksum));
-	snprintf(setting_name,sizeof(setting_name),"sticker-gif-%s",encoded);
-	torx_free((void*)&encoded);
-	sql_setting(0,-1,setting_name,(const char*)sticker[s].data,sticker[s].data_len);
-	sodium_memzero(setting_name,sizeof(setting_name));
-	torx_free((void*)&sticker[s].data);
-	sticker[s].data_len = 0;
-	if(t_main.popover_sticker && GTK_IS_WIDGET(t_main.popover_sticker) && sticker[s].outer_box)
-		gtk_widget_remove_css_class(sticker[s].outer_box,"unsaved_sticker");
-}
-
-static int ui_sticker_register(const unsigned char *data,const size_t data_len)
-{ // If utilizing, be sure to check return for if(s > -1 && sticker[s].paintable_animated != NULL)
-	unsigned char checksum[CHECKSUM_BIN_LEN];
-	if(!data || !data_len || b3sum_bin(checksum,NULL,data,0,data_len) != data_len)
-	{
-		sodium_memzero(checksum,sizeof(checksum));
-		return -1; // bug
-	}
-	int s = 0;
-	while(s < STICKERS_LIST_SIZE && sticker[s].paintable_static && memcmp(sticker[s].checksum,checksum,CHECKSUM_BIN_LEN))
-		s++;
-	if(s == STICKERS_LIST_SIZE)
-	{
-		error_simple(0,"Hit STICKERS_LIST_SIZE, cannot add more stickers.");
-		sodium_memzero(checksum,sizeof(checksum));
-		breakpoint();
-		return -1; // bug
-	}
-	if(sticker[s].paintable_animated == NULL)
-	{ // Register new sticker
-		for(int iter = MAX_PEERS-1 ; iter > -1 ; iter--)
-			sticker[s].peers[iter] = -1; // initialize as array of -1
-		sticker[s].paintable_static = gif_static_new_from_data(data,data_len);
-		sticker[s].paintable_animated = gif_animated_new_from_data(data,data_len);
-		memcpy(sticker[s].checksum,checksum,sizeof(checksum));
-	}
-	sodium_memzero(checksum,sizeof(checksum));
-	return s;
 }
 
 static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,char **global_location,const char *name)
@@ -2256,11 +2160,8 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 				return;
 			size_t data_len = 0;
 			unsigned char *data = read_bytes(&data_len,path);
-			const int s = ui_sticker_register(data,data_len);
-			sticker[s].data = torx_secure_malloc(data_len);
-			memcpy(sticker[s].data,data,data_len);
-			sticker[s].data_len = data_len;
-			ui_sticker_save(itovp(s));
+			const int s = sticker_register(data,data_len);
+			sticker_save(s);
 			torx_free((void*)&data);
 			g_free(path); path = NULL;
 		}
@@ -2366,33 +2267,24 @@ pixbuf_paintable_new_from_resource (const char *path)
                        NULL);
 }*/
 
-static void ui_sticker_delete(const gpointer *arg)
+static void ui_sticker_save(gpointer *arg)
 {
 	const int s = vptoi(arg);
-	if(s < 0)
-		return; // should not happen
-	char setting_name[256];
-	char *encoded = b64_encode(sticker[s].checksum,sizeof(sticker[s].checksum));
-	snprintf(setting_name,sizeof(setting_name),"sticker-gif-%s",encoded);
-	torx_free((void*)&encoded);
-	sql_delete_setting(0,-1,setting_name);
-	sodium_memzero(setting_name,sizeof(setting_name));
+	sticker_save(s);
+}
 
-	g_object_unref(sticker[s].paintable_animated); sticker[s].paintable_animated = NULL;
-//	GdkPaintable *paintable_static; // DO NOT FREE upon delete UNTIL shutdown.
-//	unsigned char checksum[CHECKSUM_BIN_LEN]; // should zero on shutdown, no need to zero when deleting?
-//	int peers[MAX_PEERS];
-	torx_free((void*)&sticker[s].data);
-	sticker[s].data_len = 0;
-	if(t_main.popover_sticker && GTK_IS_WIDGET(t_main.popover_sticker) && sticker[s].outer_box)
-		gtk_widget_set_visible(sticker[s].outer_box,FALSE);
+static void ui_sticker_delete(gpointer *arg)
+{
+	const int s = vptoi(arg);
+	sticker_delete(s);
 }
 
 static void ui_sticker_send(gpointer *arg)
 {
 	const int s = vptoi(arg);
-	if(s < 0 || sticker[s].paintable_animated == NULL)
-		return;
+	char *checksum = sticker_retrieve_checksum(s);
+	if(!checksum)
+		return; // invalid s
 	int g = -1;
 	uint8_t g_invite_required = 0;
 	const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -2405,18 +2297,13 @@ static void ui_sticker_send(gpointer *arg)
 	if(t_peer[global_n].pm_n > -1)
 	{
 		recipient_n = t_peer[global_n].pm_n;
-		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH_PRIVATE,sticker[s].checksum,(uint32_t)sizeof(sticker[s].checksum));
+		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH_PRIVATE,checksum,torx_allocation_len(checksum));
 	}
 	else if(owner == ENUM_OWNER_GROUP_CTRL && g_invite_required) // date && sign private group messages
-		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,sticker[s].checksum,(uint32_t)sizeof(sticker[s].checksum));
+		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,checksum,torx_allocation_len(checksum));
 	else // regular messages, private messages (in authenticated pipes), public messages in public groups (in authenticated pipes)
-		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH,sticker[s].checksum,(uint32_t)sizeof(sticker[s].checksum));
-	// THE FOLLOWING IS IMPORTANT TO PREVENT FINGERPRINTING BY STICKER WALLET. XXX Note: this is in two places because reliability is better this way
-	int iter = 0;
-	while(iter < MAX_PEERS && sticker[s].peers[iter] != recipient_n && sticker[s].peers[iter] > -1)
-		iter++;
-	if(iter < MAX_PEERS && sticker[s].peers[iter] < 0) // Register a new recipient of sticker so that they can request data
-		sticker[s].peers[iter] = recipient_n;
+		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH,checksum,torx_allocation_len(checksum));
+	torx_free((void*)&checksum);
 }
 
 static inline GtkWidget *ui_sticker_box(GdkPaintable *paintable,const int square_size)
@@ -2463,26 +2350,27 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 //	gtk_grid_set_column_homogeneous(GTK_GRID(grid),TRUE);
 //	gtk_grid_set_row_homogeneous(GTK_GRID(grid),TRUE);
 	int x = 0,y = 0;
-	for(int s = 0; sticker[s].paintable_static; s++)
-	{ // Attach stickers TODO have them only be animated while mouseover
-		if(sticker[s].paintable_animated == NULL)
-			continue; // was deleted
-		GtkWidget *inner_box = ui_sticker_box(sticker[s].paintable_animated,size_sticker_small); // alt: sticker[s].paintable_static)
+	for(int s = 0; (uint32_t)s < sticker_retrieve_count(); s++)
+	{ // Attach stickers TODO have them only be animated while mouseover, ie: utilize gif_static_new_from_data
+		unsigned char *data = sticker_retrieve_data(NULL,s);
+		GtkWidget *inner_box = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_small);
+		torx_free((void*)&data);
 		if(inner_box)
 		{ // verify sticker is valid
-			sticker[s].outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
+			GtkWidget *outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 			gtk_widget_set_margin_top(inner_box, size_spacing_three);
 			gtk_widget_set_margin_bottom(inner_box,size_spacing_three);
 			gtk_widget_set_margin_start(inner_box,size_spacing_three);
 			gtk_widget_set_margin_end(inner_box,size_spacing_three);
-			if(sticker[s].data)
-				gtk_widget_add_css_class(sticker[s].outer_box,"unsaved_sticker");
-			gtk_box_append (GTK_BOX(sticker[s].outer_box), inner_box);
+			const uint8_t saved = sticker_retrieve_saved(s);
+			if(!saved)
+				gtk_widget_add_css_class(outer_box,"unsaved_sticker");
+			gtk_box_append (GTK_BOX(outer_box), inner_box);
 
-			GtkWidget *popover_substicker = custom_popover_new(sticker[s].outer_box);
+			GtkWidget *popover_substicker = custom_popover_new(outer_box);
 			GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 			gtk_widget_add_css_class(box, "popover_inner");
-			if(sticker[s].data)
+			if(!saved)
 				create_button(text_save,ui_sticker_save,itovp(s))
 			create_button(text_delete,ui_sticker_delete,itovp(s))
 			gtk_popover_set_child(GTK_POPOVER(popover_substicker),box);
@@ -2492,9 +2380,9 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 			g_signal_connect_swapped(long_press, "cancelled", G_CALLBACK(ui_sticker_send),itovp(s)); // DO NOT FREE arg because this only gets passed ONCE.
 			g_signal_connect_swapped(long_press, "pressed", G_CALLBACK(gtk_popover_popup),GTK_POPOVER(popover_substicker)); // DO NOT FREE arg because this only gets passed ONCE.
 
-			gtk_widget_add_controller(sticker[s].outer_box, GTK_EVENT_CONTROLLER(long_press));
+			gtk_widget_add_controller(outer_box, GTK_EVENT_CONTROLLER(long_press));
 
-			gtk_grid_attach (GTK_GRID(grid),sticker[s].outer_box,x,y,1,1);
+			gtk_grid_attach (GTK_GRID(grid),outer_box,x,y,1,1);
 			if(x < MAX_STICKER_COLUMNS-1)
 				x++;
 			else
@@ -2876,7 +2764,10 @@ static void ui_leave_mouse(void)
 static void ui_minimize(void)
 {
 	if(minimize_to_tray && appindicator_functioning)
+	{
 		gtk_widget_set_visible(t_main.main_window,FALSE);
+		sticker_offload_saved();
+	}
 	else
 		gtk_window_minimize(GTK_WINDOW(t_main.main_window));
 	ui_leave_mouse(); // necessary
@@ -3563,7 +3454,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_onionid_or_torxid = "TorX-ID (<=52 char) or OnionID (56 char with checksum)";
 		text_set_global_log = "Message Logging (Global Default)";
 		text_set_auto_resume_inbound = "Auto-Resume Inbound Transfers";
-		text_set_save_all_stickers = "Save All Stickers";
+		text_set_stickers_save_all = "Save All Stickers";
 		text_set_download_directory = "Select Download Directory";
 		text_tor = "Tor"; // part B
 		text_snowflake = "Snowflake"; // part B
@@ -3757,7 +3648,7 @@ after each comes online and receives the code.";
 		text_set_onionid_or_torxid = "TorX-ID（≤52字符）或洋葱ID（含校验和56字符）";
 		text_set_global_log = "消息日志（全域默认）";
 		text_set_auto_resume_inbound = "自动恢复入站传输";
-		text_set_save_all_stickers = "保存所有表情包";
+		text_set_stickers_save_all = "保存所有表情包";
 		text_set_download_directory = "选择下载目录";
 		//text_set_tor = "选择自定义Tor二进制文件路径（立即生效）";
 		text_tor = "Tor"; // part B
@@ -3851,15 +3742,15 @@ static void ui_change_resume(const gpointer combobox)
 	sql_setting(0,-1,"auto_resume_inbound",p1,strlen(p1));
 }
 
-static void ui_change_save_all_stickers(const gpointer combobox)
+static void ui_change_stickers_save_all(const gpointer combobox)
 { // Setting
+	int8_t local_setting = 0;
 	if(gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox)) == 1)
-		save_all_stickers = 1; // NOTE: is in UI thread already, no need to use locks
-	else
-		save_all_stickers = 0; // NOTE: is in UI thread already, no need to use locks
+		stickers_save_all = 1; // NOTE: is in UI thread already, no need to use locks
+	threadsafe_write(&mutex_global_variable,&stickers_save_all,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%u",save_all_stickers);
-	sql_setting(0,-1,"save_all_stickers",p1,strlen(p1));
+	snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"stickers_save_all",p1,strlen(p1));
 }
 
 static void ui_change_daemonize(const gpointer combobox)
@@ -4245,7 +4136,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_resume_inbound,&ui_change_resume,threadsafe_read_uint8(&mutex_global_variable,&auto_resume_inbound),text_disable,text_enable,NULL));
 
 	// Save all stickers (toggle)
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_save_all_stickers,&ui_change_save_all_stickers,save_all_stickers,text_disable,text_enable,NULL));
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_stickers_save_all,&ui_change_stickers_save_all,threadsafe_read_uint8(&mutex_global_variable,&stickers_save_all),text_disable,text_enable,NULL));
 
 	// Downloads Folder
 	GtkWidget *box0 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
@@ -5665,8 +5556,6 @@ static int custom_setting_idle(void *arg)
 		size_window_default_height = (int)strtoll(setting_value, NULL, 10);
 	else if(!strncmp(setting_name,"minimize_to_tray",16))
 		minimize_to_tray = (uint8_t)strtoull(setting_value, NULL, 10);
-	else if(!strncmp(setting_name,"save_all_stickers",17))
-		save_all_stickers = (uint8_t)strtoull(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"mute",4))
 		t_peer[n].mute = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"unread",6))
@@ -5684,8 +5573,6 @@ static int custom_setting_idle(void *arg)
 			ui_decorate_panel_left_top();
 		}
 	}
-	else if(plaintext == 0 && !strncmp(setting_name,"sticker-gif-",12))
-		ui_sticker_register((unsigned char *)setting_value,setting_value_len);
 	else if(plaintext == 0)
 		error_printf(3,"Unrecognized encrypted config option: %s",setting_name);
 	else if(plaintext == 1)
@@ -6010,7 +5897,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 			create_button(text_copy,ui_message_copy,data)
 		else if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
 		{ // checking that data and data_len exist before displaying (ie, check that the sticker isn't already saved)
-			const int s = ui_sticker_set((const unsigned char*)message);
+			const int s = set_s((const unsigned char*)message);
 			if(s > -1)
 				create_button(text_save,ui_sticker_save,itovp(s))
 		}
@@ -6166,8 +6053,11 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		}
 		else if(message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
 		{
-			const int s = ui_sticker_set((unsigned char*)message);
-			if(s < 0 || !(msg = ui_sticker_box(sticker[s].paintable_animated,size_sticker_large)))
+			const int s = set_s((unsigned char*)message);
+			unsigned char *data = sticker_retrieve_data(NULL,s);
+			msg = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_large);
+			torx_free((void*)&data);
+			if(msg == NULL)
 			{ // Does not exist yet
 				if(stat == ENUM_MESSAGE_RECV && ENABLE_SPINNERS)
 				{
@@ -6426,18 +6316,6 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	uint32_t message_len;
 	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
-	if(scroll == 2 && stat != ENUM_MESSAGE_RECV && message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
-	{ // THE FOLLOWING IS IMPORTANT TO PREVENT FINGERPRINTING BY STICKER WALLET. XXX NOTE: To allow offline stickers to work for GROUP messages, also permit scroll == 1 (prolly very bad idea thou because unlimitd peers could repeatedly request)
-		const int s = ui_sticker_set((unsigned char*)message);
-		if(s > -1)
-		{ // Will always be true because we are sending a sticker here
-			int iter = 0;
-			while(iter < MAX_PEERS && sticker[s].peers[iter] != n && sticker[s].peers[iter] > -1)
-				iter++;
-			if(iter < MAX_PEERS && sticker[s].peers[iter] < 0) // Register a new recipient of sticker so that they can request data
-				sticker[s].peers[iter] = n;
-		}
-	}
 	if(!notifiable)
 	{ // not notifiable message type or group peer is ignored. could still flash something.
 		if(n == global_n && scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
@@ -6613,116 +6491,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 static int print_message_idle(void *arg)
 { // this step is necessary
 	struct printing *printing = (struct printing*) arg; // Casting passed struct
-	const int n = printing->n;
-	const int i = printing->i;
-	const int scroll = printing->scroll;
-	if(scroll == 1)
-	{ // New message coming in
-		const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
-		if(stat == ENUM_MESSAGE_RECV)
-		{ // XXX Put as little here as possible before checking the protocol XXX
-			const int p_iter = getter_int(n,i,-1,offsetof(struct message_list,p_iter));
-			if(p_iter < 0)
-			{
-				error_simple(0,"print_message_idle called on p_iter < 0. Coding error. Report this.");
-				torx_free((void*)&printing);
-				return 0;
-			}
-			pthread_rwlock_rdlock(&mutex_protocols); // 🟧
-			const uint16_t protocol = protocols[p_iter].protocol;
-			pthread_rwlock_unlock(&mutex_protocols); // 🟩
-			if(protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED)
-			{ // Received sticker
-				uint32_t message_len;
-				char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
-				if(message && message_len >= CHECKSUM_BIN_LEN)
-				{
-					const int s = ui_sticker_set((unsigned char*)message);
-					if(s < 0)
-					{ // Don't have sticker, consider requesting it, if we haven't already
-						int y = 0;
-						while (y < MAX_STICKER_REQUESTS && memcmp(t_peer[n].stickers_requested[y], message, CHECKSUM_BIN_LEN))
-							y++;
-						if (y == MAX_STICKER_REQUESTS)
-						{ // We haven't yet requested it.
-							y = 0; // necessary
-							while(y < MAX_STICKER_REQUESTS && !is_null(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN))
-								y++;
-							if (y < MAX_STICKER_REQUESTS)
-							{ // Found a slot
-								memcpy(t_peer[n].stickers_requested[y],message,CHECKSUM_BIN_LEN);
-								message_send(n,ENUM_PROTOCOL_STICKER_REQUEST,t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
-							}
-							else
-								error_simple(0,"Requested MAX_STICKER_REQUESTS stickers already. Not requesting more."); // Should increase. Do not delete this error message.
-						}
-						else
-							error_simple(0,"Requested this sticker already. Not requesting again."); // TODO delete
-					}
-				}
-				torx_free((void*)&message);
-			}
-			else if(protocol == ENUM_PROTOCOL_STICKER_REQUEST && send_sticker_data)
-			{ // Recieved sticker request
-				uint32_t message_len;
-				char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
-				if(message && message_len)
-				{
-					const int s = ui_sticker_set((unsigned char*)message);
-					if(s > -1)
-					{
-						int relevant_n = n; // For groups, this should be group_n
-						for(int cycle = 0; cycle < 2; cycle++)
-						{
-							const uint8_t owner = getter_uint8(relevant_n,INT_MIN,-1,offsetof(struct peer_list,owner));
-							int iter = 0;
-							while(iter < MAX_PEERS && sticker[s].peers[iter] != relevant_n && sticker[s].peers[iter] > -1)
-								iter++;
-							if(iter < MAX_PEERS && relevant_n != sticker[s].peers[iter])
-							{
-							//	printf("Checkpoint TRYING s=%d owner=%u\n",s,owner); // FINGERPRINTING
-								if(owner == ENUM_OWNER_GROUP_PEER)
-								{ // if not on peer_n(pm), try group_n (public)
-									const int g = set_g(n,NULL);
-									relevant_n = getter_group_int(g,offsetof(struct group_list,n));
-									continue;
-								}
-								else
-									error_simple(0,"Peer requested a sticker they dont have access to (either they are buggy or malicious, or our MAX_PEERS is too small). Report this.");
-							}
-							else
-							{ // Peer requested a sticker we have
-								if(sticker[s].data && sticker[s].data_len) // Peer requested an unsaved sticker we have
-									message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,sticker[s].data,(uint32_t)sticker[s].data_len);
-								else
-								{ // Peer requested a saved sticker we have
-									char *p = b64_encode(message,CHECKSUM_BIN_LEN);
-									char query[256]; // somewhat arbitrary size
-									snprintf(query,sizeof(query),"sticker-gif-%s",p);
-									torx_free((void*)&p);
-									size_t setting_value_len;
-									unsigned char *setting_value = sql_retrieve(&setting_value_len,0,query);
-									sodium_memzero(query,sizeof(query));
-								//	printf("Checkpoint setting_value_len: %lu\n",setting_value_len);
-									unsigned char *data = torx_secure_malloc(CHECKSUM_BIN_LEN + setting_value_len);
-									memcpy(data,message,CHECKSUM_BIN_LEN);
-									memcpy(&data[CHECKSUM_BIN_LEN],setting_value,setting_value_len);
-									torx_free((void*)&setting_value);
-									message_send(n,ENUM_PROTOCOL_STICKER_DATA_GIF,data,CHECKSUM_BIN_LEN + (uint32_t)setting_value_len); // TODO TODO TODO get it from sql_setting
-									torx_free((void*)&data);
-								}
-							}
-							break;
-						}
-					}
-					else
-						error_simple(0,"Peer requested sticker we do not have. Maybe we deleted it.");
-				}
-				torx_free((void*)&message);
-			}
-		}
-	}
-	ui_print_message(n,i,scroll);
+	ui_print_message(printing->n,printing->i,printing->scroll);
 	torx_free((void*)&printing);
 	return 0;
 }
@@ -6823,56 +6592,7 @@ static int stream_idle(void *arg)
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
 		goto end; // ignored or blocked
-	if(data_len >= CHECKSUM_BIN_LEN && protocol == ENUM_PROTOCOL_STICKER_DATA_GIF)
-	{
-		int s = ui_sticker_set((unsigned char*)data);
-		if(s > -1)
-			error_simple(0,"We already have this sticker data, do not register or print again.");
-		else
-		{ // Fresh sticker data. Save it and print it
-			unsigned char checksum[CHECKSUM_BIN_LEN];
-			if(b3sum_bin(checksum,NULL,(unsigned char*)&data[CHECKSUM_BIN_LEN],0,data_len - CHECKSUM_BIN_LEN) != data_len - CHECKSUM_BIN_LEN || memcmp(checksum,data,sizeof(checksum)))
-				error_simple(0,"Received bunk sticker data from peer. Checksum failed. Disgarding sticker.");
-			else
-			{
-				s = ui_sticker_register((unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
-				sticker[s].data = torx_secure_malloc(data_len - CHECKSUM_BIN_LEN);
-				memcpy(sticker[s].data,(unsigned char*)&data[CHECKSUM_BIN_LEN],data_len - CHECKSUM_BIN_LEN);
-				sticker[s].data_len = data_len - CHECKSUM_BIN_LEN;
-				if(save_all_stickers)
-					ui_sticker_save(itovp(s));
-				int y = 0;
-				while (y < MAX_STICKER_REQUESTS && memcmp(t_peer[n].stickers_requested[y],checksum,sizeof(checksum)))
-					y++;
-				if (y < MAX_STICKER_REQUESTS)
-					sodium_memzero(t_peer[n].stickers_requested[y],CHECKSUM_BIN_LEN);
-				torx_read(n) // 🟧🟧🟧
-				for(int i = peer[n].max_i; i > peer[n].min_i - 1 ; i--)
-				{ // Rebuild any messages that had this sticker
-					const int p_iter_local = peer[n].message[i].p_iter;
-					if(p_iter_local > -1)
-					{
-						pthread_rwlock_rdlock(&mutex_protocols); // 🟧
-						const uint16_t protocol_local = protocols[p_iter_local].protocol;
-						pthread_rwlock_unlock(&mutex_protocols); // 🟩
-						if((protocol_local == ENUM_PROTOCOL_STICKER_HASH || protocol_local == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED || protocol_local == ENUM_PROTOCOL_STICKER_HASH_PRIVATE)
-						&& !memcmp(peer[n].message[i].message,sticker[s].checksum,CHECKSUM_BIN_LEN))
-						{ // Find the first relevant message and update it TODO this might not work in groups
-							torx_unlock(n) // 🟩🟩🟩
-							printf("Checkpoint should be rebuilding a sticker n=%d i=%i (might not work in groups)\n",n,i);
-							ui_print_message(n,i,2);
-							torx_read(n) // 🟧🟧🟧
-							break;
-						}
-					}
-				}
-				torx_unlock(n) // 🟩🟩🟩
-			}
-			sodium_memzero(checksum,sizeof(checksum));
-		}
-	}
-	else
-		error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
+	error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
 	torx_free((void*)&data);
 	torx_free((void*)&arg);
 	return 0;
@@ -8687,12 +8407,6 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	initial();
 	gst_init(NULL, NULL);
-
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH,"Sticker","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,"Sticker Date Signed","",0,1,1,1,1,0,0,ENUM_EXCLUSIVE_GROUP_MSG,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_HASH_PRIVATE,"Sticker Private","",0,0,0,1,1,0,0,ENUM_EXCLUSIVE_GROUP_PM,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_REQUEST,"Sticker Request","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,0);
-	protocol_registration(ENUM_PROTOCOL_STICKER_DATA_GIF,"Sticker data","",0,0,0,0,0,0,0,ENUM_EXCLUSIVE_NONE,0,1,ENUM_STREAM_NON_DISCARDABLE); // NOTE: if making !stream, need to move related handler from stream_cb to print_message_idle
 
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
 	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 1, 1, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
