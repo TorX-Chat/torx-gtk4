@@ -108,7 +108,7 @@ XXX DESIGN XXX
 XXX ERRORS XXX
 
 * Need to get/run "GTK inspector"
-* GTK_IS_WIDGET is causing invalid reads everywhere we use it. It is not suitable for what we use it for. Adding a null check does not help or aid in any way.
+* GTK_IS_WIDGET is causing invalid reads everywhere we use it. Same with G_IS_ It is not suitable for what we use it for. Adding a null check does not help or aid in any way. The best way is to check t_main.window.
 * gtk_label_set_max_width_chars() in print_message_cb is ignored completely
 * XXX PANGO wrapping is causing the issue with 3 second message loading. Apparently the height of our lines is not stable due to a GTK or PANGO error. See #GTK
 * No panel icon functioning
@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.35 2025/07/09 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.35 2025/10/17 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -156,7 +156,7 @@ static GtkWidget *popover_level_one = NULL; // XXX For working-around GTK bug on
 
 static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will be set upon successful connection.
 /*#ifdef WIN32
-	#define ENABLE_APPINDICATOR 0 // TODO no, lets let it ride. docs say windows is at least somewhat supported.
+	#define ENABLE_APPINDICATOR 0 // TODO no, lets let it ride. docs say windows is at least somewhat supported. Testing on Win 10 showed it working.
 #else
 	#define ENABLE_APPINDICATOR 1
 #endif*/
@@ -245,25 +245,14 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 	gtk_box_append(GTK_BOX(box),button);\
 }
 
-/*
-#define create_button_for_popover(text,callback,vp)\
+#define popdown(global_popover)\
 {\
-	GtkWidget *button = gtk_button_new();\
-	gtk_button_set_label(GTK_BUTTON(button),text);\
-	g_signal_connect(button, "clicked", G_CALLBACK(callback), vp);\
-	gtk_box_append(GTK_BOX(box),button);\
-} // Calback function format: static void function(GtkWidget *button,const void *arg)
-
-static GtkWidget *ui_popover_destroy(GtkWidget *widget)
-{ // Discovers parent popover and pops it down // does not work on multi-level popovers, so not using
-	GtkWidget *parent = gtk_widget_get_parent(widget);
-	while(parent && !GTK_IS_POPOVER(parent) && !GTK_IS_WINDOW(parent))
-		parent = gtk_widget_get_parent(parent);
-	if(GTK_IS_POPOVER(parent))
-		gtk_popover_popdown(GTK_POPOVER(parent));
-	return parent;
+	if(global_popover && GTK_IS_WIDGET(global_popover))\
+	{\
+		gtk_popover_popdown(GTK_POPOVER(global_popover));\
+		global_popover = NULL;\
+	}\
 }
-*/
 
 static struct { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily initialize as NULL
 	GListStore *treestore_incoming;
@@ -432,7 +421,9 @@ enum windows { // for t_main.window = none
 	window_edit_torrc = 8,
 	window_log_tor = 9,
 	window_log_torx = 10,
-	window_group_generate = 11
+	window_group_generate = 11,
+	window_missing_binaries,
+	window_vertical_chatlist // Chat list, in vertical mode only
 };
 
 enum buttons { // for ui_button_generate
@@ -940,11 +931,7 @@ static void custom_popover_closed(GtkPopover* self,gpointer user_data)
 { // XXX For working-around GTK bug on double level popovers
 	(void)user_data;
 	(void)self;
-	if(popover_level_one)
-	{
-		gtk_popover_popdown(GTK_POPOVER(popover_level_one));
-		popover_level_one = NULL;
-	}
+	popdown(popover_level_one)
 }
 
 static GtkWidget *custom_popover_new(GtkWidget *parent)
@@ -1521,6 +1508,8 @@ static void ui_notify(const char *heading, const char *message)
 
 static int ui_populate_list(void *arg)
 { // Note: since we already have arranged lists of n provided by refined_list, we might not need treestore ? TODO XXX (its being depreciated anyway, need to replace it)
+	if(t_main.window != window_home)
+		return 0; // not an error
 	const uint8_t list = (uint8_t)vptoi(arg);
 	treeview_n = -1;
 	int len = 0;
@@ -1540,7 +1529,7 @@ static int ui_populate_list(void *arg)
 		breakpoint();
 		return -1;
 	}
-	if(list_store && G_IS_LIST_STORE(list_store)) // TODO 2025/04/29 Hit segfault on G_IS_LIST_STORE when generating a SING, adding it, and then generating a MULT at approximately the same time of SING deletion. Possible race condition???
+	if(list_store && G_IS_LIST_STORE(list_store))
 	{
 		g_list_store_remove_all(list_store);
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
@@ -1772,11 +1761,27 @@ void incoming_friend_request_cb_ui(const int n)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
 }
 
+static size_t ui_unread_clear(const int n)
+{ // Note: No action need be taken to update the tray icon, icon_communicator() will poll the variables every 500ms. ui_decorate_panel_left_top may need to be called if in horizontal mode.
+	size_t cleared = 0;
+	if(n > -1 && t_peer[n].unread > 0)
+	{ // MUST check n > -1, and not treat -1 as global
+		cleared = t_peer[n].unread;
+		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+		if (owner == ENUM_OWNER_GROUP_CTRL)
+			totalUnreadGroup -= t_peer[n].unread;
+		else
+			totalUnreadPeer -= t_peer[n].unread;
+		t_peer[n].unread = 0; // reset unread count for specific peer
+	}
+	return cleared;
+}
+
 static int onion_deleted_idle(void *arg)
 {
 	const int n = vptoii_n(arg);
 	const int owner = vptoii_i(arg);
-	t_peer[n].unread = 0;
+	const size_t cleared = ui_unread_clear(n); // yes, necessary.
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
@@ -1834,6 +1839,8 @@ static int onion_deleted_idle(void *arg)
 	} */
 	if(global_n == n)
 		ui_go_back(itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
+	else if(cleared)
+		ui_decorate_panel_left_top();
 	return 0;
 }
 
@@ -1941,8 +1948,7 @@ void peer_loaded_cb_ui(const int n)
 static void ui_copy_qr(GtkWidget *button,const void *arg)
 { // UTF8 only, no PNG
 	(void)button;
-	if(t_main.popover_qr && GTK_IS_WIDGET(t_main.popover_qr))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_qr)); // TODO throws GTK error if not existing. should check first
+	popdown(t_main.popover_qr)
 	const int n = vptoi(arg);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	struct qr_data *qr_data;
@@ -2020,9 +2026,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 static void ui_save_qr(GtkWidget *button,void *arg)
 { /* Opens a dialog for saving QR to file */
 	(void)button;
-	if(t_main.popover_qr && GTK_IS_WIDGET(t_main.popover_qr))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_qr));
-
+	popdown(t_main.popover_qr)
 	GtkFileDialog *dialog = gtk_file_dialog_new();
 	gtk_file_dialog_set_modal(dialog,TRUE); // block interaction with UI
 	gtk_file_dialog_set_title(dialog,text_save_qr); // also: gtk_file_dialog_set_filters
@@ -2567,16 +2571,6 @@ static void ui_go_back(void *arg)
 { // go back
 	treeview_n = -1;
 	const int n = vptoi(arg);
-//	vertical_mode = 1;
-	if(n > -1 && t_peer[n].unread > 0)
-	{ // NOTE: we already do this when we select_changed, but we are doing it again in case main_window wasn't visible at that time. TODO Consider having this done when group_n > -1 when the window becomes re-visible
-		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-		if (owner == ENUM_OWNER_GROUP_CTRL)
-			totalUnreadGroup -= t_peer[n].unread;
-		else
-			totalUnreadPeer -= t_peer[n].unread;
-      		t_peer[n].unread = 0; // reset unread count for specific peer
-	}
 	if(n > -1 && t_peer[n].buffer_write != NULL)
 	{ // Draft exists
 		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -2589,7 +2583,10 @@ static void ui_go_back(void *arg)
 		}
 	}
 	if(vertical_mode)
-		t_main.window = window_auth; // not sure if this is ideal. we don't have an enum for chatlist
+	{
+		vertical_mode = 1; // Left panel only
+		t_main.window = window_vertical_chatlist;
+	}
 	ui_decorate_panel_left(-1); // calls ui_determine_orientation()
 	gtk_widget_set_visible(t_main.panel_left,TRUE);
 	if(vertical_mode)
@@ -2630,8 +2627,7 @@ static void ui_toggle_mute(const gpointer data)
 	const int peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index));
 	// Update Setting
 	toggle_int8(&t_peer[n].mute); // safe usage
-	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+	popdown(t_main.popover_group_peerlist)
 	// Save Setting
 	char p1[21];
 	snprintf(p1,sizeof(p1),"%d",t_peer[n].mute);
@@ -2648,8 +2644,7 @@ static void ui_toggle_mute_button(GtkWidget *button,const gpointer data)
 static void ui_call_start(const gpointer data)
 {
 	const int call_n = vptoi(data); // DO NOT FREE ARG
-	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+	popdown(t_main.popover_group_peerlist)
 	call_start(call_n);
 }
 
@@ -2669,8 +2664,7 @@ static void ui_toggle_block(const gpointer data)
 	const int n = vptoi(data); // DO NOT FREE ARG
 	block_peer(n);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+	popdown(t_main.popover_group_peerlist)
 	if(owner != ENUM_OWNER_GROUP_PEER)
 	{
 		ui_set_image_lock(n);
@@ -2693,8 +2687,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 	if(n != -1) // Not global kill
 		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active)));
 	kill_code(n,NULL);
-	if(t_main.popover_more && GTK_IS_WIDGET(t_main.popover_more))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_more));
+	popdown(t_main.popover_more)
 //	error_simple("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
 //	ui_go_back(data); // do not do here, already doing in onion_deleted_idle
 }
@@ -2705,8 +2698,7 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 	const int peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index));
 	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
 	takedown_onion(peer_index,1);
-	if(t_main.popover_more && GTK_IS_WIDGET(t_main.popover_more))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_more));
+	popdown(t_main.popover_more)
 //	ui_go_back(data); // do not do here, already doing in onion_deleted_idle
 }
 
@@ -2792,15 +2784,12 @@ static void ui_determine_orientation(void)
 		if(width >= size_horizontal_mode_minimum_width)
 			vertical_mode = 0;
 	}
-	else // 0
+	else if(width < size_horizontal_mode_minimum_width)
 	{
-		if(width < size_horizontal_mode_minimum_width)
-		{
-			if(t_main.window == window_auth)
-				vertical_mode = 1;
-			else
-				vertical_mode = 2;
-		}
+		if(t_main.window == window_auth || t_main.window == window_missing_binaries || t_main.window == window_vertical_chatlist)
+			vertical_mode = 1; // Left panel only
+		else
+			vertical_mode = 2; // Right panel only
 	}
 }
 
@@ -3176,8 +3165,7 @@ static void ui_decorate_panel_left(const int n)
 static void ui_override_save_torrc(GtkWidget *button,char *torrc_content_local)
 { // do we need button? could use _swapped
 	(void) button;
-	if(t_main.popover_torrc_errors && GTK_IS_WIDGET(t_main.popover_torrc_errors))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_torrc_errors));
+	popdown(t_main.popover_torrc_errors)
 	torrc_save(torrc_content_local);
 	sodium_memzero(torrc_content_local,strlen(torrc_content_local));
 	g_free(torrc_content_local);
@@ -3215,8 +3203,8 @@ static void ui_save_torrc(GtkWidget *button, gpointer arg)
 
 static void ui_show_edit_torrc(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_edit_torrc;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -3273,8 +3261,8 @@ static void ui_change_password(GtkWidget *button,const char *arg)
 
 static void ui_show_change_password(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_change_password;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -3987,8 +3975,7 @@ static void ui_choose_file(GtkWidget *button,const gpointer arg)
 	const int int_arg = vptoi(arg);
 	if(int_arg == 2) // For adding stickers only
 	{ // TODO could support jpeg/png for static stickers... would have to limit size... and metadata is a bigger concern. Probably not a good idea.
-		if(t_main.popover_sticker && GTK_IS_WIDGET(t_main.popover_sticker))
-			gtk_popover_popdown(GTK_POPOVER(t_main.popover_sticker));
+		popdown(t_main.popover_sticker)
 		GtkFileFilter *filter = gtk_file_filter_new();
 		gtk_file_filter_add_mime_type(filter,"image/gif"); // works!
 	//	gtk_file_filter_add_suffix (filter,".gif"); // works!
@@ -4080,8 +4067,8 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 
 static void ui_show_settings(void)
 { // Do not permit debug level as an option. Could make life easier but could also be very dangerous for people.
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_settings;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -4508,7 +4495,7 @@ static void beep(void)
 static int error_idle(void *arg)
 {
 	char *error_message = (char *) arg;
-	if(t_main.window != none && GTK_IS_WIDGET(t_main.main_window)) // main_window // TODO GTK_IS_WIDGET can lead to invalid reads, including here on shutdown
+	if(t_main.window != none && t_main.main_window && GTK_IS_WIDGET(t_main.main_window)) // TODO GTK_IS_WIDGET can lead to invalid reads, including here on shutdown
 	{
 		GtkTextIter end;
 		gtk_text_buffer_get_end_iter(t_main.torx_log_buffer,&end);
@@ -4538,8 +4525,8 @@ void fatal_cb_ui(char *error_message)
 
 static void ui_show_log_tor(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_log_tor;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -4560,8 +4547,8 @@ static void ui_show_log_tor(void)
 
 static void ui_show_log_torx(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_log_torx;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -4595,8 +4582,8 @@ static void ui_show_log_torx(void)
 
 static void ui_show_global_killcode(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_global_killcode;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -4688,6 +4675,8 @@ static void ui_n_from_treeview(gpointer data)
 
 static void ui_rename(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
 { // Make iter editable, and have a signal for after it gets changed
+	if(t_main.window != window_home)
+		return; // This function is only for window_home
 	(void) pspec;
 	const int n = vptoi(data);
 	if(!gtk_editable_label_get_editing(GTK_EDITABLE_LABEL(self)))
@@ -4706,8 +4695,8 @@ static void ui_rename(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
 
 static void ui_accept(void)
 {
-	if(treeview_n < 0)
-		return;
+	if(treeview_n < 0 || t_main.window != window_home)
+		return; // This function is only for window_home
 	totalIncoming--;
 	ui_decorate_panel_left_top();
 	peer_accept(treeview_n);
@@ -4717,8 +4706,8 @@ static void ui_accept(void)
 
 static void ui_delete(void)
 {
-	if(treeview_n < 0)
-		return;
+	if(treeview_n < 0 || t_main.window != window_home)
+		return; // This function is only for window_home
 	gtk_widget_set_visible(t_main.button_accept,FALSE);
 	gtk_widget_set_visible(t_main.button_reject,FALSE);
 	gtk_widget_set_visible(t_main.button_copy,FALSE);
@@ -4919,8 +4908,8 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 
 static void ui_show_home(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_home;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -5200,8 +5189,8 @@ static void ui_group_generate(GtkWidget *button,const void *arg)
 
 static void ui_show_group_generate(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_group_generate;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -5318,8 +5307,8 @@ static void ui_add_peer(void)
 
 static void ui_show_generate(void)
 {
-	if(vertical_mode > 0)
-		vertical_mode = 2;
+	if(vertical_mode)
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_main;
 	ui_decorate_panel_left(-1);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.scrolled_window_right);
@@ -5735,10 +5724,8 @@ static void ui_activity_rename(const gpointer data)
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
-	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
-	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+	popdown(t_main.popover_message)
+	popdown(t_main.popover_group_peerlist)
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 	uint32_t len;
 	char *peernick = getter_string(&len,t_peer[global_n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
@@ -5769,10 +5756,13 @@ static void ui_establish_pm(const int n,void *popover)
 	sodium_memzero(cancel_message,sizeof(cancel_message));
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
-	if(t_main.popover_group_peerlist && GTK_IS_WIDGET(t_main.popover_group_peerlist))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_group_peerlist));
+//	popdown(t_main.popover_group_peerlist)
 	if(popover)
+	{
 		gtk_popover_popdown(GTK_POPOVER(popover));
+		t_main.popover_group_peerlist = NULL; // it will be one of these, but not both, so we just NULL both.
+		t_main.popover_message = NULL; // it will be one of these, but not both, so we just NULL both.
+	}
 }
 
 static void ui_private_message(const void *data)
@@ -5795,8 +5785,7 @@ static void ui_activity_edit(const gpointer data)
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
 	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
 	gtk_widget_set_visible(t_main.button_activity,TRUE);
-	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
+	popdown(t_main.popover_message)
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
 	const int p_iter = getter_int(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,p_iter));
 	if(p_iter < 0)
@@ -5824,8 +5813,7 @@ static void ui_message_delete(const gpointer data)
 	const int n = vptoii_n(data);
 	const int i = vptoii_i(data);
 	message_edit(n,i,NULL);
-	if(t_main.popover_message && GTK_IS_WIDGET(t_main.popover_message))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_message));
+	popdown(t_main.popover_message)
 }
 
 static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,const gpointer data)
@@ -6793,8 +6781,7 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 	const int g = global_group;
 	const uint32_t g_peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
 	const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
-	if(t_main.popover_invite && GTK_IS_WIDGET(t_main.popover_invite))
-		gtk_popover_popdown(GTK_POPOVER(t_main.popover_invite));
+	popdown(t_main.popover_invite)
 	if(g_invite_required == 1 && g_peercount == 0)
 		message_send(n,ENUM_PROTOCOL_GROUP_OFFER_FIRST,itovp(global_group),GROUP_OFFER_FIRST_LEN);
 	else
@@ -7332,15 +7319,7 @@ static void ui_select_changed(const void *arg)
 	int g = -1;
 //	if(t_peer[n].unread)
 //	{ // TODO 2024/03/22 this conditional SHOULD exist, but it causes problems in horizonal mode because "clicked" callbacks are only available once.
-		if(t_peer[n].unread > 0)
-		{
-			if (owner == ENUM_OWNER_GROUP_CTRL)
-				totalUnreadGroup -= t_peer[n].unread;
-			else
-				totalUnreadPeer -= t_peer[n].unread;
-	      		t_peer[n].unread = 0; // reset unread count for specific peer
-		//	ui_decorate_panel_left_top(); // no need because ui_decorate_panel_left is later called
-		}
+		ui_unread_clear(n);
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 			ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 		else
@@ -7351,7 +7330,7 @@ static void ui_select_changed(const void *arg)
 //	}
 //	t_peer[global_n].pm_n = -1; // this is necessary, do not remove this
 	if(vertical_mode)
-		vertical_mode = 2;
+		vertical_mode = 2; // Right panel only
 	t_main.window = window_peer;
 	global_n = n; // XXX THIS WILL GET RESET TO -1 if t_main.window = window_peer is not set before ui_decorate_panel_left() XXX
 	ui_decorate_panel_left(n);
@@ -7913,7 +7892,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	return chat_info;
 }
 
-static void ui_show_main_screen(GtkWidget *window)
+static void ui_show_main_screen(void)
 { // This sets up a lot of stuff that only has to be done once.
 	gtk_widget_add_css_class(t_main.main_window, "window_main");
 	ui_determine_orientation();
@@ -7960,8 +7939,9 @@ static void ui_show_main_screen(GtkWidget *window)
 	gtk_frame_set_child (GTK_FRAME (frame), t_main.paned);
 
 	/* Setup first window */
-	if(vertical_mode > 0)
+	if(vertical_mode)
 	{
+		t_main.window = window_vertical_chatlist;
 		vertical_mode = 1;
 		ui_decorate_panel_left(-1);
 	}
@@ -8010,7 +7990,7 @@ static void ui_show_main_screen(GtkWidget *window)
 	gtk_box_append(GTK_BOX(t_main.custom_switcher_box),custom_switcher);
 
 	/* Set Panel Size Requests */
-	gtk_window_set_child(GTK_WINDOW(window), frame);
+	gtk_window_set_child(GTK_WINDOW(t_main.main_window), frame);
 //	gtk_widget_set_size_request (t_main.panel_left,size_natural,size_natural);
 //	gtk_widget_set_size_request (t_main.panel_right,size_natural,size_natural);
 
@@ -8025,7 +8005,7 @@ static int login_act_idle(void *arg)
 {
 	const int value = vptoi(arg);
 	if(value == 0 && threadsafe_read_uint8(&mutex_global_variable,&tor_running))
-		ui_show_main_screen(t_main.main_window);
+		ui_show_main_screen();
 	else if(value == 0)
 		ui_show_missing_binaries();
 	else
@@ -8184,14 +8164,14 @@ static void try_now(void)
 	if(!keyed_local)
 		ui_show_auth_screen();
 	else if(tor_running_local) // This is not a certainty. The binary could be bad.
-		ui_show_main_screen(t_main.main_window);
+		ui_show_main_screen();
 	else // Bad binary, clear it
 		ui_show_missing_binaries();
 }
 
 void ui_show_missing_binaries(void)
 { // Shows on startup if tor_location is unset
-	t_main.window = window_auth; // Auth
+	t_main.window = window_missing_binaries;
 	gtk_widget_add_css_class(t_main.main_window, "window_auth");
 
 	GtkWidget *auth_background = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_five);
@@ -8354,7 +8334,18 @@ static void ui_activate(GtkApplication *application,void *arg)
 		if(t_main.main_window && gtk_widget_get_visible(t_main.main_window))
 			gtk_widget_set_visible(t_main.main_window,FALSE); // hide
 		else if(t_main.main_window)
+		{ // Note: Same memory space, this is OUR APPLICATION receiving a signal.
+			if(global_n > -1)
+			{
+				const size_t cleared = ui_unread_clear(global_n); // Clears tray icon and RAM
+				if(!vertical_mode && cleared)
+				{ // Clears left panel
+					ui_decorate_panel_left_top();
+					ui_populate_peers(itovp(ENUM_STATUS_FRIEND));
+				}
+			}
 			gtk_window_present(GTK_WINDOW(t_main.main_window)); // show
+		}
 		return;
 	}
 	running = 1;
