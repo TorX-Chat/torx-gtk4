@@ -2150,23 +2150,13 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			handle_chosen_file_and_restart_tor(button,file,&conjure_location,name);
 		else if(!strncmp(name,"custom_input_location",21))
 		{
-			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
-			char *path = g_file_get_path(file); // free'd
-			char *privkey = custom_input_file(path);
-			gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_privkey)),privkey,-1);
-			torx_free((void*)&privkey);
-			g_free(path); path = NULL;
-		}
-		else if(!strncmp(name,"button_add_sticker",18))
-		{
 			char *path = g_file_get_path(file); // free'd
 			if(!path)
 				return;
-			size_t data_len = 0;
-			unsigned char *data = read_bytes(&data_len,path);
-			const int s = sticker_register(data,data_len);
-			sticker_save(s);
-			torx_free((void*)&data);
+			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
+			char *privkey = custom_input_file(path);
+			gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_privkey)),privkey,-1);
+			torx_free((void*)&privkey);
 			g_free(path); path = NULL;
 		}
 // ??? what??	fprintf(stderr,"GTK bug where placeholder text is not overwritten. Should be fixed by publication time.\n"); // https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/4875
@@ -2175,15 +2165,25 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 
 static void ui_on_choose_files(GtkFileDialog *dialog,GAsyncResult *res,const void *arg)
 { // For selecting file(s) for sending
-	const int n = vptoi(arg); // DO NOT FREE ARG
+	const int n = vptoii_n(arg); // DO NOT FREE ARG
+	const int int_arg = vptoii_i(arg); // file is 1, sticker is 2
 	GListModel *file_list = gtk_file_dialog_open_multiple_finish (dialog,res,NULL);
 	if(file_list)
 	{
 		guint z = 0;
-        	for(GFile *file ; (file = g_list_model_get_item(file_list,z)) != NULL ; z++)
+		char *file_path; // free'd
+		for(GFile *file ; (file = g_list_model_get_item(file_list,z)) != NULL  && (file_path = g_file_get_path(file)) != NULL; z++)
 		{
-			char *file_path = g_file_get_path(file); // free'd
-			file_send(n,file_path);
+			if(int_arg == 2)
+			{ // Stickers
+				size_t data_len = 0;
+				unsigned char *data = read_bytes(&data_len,file_path);
+				const int s = sticker_register(data,data_len);
+				sticker_save(s);
+				torx_free((void*)&data);
+			}
+			else // Files
+				file_send(n,file_path);
 			g_free(file_path); file_path = NULL;
 		}
 	}
@@ -3984,10 +3984,10 @@ static void ui_choose_file(GtkWidget *button,const gpointer arg)
 		gtk_file_dialog_set_filters(dialog,G_LIST_MODEL(filters));
 		gtk_file_dialog_set_default_filter (dialog,filter);
 	}
-	if(int_arg == 1) // For file_send only
-	{  // For file_send only, select multiple
+	if(int_arg == 1 || int_arg == 2) // For file_send only
+	{  // For file_send and stickers only, select multiple
 		gtk_file_dialog_set_title(dialog,text_choose_files); // also: gtk_file_dialog_set_filters
-		gtk_file_dialog_open_multiple (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_files,itovp(n));
+		gtk_file_dialog_open_multiple (dialog,GTK_WINDOW(t_main.main_window),NULL,(GAsyncReadyCallback)ui_on_choose_files,iitovp(n,int_arg));
 	}
 	else
 	{  // For selecting a file for reasons other than file sharing
@@ -7195,7 +7195,6 @@ GtkWidget *ui_button_generate(const int type,const int n)
 			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_active)));
 		else
 			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive_light)));
-		gtk_widget_set_name(button,"button_add_sticker");
 		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_file),itovp(2)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
