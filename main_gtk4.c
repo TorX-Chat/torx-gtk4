@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.35 2025/10/17 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.35 2025/10/20 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -184,7 +184,8 @@ static uint8_t start_maximized = 0;
 static uint8_t start_minimized = 0;
 static uint8_t start_daemonized = 0;
 static uint8_t no_password = 0; // UI setting that is only relevant during first_start
-
+static uint8_t missed_scroll = 0; // due to minimized_currently
+static uint8_t minimized_currently = 0; // tracking whether client is currently minimized (to tray or otherwise)
 static pid_t tray_pid = -1;
 static size_t totalUnreadPeer = 0;
 static size_t totalUnreadGroup = 0;
@@ -2753,13 +2754,17 @@ static void ui_leave_mouse(void)
 	gtk_widget_add_controller(t_main.headerbar_buttons_box_enter,  GTK_EVENT_CONTROLLER(ev_enter));
 }
 
+static void ui_minimize_to_tray(void)
+{ // Do not call directly except from clicks on tray icons, because must check appindicator_functioning first
+	gtk_widget_set_visible(t_main.main_window,FALSE);
+	minimized_currently = 1; // necessary because notify::state doesn't capture minimization to tray
+	sticker_offload_saved();
+}
+
 static void ui_minimize(void)
 {
 	if(minimize_to_tray && appindicator_functioning)
-	{
-		gtk_widget_set_visible(t_main.main_window,FALSE);
-		sticker_offload_saved();
-	}
+		ui_minimize_to_tray();
 	else
 		gtk_window_minimize(GTK_WINDOW(t_main.main_window));
 	ui_leave_mouse(); // necessary
@@ -2797,8 +2802,8 @@ static int cleanup_idle(void *arg)
 {
 	const int sig_num = vptoi(arg);
 	if(!sig_num && close_to_tray && appindicator_functioning)
-	{
-		gtk_widget_set_visible(t_main.main_window,FALSE);
+	{ // This is only on SIG_NUM=0, which means we are closing without error, ie UI instigated the close by clicking X. This is correct.
+		ui_minimize_to_tray();
 		return 0;
 	}
 	char p1[21];
@@ -2898,7 +2903,7 @@ static void ui_decorate_headerbar(void)
 	// Hide active by default
 	gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), t_main.headerbar_buttons_box_enter);
 	gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), t_main.headerbar_buttons_box_leave);
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_leave,FALSE);    
+	gtk_widget_set_visible(t_main.headerbar_buttons_box_leave,FALSE);
 	gtk_widget_add_css_class(headerbar,"headerbar");
 	gtk_widget_add_css_class(headerbar_button1,"close");
 	gtk_widget_add_css_class(headerbar_button2,"minimize");
@@ -4239,11 +4244,8 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), box11);
 }
 
-static int scroll_func_idle(void *arg)
-{ // This SHOULD NOT need to run in a g_idle_add... but it do. Can we set it to lowest priority? helps only a minor amount
-// TODO https://discourse.gnome.org/t/solved-how-to-auto-scroll-the-scrollbar-to-bottom-when-window-get-minimized/1337/2
-//	printf("Checkpoint Not scrolling because we're testing gtk_list_view_scroll_to\n");
-//	return 0; // TODO remove
+static int scroll_to_bottom_idle(void *arg)
+{
 	GtkWidget *window = arg;
 	if(!window || !GTK_IS_SCROLLED_WINDOW(window))
 	{
@@ -4251,31 +4253,26 @@ static int scroll_func_idle(void *arg)
 		breakpoint();
 		return 0; // sanity check
 	}
+	if(minimized_currently)
+	{ // Cannot scroll while minimized or minimized to tray
+		missed_scroll = 1;
+		return 0;
+	}
 	GtkAdjustment* adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW(window));
-	const double offset = gtk_adjustment_get_upper(GTK_ADJUSTMENT(adj));
-//	fprintf(stderr,"Checkpoint Scroll Upper: %e\n",upper);
+	const double offset = (INVERSION_TEST && t_main.window != window_log_tor && t_main.window != window_log_torx) ? gtk_adjustment_get_lower(GTK_ADJUSTMENT(adj)) : gtk_adjustment_get_upper(GTK_ADJUSTMENT(adj)) ;
 	gtk_adjustment_set_value(GTK_ADJUSTMENT(adj), offset);
 	gtk_scrolled_window_set_vadjustment (GTK_SCROLLED_WINDOW(window),GTK_ADJUSTMENT(adj));
-//TODO	printf("Checkpoint scrolling\n");
 	return 0;
 }
 
-static int scroll_func_idle_inverted(void *arg)
-{ // This SHOULD NOT need to run in a g_idle_add... but it do. Can we set it to lowest priority? helps only a minor amount
-	GtkWidget *window = arg;
-	if(!window || !GTK_IS_SCROLLED_WINDOW(window))
-	{
-		error_simple(0,"Not scrolled window. Report this."); // triggered on 2023/10/31
-		breakpoint();
-		return 0; // sanity check
-	}
-	GtkAdjustment* adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW(window));
-	const double offset = gtk_adjustment_get_lower(GTK_ADJUSTMENT(adj));
-//	fprintf(stderr,"Checkpoint Scroll Upper: %e\n",upper);
-	gtk_adjustment_set_value(GTK_ADJUSTMENT(adj), offset);
-	gtk_scrolled_window_set_vadjustment (GTK_SCROLLED_WINDOW(window),GTK_ADJUSTMENT(adj));
-//	printf("Checkpoint scrolling\n");
-	return 0;
+static void scroll_to_bottom(GtkWidget *window)
+{ // should not be necessary to make this idle but we have to delay it somehow? At least for chats. For logs, seems unnecessary to delay?
+	g_idle_add_full(G_PRIORITY_LOW,scroll_to_bottom_idle,window,NULL); // best to have G_PRIORITY_LOW
+}
+
+static void scroll_to_bottom_once(GtkWidget *window)
+{ // For logs, when first building route, this is working better because for some reason we need a longer delay. Not ideal.
+	g_timeout_add(100,scroll_to_bottom_idle,window);
 }
 
 static int tor_log_idle(void *data)
@@ -4287,7 +4284,7 @@ static int tor_log_idle(void *data)
 		gtk_text_buffer_get_end_iter(t_main.tor_log_buffer,&end);
 		gtk_text_buffer_insert(t_main.tor_log_buffer,&end,data,(int)len);
 		if(t_main.window == window_log_tor)
-			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+			scroll_to_bottom(t_main.scrolled_window_right);
 		printf(WHITE"CHECKPOINT TOR LOG: %s\n"RESET,(char*)data);
 		torx_free((void*)&data);
 	}
@@ -4501,7 +4498,7 @@ static int error_idle(void *arg)
 		gtk_text_buffer_get_end_iter(t_main.torx_log_buffer,&end);
 		gtk_text_buffer_insert(t_main.torx_log_buffer,&end,error_message,-1);
 		if(t_main.window == window_log_torx)
-			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
+			scroll_to_bottom(t_main.scrolled_window_right);
 	}
 	torx_free(&arg);
 	return 0;
@@ -4542,7 +4539,7 @@ static void ui_show_log_tor(void)
 	gtk_text_view_set_cursor_visible (GTK_TEXT_VIEW (view), TRUE);
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), GTK_WRAP_WORD_CHAR);
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), view);
-//	g_timeout_add(100,tor_log_idle,NULL); // continues until returns 0. this is good code.
+	scroll_to_bottom_once(t_main.scrolled_window_right);
 }
 
 static void ui_show_log_torx(void)
@@ -4577,7 +4574,7 @@ static void ui_show_log_torx(void)
 	gtk_text_view_set_editable (GTK_TEXT_VIEW (view), FALSE);
 	gtk_text_view_set_cursor_visible (GTK_TEXT_VIEW (view), TRUE);
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), view);
-//	g_timeout_add(100,torx_log_idle,NULL);
+	scroll_to_bottom_once(t_main.scrolled_window_right);
 }
 
 static void ui_show_global_killcode(void)
@@ -5034,10 +5031,10 @@ static void ui_show_home(void)
 	GtkWidget *scrolled_window_mult = gtk_scrolled_window_new();
 	GtkWidget *scrolled_window_sing = gtk_scrolled_window_new();
 
-        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_incoming),viewport_incoming);
-        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_outgoing),viewport_outgoing);
-        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_mult),viewport_mult);
-        gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_sing),viewport_sing);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_incoming),viewport_incoming);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_outgoing),viewport_outgoing);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_mult),viewport_mult);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (scrolled_window_sing),viewport_sing);
 
 	/* Build stack switcher and stack */
 	GtkWidget *stack = gtk_stack_new();
@@ -5713,8 +5710,8 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 	if(t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // DO NOT MAKE ELSE.	
 	{
 		gtk_widget_set_visible(t_main.button_activity,FALSE);
-		if(!INVERSION_TEST)
-			g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL);
+		if(!INVERSION_TEST) // do not remove conditional
+			scroll_to_bottom(t_main.scrolled_window_right);
 	}
 }
 
@@ -6307,12 +6304,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	if(!notifiable)
 	{ // not notifiable message type or group peer is ignored. could still flash something.
 		if(n == global_n && scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
-		{
-			if(INVERSION_TEST)
-				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
-			else
-				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
-		}
+			scroll_to_bottom(t_main.scrolled_window_right);
 		torx_free((void*)&message);
 		return; // do not display
 	}
@@ -6396,12 +6388,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(protocol == ENUM_PROTOCOL_FILE_REQUEST || (file_offer && f < 0))
 		{
 			if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
-			{
-				if(INVERSION_TEST)
-					g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
-				else
-					g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
-			}
+				scroll_to_bottom(t_main.scrolled_window_right);
 			torx_free((void*)&message);
 			return; // do not display other types of files messages
 		}
@@ -6450,12 +6437,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			}
 		}
 		if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
-		{
-			if(INVERSION_TEST)
-				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle_inverted,t_main.scrolled_window_right,NULL);
-			else
-				g_idle_add_full(G_PRIORITY_DEFAULT_IDLE,scroll_func_idle,t_main.scrolled_window_right,NULL); // TODO should not be necessary to make this idle but we have to delay it somehow?? // scroll_func_idle(t_main.scrolled_window_right);
-		}
+			scroll_to_bottom(t_main.scrolled_window_right);
 	}
 	torx_free((void*)&message);
 	skip_printing: {}
@@ -8324,6 +8306,27 @@ static inline char *path_generator(const char *directory,const char *partial_or_
 	return final;
 }
 
+
+static void on_toplevel_state_notify(GdkSurface *surface, GParamSpec *pspec, gpointer user_data)
+{ // WARNING: This will NOT capture ui_minimize_to_tray. We track that seperately with minimized_currently.
+	GdkToplevelState state = gdk_toplevel_get_state(GDK_TOPLEVEL(surface));
+	gboolean minimized = (state & GDK_TOPLEVEL_STATE_MINIMIZED) != 0;
+	gboolean focused = (state & GDK_TOPLEVEL_STATE_FOCUSED) != 0;
+	if((!minimized && !focused) || (focused && !minimized_currently))
+		return; // a state change we don't care about occurred
+	if(focused)
+	{ // Unminimized
+		minimized_currently = 0;
+		if(missed_scroll)
+		{
+			scroll_to_bottom(t_main.scrolled_window_right);
+			missed_scroll = 0; // must reset
+		}
+	}
+	else /*if (minimized)*/
+		minimized_currently = 1; // WARNING: set to 1 in multiple places
+}
+
 //static void activate (GtkApplication* app, gpointer user_data)
 static void ui_activate(GtkApplication *application,void *arg)
 { // Cannot set window position, GTK removed it.// https://stackoverflow.com/questions/62614703/how-to-make-window-centered-in-gtk4
@@ -8331,7 +8334,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	if(running)
 	{ // Already running, show the window to the user. XXX NOTE: Arguments passed on command line are in a different process and therefore not available. (ie: -m, -f, -d)
 		if(t_main.main_window && gtk_widget_get_visible(t_main.main_window))
-			gtk_widget_set_visible(t_main.main_window,FALSE); // hide
+			ui_minimize_to_tray();
 		else if(t_main.main_window)
 		{ // Note: Same memory space, this is OUR APPLICATION receiving a signal.
 			if(global_n > -1)
@@ -8572,6 +8575,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 	if(!start_daemonized)
 	{
 		gtk_window_present(GTK_WINDOW(t_main.main_window));
+		GdkSurface *surface = gtk_native_get_surface(gtk_widget_get_native(t_main.main_window));
+		if(surface)
+			g_signal_connect(surface,"notify::state",G_CALLBACK(on_toplevel_state_notify),NULL);
 		char array[2048]; // arbitrary size
 		snprintf(array,sizeof(array),"%sTorX Library Version: %u.%u.%u.%u\n",CLIENT_VERSION,torx_library_version[0],torx_library_version[1],torx_library_version[2],torx_library_version[3]);
 		ui_notify(text_welcome,array);
