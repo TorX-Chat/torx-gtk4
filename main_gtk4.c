@@ -8307,8 +8307,10 @@ static inline char *path_generator(const char *directory,const char *partial_or_
 }
 
 
-static void on_toplevel_state_notify(GdkSurface *surface, GParamSpec *pspec, gpointer user_data)
+static void on_toplevel_state_notify(GdkSurface *surface, GParamSpec *pspec, gpointer arg)
 { // WARNING: This will NOT capture ui_minimize_to_tray. We track that seperately with minimized_currently.
+	(void)pspec;
+	(void)arg;
 	GdkToplevelState state = gdk_toplevel_get_state(GDK_TOPLEVEL(surface));
 	gboolean minimized = (state & GDK_TOPLEVEL_STATE_MINIMIZED) != 0;
 	gboolean focused = (state & GDK_TOPLEVEL_STATE_FOCUSED) != 0;
