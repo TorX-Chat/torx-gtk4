@@ -6039,9 +6039,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		else if(message_len >= CHECKSUM_BIN_LEN && (protocol == ENUM_PROTOCOL_STICKER_HASH || protocol == ENUM_PROTOCOL_STICKER_HASH_PRIVATE || protocol == ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED))
 		{
 			const int s = set_s((unsigned char*)message);
-			unsigned char *data = sticker_retrieve_data(NULL,s);
-			msg = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_large);
-			torx_free((void*)&data);
+			if(s > -1)
+			{
+				unsigned char *data = sticker_retrieve_data(NULL,s);
+				msg = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_large);
+				torx_free((void*)&data);
+			}
 			if(msg == NULL)
 			{ // Does not exist yet
 				if(stat == ENUM_MESSAGE_RECV && ENABLE_SPINNERS)
