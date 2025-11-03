@@ -239,21 +239,21 @@ static struct t_peer_list { // XXX Do not sodium_malloc structs unless they cont
 } *t_peer; // TODO do not initialize automatically, but upon use
 
 #define create_button(text,callback,vp)\
-{\
+do {\
 	GtkWidget *button = gtk_button_new();\
 	gtk_button_set_label(GTK_BUTTON(button),text);\
 	g_signal_connect_swapped(button, "clicked", G_CALLBACK(callback), vp);\
 	gtk_box_append(GTK_BOX(box),button);\
-}
+} while(0);
 
 #define popdown(global_popover)\
-{\
+do {\
 	if(global_popover && GTK_IS_WIDGET(global_popover))\
 	{\
 		gtk_popover_popdown(GTK_POPOVER(global_popover));\
 		global_popover = NULL;\
 	}\
-}
+} while(0);
 
 static struct { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily initialize as NULL
 	GListStore *treestore_incoming;
@@ -3927,13 +3927,8 @@ static GtkWidget *ui_combobox(const char *description,void (*callback)(void *con
 	va_list va_args;
 	va_start(va_args,active_iter);
 	GtkStringList* list_store = gtk_string_list_new(NULL);
-	while(1)
-	{
-		const char *string;
-		if((string = va_arg(va_args,char*)) == NULL) // Must be null terminated
-			break; // End of list
+	for(const char *string; (string = va_arg(va_args,char*)) != NULL; )
 		gtk_string_list_append(list_store,string);
-	}
 	va_end(va_args);
 	GtkWidget *combo_box = gtk_drop_down_new(G_LIST_MODEL(list_store), NULL);
 	gtk_box_append (GTK_BOX (inner_box), combo_box);
@@ -8669,7 +8664,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 		#else
 		snprintf(appindicator_path,sizeof(appindicator_path),"torx-tray");
 		if((tray_pid = fork()) == -1)
+		{
 			error_simple(-1,"fork");
+			return;
+		}
 		if(tray_pid == 0)
 		{ // Check in path before attempting to check from directory we run from
 			if(execlp("torx-tray","torx-tray","-p",port_array,"-P",binary_path,NULL))
