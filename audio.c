@@ -145,11 +145,11 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 	//if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ASYNC_DONE) {
 	if (gst_element_query_duration(pipe, GST_FORMAT_TIME, &duration))
 	{
-		printf("Checkpoint duration is: %ld\n",duration);
+		error_printf(0,"Checkpoint duration is: %ld",duration);
 		g_print("Duration: %" GST_TIME_FORMAT "\n", GST_TIME_ARGS(duration));
 	}
 	else
-		g_print("Could not query the duration.\n");
+		error_simple(0,"Could not query the duration.");
 	//}
 } */
 
@@ -160,15 +160,15 @@ void playback_stop(struct play_info *play_info)
 		error_simple(0,"Nothing to stop yet playback_stop was called. Possible coding error. Report to UI Devs.");
 		return; // Bad args or already stopped
 	}
-printf("Checkpoint playback_stop 1\n");
+	error_simple(0,"Checkpoint playback_stop 1");
 //	GstState current_state, pending_state;
 //	gst_element_get_state(play_info->pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
 //	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
 //	{
-//		printf("Checkpoint playback_stop 2\n");
+//		error_simple(0,"Checkpoint playback_stop 2");
 	gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
 //	}
-printf("Checkpoint playback_stop 3\n");
+	error_simple(0,"Checkpoint playback_stop 3");
 	gst_object_unref(play_info->pipeline); // TODO this may not trigger when playback_stop is called from play_callback
 	play_info->pipeline = NULL;
 }
@@ -181,7 +181,7 @@ void playback_start(struct play_info *play_info)
 		error_simple(0,"Playback failed sanity check.");
 		return;
 	}
-printf("Checkpoint playback_start data_len=%u\n",data_len);
+	error_printf(0,"Checkpoint playback_start data_len=%u",data_len);
 //	write_bytes("fishing.aac",play_info->data,data_len);
 //	print_metadata("fishing.aac");
 	if(play_info->pipeline) // There is nothing we can do with this from here; we need a fresh one.
@@ -345,15 +345,15 @@ unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *
 	GstElement *pipeline = rec_info->pipeline;
 	rec_info->pipeline = NULL;
 //	print_duration(rec_info->pipeline);
-	printf("Checkpoint record_stop 1\n");
+	error_simple(0,"Checkpoint record_stop 1");
 //	GstState current_state, pending_state;
 //	gst_element_get_state(pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
 //	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
 //	{
-//		printf("Checkpoint record_stop 2\n");
+//		error_simple(0,"Checkpoint record_stop 2");
 	gst_element_set_state(pipeline, GST_STATE_NULL); // XXX HARD STOP. If used on streams, function will NOT continue, will NOT return.
 //	}
-	printf("Checkpoint record_stop 3\n");
+	error_simple(0,"Checkpoint record_stop 3");
 	gst_object_unref(GST_OBJECT(pipeline)); // THIS WILL NOT TRIGGER WHEN STOPPING STREAMS
 	/* XXX DO NOT CHANGE THE ORDER OR CONTENTS OF THIS BLOCK XXX END */
 	if(data_len)

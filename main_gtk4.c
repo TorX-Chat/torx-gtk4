@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.35 2025/10/20 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.36 2025/11/25 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -155,11 +155,6 @@ static GtkWidget *popover_level_one = NULL; // XXX For working-around GTK bug on
 #define ENABLE_APPINDICATOR 1 // DO NOT USE TO VERIFY FUNCTIONALITY
 
 static uint8_t appindicator_functioning = 0; // DO NOT default to 1. This will be set upon successful connection.
-/*#ifdef WIN32
-	#define ENABLE_APPINDICATOR 0 // TODO no, lets let it ride. docs say windows is at least somewhat supported. Testing on Win 10 showed it working.
-#else
-	#define ENABLE_APPINDICATOR 1
-#endif*/
 
 /* Global Variables */ // NOTE: Access must be in UI thread (_idle) or all usage must have mutex/rwlock
 static char language[5+1] = {0};
@@ -1649,7 +1644,7 @@ static void ui_set_image_lock(const int n)
 	{
 		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(texture_logo));
 		const char *identifier;
-		char onion[56+1];
+		char onion[56+1]; // zero'd
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
 			identifier = text_torxid;
@@ -1664,7 +1659,7 @@ static void ui_set_image_lock(const int n)
 		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		char *groupid = b64_encode(group[g].id,GROUP_ID_SIZE);
 		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
-		char tooltip[256];
+		char tooltip[256]; // zero'd
 		snprintf(tooltip,sizeof(tooltip),"%s: %s\n%s: %s",text_groupid,groupid,identifier,onion);
 		gtk_widget_set_tooltip_text(t_main.image_header,tooltip);
 		sodium_memzero(onion,sizeof(onion));
@@ -1956,7 +1951,7 @@ static void ui_copy_qr(GtkWidget *button,const void *arg)
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		const int g = set_g(n,NULL); // just looking up existing
-		unsigned char id[GROUP_ID_SIZE];
+		unsigned char id[GROUP_ID_SIZE]; // zero'd
 		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		memcpy(id,group[g].id,sizeof(id));
 		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -1967,7 +1962,7 @@ static void ui_copy_qr(GtkWidget *button,const void *arg)
 	}
 	else
 	{
-		char torxid[52+1];
+		char torxid[52+1]; // zero'd
 		getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 		qr_data = qr_bool(torxid,1);
 		sodium_memzero(torxid,sizeof(torxid));
@@ -1993,7 +1988,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 		{
 			const int g = set_g(n,NULL); // just looking up existing
-			unsigned char id[GROUP_ID_SIZE];
+			unsigned char id[GROUP_ID_SIZE]; // zero'd
 			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
 			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -2004,7 +1999,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		}
 		else
 		{
-			char torxid[52+1];
+			char torxid[52+1]; // zero'd
 			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 			qr_data = qr_bool(torxid,8);
 			sodium_memzero(torxid,sizeof(torxid));
@@ -2043,13 +2038,13 @@ static int onion_ready_idle(void *arg)
 	if(t_main.window == window_main)
 	{
 		gtk_entry_buffer_delete_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_generate_peernick)),0,-1); // Clear peernick
-		char torxid[52+1];
+		char torxid[52+1]; // zero'd
 		getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,torxid,-1);
 		else
 		{
-			char onion[56+1];
+			char onion[56+1]; // zero'd
 			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,onion));
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,onion,-1);
 			sodium_memzero(onion,sizeof(onion));
@@ -3884,8 +3879,8 @@ static void ui_submit_custom_input(GtkWidget *button,const void *arg)
 	const uint8_t owner = (uint8_t)vptoi(arg); // DO NOT FREE ARG
 	const char *identifier_ptr = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_identifier)));
 	const char *privkey_ptr = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_privkey)));
-	char identifier[56+1];
-	char privkey[88+1];
+	char identifier[56+1]; // zero'd
+	char privkey[88+1]; // zero'd
 	snprintf(identifier,sizeof(identifier),"%s",identifier_ptr);
 	snprintf(privkey,sizeof(privkey),"%s",privkey_ptr);
 	const int n = custom_input(owner,identifier,privkey);
@@ -3896,13 +3891,13 @@ static void ui_submit_custom_input(GtkWidget *button,const void *arg)
 		ui_input_bad(t_main.entry_custom_privkey);
 		return;
 	}
-	char torxid[52+1];
+	char torxid[52+1]; // zero'd
 	getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 	if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		gtk_text_buffer_set_text(t_main.textbuffer_custom_onion,torxid,-1);
 	else
 	{
-		char onion[56+1];
+		char onion[56+1]; // zero'd
 		getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,onion));
 		gtk_text_buffer_set_text(t_main.textbuffer_custom_onion,onion,-1);
 		sodium_memzero(onion,sizeof(onion));
@@ -4736,7 +4731,7 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 		const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 		if(!g_invite_required)
 		{ // Public gropu, copy group_id
-			unsigned char id[GROUP_ID_SIZE];
+			unsigned char id[GROUP_ID_SIZE]; // zero'd
 			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
 			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -4750,14 +4745,14 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 	{
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
-			char torxid[52+1];
+			char torxid[52+1]; // zero'd
 			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),torxid);
 			sodium_memzero(torxid,sizeof(torxid));
 		}
 		else
 		{
-			char onion[56+1];
+			char onion[56+1]; // zero'd
 			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,onion));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),onion);
 			sodium_memzero(onion,sizeof(onion));
@@ -4769,7 +4764,7 @@ static void ui_show_qr(void)
 {
 	if(treeview_n < 0)
 		return;
-	char torxid[52+1];
+	char torxid[52+1]; // zero'd
 	getter_array(&torxid,sizeof(torxid),treeview_n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 
 	GtkWidget *generated_qr_code;
@@ -4855,7 +4850,7 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		}
 		if(column_number == 1)
 		{
-			char onion[56+1];
+			char onion[56+1]; // zero'd
 			if(list == ENUM_OWNER_PEER)
 				getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,peeronion));
 			else
@@ -4866,7 +4861,7 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		}
 		else if(column_number == 2)
 		{
-			char torxid[52+1];
+			char torxid[52+1]; // zero'd
 			getter_array(&torxid,sizeof(torxid),n,INT_MIN,-1,offsetof(struct peer_list,torxid));
 			GtkWidget *label = gtk_label_new(torxid);
 			sodium_memzero(torxid,sizeof(torxid));
@@ -5088,7 +5083,7 @@ static void ui_group_join(void* arg)
 	else
 	{ // Joining public group
 		const char *encoded_id = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_add_group_id)));
-		unsigned char id[GROUP_ID_SIZE];
+		unsigned char id[GROUP_ID_SIZE]; // zero'd
 		if(b64_decode(id,sizeof(id),encoded_id) != GROUP_ID_SIZE)
 		{
 			ui_input_bad(t_main.entry_add_group_id);
@@ -5132,7 +5127,7 @@ static void ui_group_generate(GtkWidget *button,const void *arg)
 		}
 		else
 		{ // public group, show ID and QR code
-			unsigned char id[GROUP_ID_SIZE];
+			unsigned char id[GROUP_ID_SIZE]; // zero'd
 			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
 			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -5358,7 +5353,7 @@ static void ui_show_generate(void)
 	gtk_box_append (GTK_BOX (box_4), box_5);
 
 	t_main.textbuffer_generated_onion = gtk_text_buffer_new(NULL);
-	char torxid[52+1];
+	char torxid[52+1]; // zero'd
 	if(generated_n > -1)
 	{
 		getter_array(&torxid,sizeof(torxid),generated_n,INT_MIN,-1,offsetof(struct peer_list,torxid));
@@ -5366,7 +5361,7 @@ static void ui_show_generate(void)
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,torxid,-1);
 		else
 		{
-			char onion[56+1];
+			char onion[56+1]; // zero'd
 			getter_array(&onion,sizeof(onion),generated_n,INT_MIN,-1,offsetof(struct peer_list,onion));
 			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,onion,-1);
 			sodium_memzero(onion,sizeof(onion));
@@ -5692,7 +5687,7 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 		{ // PM was active before edit, restore it
 			uint32_t len;
 			char *peernick = getter_string(&len,t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[ARBITRARY_ARRAY_SIZE];
+			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 			torx_free((void*)&peernick);
 			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
@@ -5741,7 +5736,7 @@ static void ui_establish_pm(const int n,void *popover)
 	t_peer[global_n].pm_n = n;
 	uint32_t len;
 	char *peernick = getter_string(&len,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-	char cancel_message[ARBITRARY_ARRAY_SIZE];
+	char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 	torx_free((void*)&peernick);
 	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
@@ -6013,12 +6008,12 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			uint32_t peernick_len = 0;
 			if(group_n > -1)
 				peernick = getter_string(&peernick_len,group_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			char group_message[ARBITRARY_ARRAY_SIZE];
+			char group_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			if(group_n > -1 && peernick && peernick_len)
 				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,peernick);
 			else
 			{ // We have not joined yet, so no name. Use encoded GroupID instead
-				unsigned char id[GROUP_ID_SIZE];
+				unsigned char id[GROUP_ID_SIZE]; // zero'd
 				pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 				memcpy(id,group[g].id,sizeof(id));
 				pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -6296,37 +6291,29 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	const uint8_t file_offer = protocols[p_iter].file_offer;
 //	const uint8_t group_msg = protocols[p_iter].group_msg;
 	pthread_rwlock_unlock(&mutex_protocols); // 🟩
-	uint32_t message_len;
-	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
 	const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
 	if(!notifiable)
 	{ // not notifiable message type or group peer is ignored. could still flash something.
 		if(n == global_n && scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
 			scroll_to_bottom(t_main.scrolled_window_right);
-		torx_free((void*)&message);
 		return; // do not display
 	}
 	int g = -1;
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
+	if(owner == ENUM_OWNER_GROUP_PEER)
 	{
 		if(!group_pm && stat != ENUM_MESSAGE_RECV)
-		{
-			torx_free((void*)&message);
 			return;	// Do not print OUTBOUND messages on GROUP_PEER unless they are private
-		}
 		const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 		if(stat == ENUM_MESSAGE_RECV && (t_peer[n].mute || status == ENUM_STATUS_BLOCKED))
-		{
-			torx_free((void*)&message);
 			return; // Do not print inbound messages from muted (ignored) or blocked group peers
-		}
 		g = set_g(n,NULL);
 		const int group_n = getter_group_int(g,offsetof(struct group_list,n));
 		if(group_n > -1)
 			nn = group_n;
 	}
+	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
 	if((nn != global_n || !gtk_widget_get_visible(t_main.main_window)) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
 	{ /* Notify of complete Message (indicated by scroll==1), but not on screen */
 		t_peer[nn].unread++;
@@ -6910,7 +6897,7 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 	}
 	else
 	{ // Public Group, show QR and Group ID TODO consider having also popover_invite as an option
-		unsigned char id[GROUP_ID_SIZE];
+		unsigned char id[GROUP_ID_SIZE]; // zero'd
 		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 		memcpy(id,group[g].id,sizeof(id));
 		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
@@ -7490,7 +7477,7 @@ static void ui_select_changed(const void *arg)
 		{
 			uint32_t len;
 			char *peernick_local = getter_string(&len,t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[ARBITRARY_ARRAY_SIZE];
+			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
 			torx_free((void*)&peernick_local);
 			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
@@ -7603,7 +7590,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 
 		// Tooltip
 		const char *identifier;
-		char onion[56+1];
+		char onion[56+1]; // zero'd
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
 		{
 			identifier = text_torxid;
@@ -7614,16 +7601,16 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 			identifier = text_onionid;
 			getter_array(&onion,sizeof(onion),n,INT_MIN,-1,offsetof(struct peer_list,onion));
 		}
-		char tooltip[256];
+		char tooltip[256]; // zero'd
 		const int g = set_g(n,NULL);
 		const uint8_t invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 		int invitor_n = -1;
 		if(invite_required)
 		{
-			unsigned char verification_message[56+crypto_sign_PUBLICKEYBYTES];
+			unsigned char verification_message[56+crypto_sign_PUBLICKEYBYTES]; // zero'd
 			getter_array(verification_message,56,n,INT_MIN,-1,offsetof(struct peer_list,peeronion));
 			getter_array(&verification_message[56],crypto_sign_PUBLICKEYBYTES,n,INT_MIN,-1,offsetof(struct peer_list,peer_sign_pk));
-			unsigned char invitation[crypto_sign_BYTES];
+			unsigned char invitation[crypto_sign_BYTES]; // zero'd
 			getter_array(invitation,sizeof(invitation),n,INT_MIN,-1,offsetof(struct peer_list,invitation));
 			invitor_n = group_check_sig(g,(char *)verification_message,sizeof(verification_message),0,invitation,NULL);
 			sodium_memzero(verification_message,sizeof(verification_message));
@@ -8698,7 +8685,7 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 	(void) error;
 	const size_t len = strlen(option_name);
 	if(!strncmp(option_name,"-V",len) || !strncmp(option_name,"--version",len))
-	{ // Use printf here, not error_printf
+	{ // Use printf here, not error_printf. Keep relatively consistent with ncurses.
 		char array[2048]; // arbitrary size
 		snprintf(array,sizeof(array),"%sTorX Library Version: %u.%u.%u.%u\n",CLIENT_VERSION,torx_library_version[0],torx_library_version[1],torx_library_version[2],torx_library_version[3]);
 		printf("%s",array);
@@ -8714,12 +8701,32 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 		start_daemonized = 1;
 	else if(!strncmp(option_name,"-v",len) || !strncmp(option_name,"--verbose",len))
 	{
-		pthread_rwlock_wrlock(&mutex_debug_level); // 🟥
 		if(!value)
-			debug = 1;
+			torx_debug_level(1);
 		else
-			debug = (int8_t)strtoll(value, NULL, 10);
-		pthread_rwlock_unlock(&mutex_debug_level); // 🟩
+			torx_debug_level((int8_t)strtoll(value, NULL, 10));
+	}
+	else if(!strncmp(option_name, "--directory",len))
+	{
+		if(value)
+		{
+			const size_t allocation_len = strlen(value) + 1;
+			pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
+			working_dir = torx_insecure_malloc(allocation_len);
+			snprintf(working_dir,allocation_len,"%s",value);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
+		}
+	}
+	else if(!strncmp(option_name, "--debug-file",len))
+	{
+		if(value)
+		{
+			const size_t allocation_len = strlen(value) + 1;
+			pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
+			debug_file = torx_insecure_malloc(allocation_len);
+			snprintf(debug_file,allocation_len,"%s",value);
+			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
+		}
 	}
 	return true; // tells GTK we processed it successfully
 }
@@ -8738,6 +8745,8 @@ int main(int argc,char **argv)
 		{ "fullscreen", 'f', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Start fullscreen",NULL},
 		{ "daemonize", 'd', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Start daemonized",NULL},
 		{ "verbose", 'v', G_OPTION_FLAG_OPTIONAL_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Set debug level","level"},
+		{ "directory", 0, 0, G_OPTION_ARG_CALLBACK, option_handler, "Set working directory","path"},
+		{ "debug-file", 0, 0, G_OPTION_ARG_CALLBACK, option_handler, "Set debug file","path"},
 		{0} };
 	#pragma GCC diagnostic pop
 	g_application_add_main_option_entries(G_APPLICATION(gtk_application_gtk4),entries);

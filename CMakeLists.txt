@@ -70,6 +70,7 @@ if(TORX_INCLUDE_DIR AND torx)
 	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
 else()
 	message(STATUS "TorX library NOT found; Building.")
+	set(NO_ASYNC_CALLBACKS 1)
 	include(FetchContent)
 	FetchContent_Declare(
 		torx
