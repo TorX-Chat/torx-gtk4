@@ -4379,7 +4379,10 @@ void audio_cache_play(const int n)
 static void playback_message(void* arg)
 {
 	if(!arg)
+	{
 		error_simple(0,"Playback_message passed null. Coding error. Report this.");
+		return;
+	}
 	const int n = vptoii_n(arg);
 	const int i = vptoii_i(arg);
 	if(current_play_pausable.pipeline)
@@ -4389,13 +4392,20 @@ static void playback_message(void* arg)
 		if(last_played_n == n && last_played_i == i)
 			return;
 	}
+	const int p_iter = getter_int(n,i,-1,offsetof(struct message_list,p_iter));
+	if(p_iter < 0)
+		return;
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
+	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
+	const uint32_t date_len = protocols[p_iter].date_len;
+	const uint32_t signature_len = protocols[p_iter].signature_len;
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	last_played_n = n;
 	last_played_i = i;
-
 	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
-	const uint32_t len = torx_allocation_len(message);
-	current_play_pausable.data = torx_secure_malloc(len-4); // will be free'd by play_callback
-	memcpy(current_play_pausable.data,(unsigned char *)&message[4],len-4);
+	const uint32_t audio_len = torx_allocation_len(message) - 4 - (null_terminated_len + date_len + signature_len);
+	current_play_pausable.data = torx_secure_malloc(audio_len); // will be free'd by play_callback
+	memcpy(current_play_pausable.data,(unsigned char *)&message[4],audio_len);
 	current_play_pausable.loop = 0;
 	current_play_pausable.n = -1; // important
 	current_play_pausable.callback = play_callback;
