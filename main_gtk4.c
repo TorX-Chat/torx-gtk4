@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.36 2025/11/25 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.37 2025/11/26 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -1080,7 +1080,7 @@ static int call_update_idle(void *arg)
 			gtk_box_remove_all(t_peer[call_n].t_call[call_c].column);
 		if(owner == ENUM_OWNER_GROUP_PEER)
 		{
-			char *peernick = getter_string(NULL,call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_label_new(peernick);
 			torx_free((void*)&peernick);
 			gtk_box_append(GTK_BOX(t_peer[call_n].t_call[call_c].column),label);
@@ -1173,7 +1173,7 @@ static int call_update_idle(void *arg)
 			{ // participants determines that this is an inbound call
 				ring_start();
 				t_peer[call_n].t_call[call_c].ringing = 1;
-				char *peernick = getter_string(NULL,call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+				char *peernick = getter_string(call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 				ui_notify(text_incoming_call,peernick);
 				torx_free((void*)&peernick);
 			}
@@ -1556,7 +1556,7 @@ static int transfer_progress_idle(void *arg)
 	if((global_n != n && (g == -1 || global_n != group_n)) || !t_peer[n].t_file[f].progress_bar || !GTK_IS_WIDGET(t_peer[n].t_file[f].progress_bar))
 		return 0; // should check if visible? Note: We null progress_bar as mitigation to segfaults here. If segfault, null progress bar some more.
 	const uint64_t size = getter_uint64(n,INT_MIN,f,offsetof(struct file_list,size));
-	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
+	char *file_path = getter_string(n,INT_MIN,f,offsetof(struct file_list,file_path));
 	char *file_size_text = file_progress_string(n,f);
 	gtk_label_set_text(GTK_LABEL(t_peer[n].t_file[f].file_size),file_size_text);
 	torx_free((void*)&file_size_text);
@@ -1573,7 +1573,7 @@ static int transfer_progress_idle(void *arg)
 			const uint8_t stat = getter_uint8(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,-1,offsetof(struct message_list,stat));
 			if(stat == ENUM_MESSAGE_RECV)
 			{ // Notify of completion only if the file was originally inbound
-				char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+				char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 				char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
 				snprintf(heading,sizeof(heading),"%s: %s",text_transfer_completed,peernick);
 				torx_free((void*)&peernick);
@@ -1751,7 +1751,7 @@ static int incoming_friend_request_idle(void *arg)
 
 void incoming_friend_request_cb_ui(const int n)
 { // GUI Callback
-	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	ui_notify(peernick,text_new_friend);
 	torx_free((void*)&peernick);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
@@ -1877,7 +1877,7 @@ static int peer_online_idle(void *arg)
 		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
 		if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0 && sendfd_connected > 0 && recvfd_connected > 0)
 		{
-			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			ui_notify(peernick,text_online);
 			torx_free((void*)&peernick);
 		}
@@ -2460,7 +2460,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	const int n = vptoii_n(data);
 	const int f = vptoii_i(data);
 	const int is_complete = file_is_complete(n,f);
-	char *file_path = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,file_path));
+	char *file_path = getter_string(n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(is_complete)
 	{ // NOTE: we have gtk_file_launcher_open_containing_folder in two places
 		GFile *file = g_file_new_for_path(file_path);
@@ -4171,7 +4171,7 @@ static void ui_show_settings(void)
 
 	// Tor Control Password
 	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
-	char *control_password_clear_local = torx_copy(NULL,control_password_clear);
+	char *control_password_clear_local = torx_copy(control_password_clear);
 	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear_local));
 	torx_free((void*)&control_password_clear_local);
@@ -4391,9 +4391,9 @@ static void playback_message(void* arg)
 	}
 	last_played_n = n;
 	last_played_i = i;
-	uint32_t len;
-	char *message = getter_string(&len,n,i,-1,offsetof(struct message_list,message));
 
+	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
+	const uint32_t len = torx_allocation_len(message);
 	current_play_pausable.data = torx_secure_malloc(len-4); // will be free'd by play_callback
 	memcpy(current_play_pausable.data,(unsigned char *)&message[4],len-4);
 	current_play_pausable.loop = 0;
@@ -4842,7 +4842,7 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_zero);
 		if(column_number == 0)
 		{
-			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_editable_label_new(peernick);
 			g_signal_connect(label, "notify::editing", G_CALLBACK(ui_rename),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 			torx_free((void*)&peernick);
@@ -5591,7 +5591,7 @@ static void ui_message_copy(const gpointer data)
 	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	if(null_terminated_len == 1)
 	{
-		char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+		char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
 		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),message);
 		torx_free((void*)&message);
 	}
@@ -5657,7 +5657,7 @@ static void ui_open_folder(const gpointer data)
 	const int f = set_f_from_i(&file_n,n,i);
 	if(f < 0)
 		return;
-	char *file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
+	char *file_path = getter_string(file_n,INT_MIN,f,offsetof(struct file_list,file_path));
 	if(file_path == NULL)
 	{
 		error_simple(0,"File path is NULL. Cannot open folder.");
@@ -5685,8 +5685,8 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 		t_peer[n].edit_i = INT_MIN;
 		if(t_peer[n].pm_n > -1)
 		{ // PM was active before edit, restore it
-			uint32_t len;
-			char *peernick = getter_string(&len,t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			const uint32_t len = torx_allocation_len(peernick);
 			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 			torx_free((void*)&peernick);
@@ -5714,8 +5714,8 @@ static void ui_activity_rename(const gpointer data)
 	popdown(t_main.popover_message)
 	popdown(t_main.popover_group_peerlist)
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
-	uint32_t len;
-	char *peernick = getter_string(&len,t_peer[global_n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(t_peer[global_n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	const uint32_t len = torx_allocation_len(peernick);
 	gtk_text_buffer_set_text(buffer,peernick,(int)len - 1);
 	torx_free((void*)&peernick);
 	ui_button_determination(global_n);
@@ -5734,8 +5734,8 @@ static void ui_establish_pm(const int n,void *popover)
 		t_peer[global_n].edit_i = INT_MIN;
 	}
 	t_peer[global_n].pm_n = n;
-	uint32_t len;
-	char *peernick = getter_string(&len,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	const uint32_t len = torx_allocation_len(peernick);
 	char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 	torx_free((void*)&peernick);
@@ -5786,7 +5786,7 @@ static void ui_activity_edit(const gpointer data)
 	pthread_rwlock_unlock(&mutex_protocols); // 🟩
 	if(null_terminated_len == 1)
 	{
-		char *message = getter_string(NULL,t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
+		char *message = getter_string(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
 		gtk_text_buffer_set_text(buffer,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
 		torx_free((void*)&message);
 		ui_button_determination(global_n);
@@ -5830,7 +5830,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 	const uint8_t stat = getter_uint8(n,i,-1,offsetof(struct message_list,stat));
-	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
 
 	if(file_checksum)
 	{ // files:	start/pause,reject/cancel	text_start / text_pause, text_reject (in) / text_cancel (out) // TODO rebuild int_int struct and pass f along with n,i
@@ -5900,7 +5900,7 @@ static GtkWidget *ui_message_info(const int n,const int i)
 	gtk_widget_add_css_class(message_time, "message_info_time");
 	torx_free((void*)&timebuffer);
 
-	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *peernick_widget = gtk_label_new(peernick);
 	torx_free((void*)&peernick);
 	gtk_widget_add_css_class(peernick_widget, "message_info_peernick");
@@ -5957,8 +5957,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	const uint8_t owner = peer[n].owner;
 	const uint8_t stat = peer[n].message[i].stat;
 	torx_unlock(n) // 🟩🟩🟩
-	uint32_t message_len;
-	char *message = getter_string(&message_len,n,i,-1,offsetof(struct message_list,message));
+	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
+	const uint32_t message_len = torx_allocation_len(message);
 	int nn = n; // XXX IMPORTANT: usage of n when relating to specific message, nn when relating to group settings or global_n. nn is GROUP_CTRL, if applicable, otherwise is n. XXX
 	if(owner == ENUM_OWNER_GROUP_PEER)// && peer[n].message[i].stat == ENUM_MESSAGE_RECV)
 	{
@@ -5975,8 +5975,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		int file_n = n;
 		if(group_msg && owner == ENUM_OWNER_GROUP_PEER)
 			file_n = nn; // group_n
-		filename = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,filename));
-		file_path = getter_string(NULL,file_n,INT_MIN,f,offsetof(struct file_list,file_path));
+		filename = getter_string(file_n,INT_MIN,f,offsetof(struct file_list,filename));
+		file_path = getter_string(file_n,INT_MIN,f,offsetof(struct file_list,file_path));
 	//	printf("Checkpoint loader: pc=%u fic=%d fsg=%d\n",t_peer[file_n].t_file[f].previously_completed,file_is_complete(file_n,f),file_status_get(file_n,f));
 		if(t_peer[file_n].t_file[f].previously_completed || file_is_complete(file_n,f))
 		{
@@ -6007,7 +6007,10 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			char *peernick = NULL;
 			uint32_t peernick_len = 0;
 			if(group_n > -1)
-				peernick = getter_string(&peernick_len,group_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			{
+				peernick = getter_string(group_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+				peernick_len = torx_allocation_len(peernick);
+			}
 			char group_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			if(group_n > -1 && peernick && peernick_len)
 				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,peernick);
@@ -6313,7 +6316,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(group_n > -1)
 			nn = group_n;
 	}
-	char *message = getter_string(NULL,n,i,-1,offsetof(struct message_list,message));
+	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
 	if((nn != global_n || !gtk_widget_get_visible(t_main.main_window)) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
 	{ /* Notify of complete Message (indicated by scroll==1), but not on screen */
 		t_peer[nn].unread++;
@@ -6324,7 +6327,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		ui_decorate_panel_left_top();
 		if(t_peer[nn].mute == 0 && t_peer[n].mute == 0)
 		{ // Notification + beep
-			char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			if(null_terminated_len == 1)
 				ui_notify(peernick,message);
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
@@ -6332,7 +6335,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				const int f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
 				if(f > -1)
 				{
-					char *filename = getter_string(NULL,n,INT_MIN,f,offsetof(struct file_list,filename));
+					char *filename = getter_string(n,INT_MIN,f,offsetof(struct file_list,filename));
 					ui_notify(peernick,filename);
 					torx_free((void*)&filename);
 				}
@@ -6340,11 +6343,11 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
 				torx_free((void*)&peernick);
-				peernick = getter_string(NULL,nn,INT_MIN,-1,offsetof(struct peer_list,peernick)); // XXX
+				peernick = getter_string(nn,INT_MIN,-1,offsetof(struct peer_list,peernick)); // XXX
 				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
 				if(f > -1)
 				{
-					char *filename = getter_string(NULL,nn,INT_MIN,f,offsetof(struct file_list,filename));
+					char *filename = getter_string(nn,INT_MIN,f,offsetof(struct file_list,filename));
 					ui_notify(peernick,filename);
 					torx_free((void*)&filename);
 				}
@@ -6712,7 +6715,7 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 	{
 		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 		char *p = gtk_editable_get_chars(GTK_EDITABLE(self),0,56);
-		char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+		char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 		if(p == NULL || strlen(p) == 0 || !strncmp(p," ",1))
 		{
 			gtk_editable_set_text(GTK_EDITABLE(self),peernick);
@@ -7306,7 +7309,7 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_halign(info_box, GTK_ALIGN_START);
 	gtk_widget_set_valign(info_box, GTK_ALIGN_CENTER);
 	gtk_widget_set_margin_start(info_box,size_margin_ten);
-	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *group_or_user_name = gtk_editable_label_new(peernick);
 	torx_free((void*)&peernick);
 	gtk_widget_set_tooltip_text(group_or_user_name,text_tooltip_group_or_user_name);
@@ -7475,8 +7478,8 @@ static void ui_select_changed(const void *arg)
 	{
 		if(t_peer[n].pm_n > -1)
 		{
-			uint32_t len;
-			char *peernick_local = getter_string(&len,t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			char *peernick_local = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			const uint32_t len = torx_allocation_len(peernick_local);
 			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
 			torx_free((void*)&peernick_local);
@@ -7706,7 +7709,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	gtk_box_append (GTK_BOX(chat_info), overlay); // For groups, we'll probably do 3 dots in a triangle. 1 Green for each Green user.
 
 	/* Build Peernick Label */
-	char *peernick = getter_string(NULL,n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *chat_name = gtk_label_new(peernick);
 	torx_free((void*)&peernick);
 	gtk_widget_add_css_class(chat_name, "chat_name");
@@ -7746,7 +7749,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 				const uint8_t file_offer = protocols[p_iter].file_offer;
 				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 				pthread_rwlock_unlock(&mutex_protocols); // 🟩
-				const char *message = getter_string(NULL,last_message_n,last_message_i,-1,offsetof(struct message_list,message));
+				const char *message = getter_string(last_message_n,last_message_i,-1,offsetof(struct message_list,message));
 				if(max_i > INT_MIN/* && protocol > 0*/ && message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
