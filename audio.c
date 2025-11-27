@@ -92,7 +92,7 @@ struct play_info current_play_ringtone = {0}; // for ringtone (sending / receivi
 struct play_info current_play_beep = {0}; // for beeps
 
 void record_start(struct rec_info *rec_info,const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg);
-unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *rec_info);
+unsigned char *record_stop(uint32_t *duration,struct rec_info *rec_info);
 void playback_start(struct play_info *play_info);
 void playback_stop(struct play_info *play_info); // must be double so function can null it
 /*static void
@@ -322,13 +322,11 @@ void record_start(struct rec_info *rec_info,const int sample_rate,void (*callbac
 	}
 }
 
-unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *rec_info)
+unsigned char *record_stop(uint32_t *duration,struct rec_info *rec_info)
 {
 	if(!rec_info || !rec_info->pipeline)
 	{
 		error_simple(0,"Recording is already stopped (not an error).");
-		if(data_len)
-			*data_len = 0;
 		if(duration)
 			*duration = 0;
 		return NULL;
@@ -356,7 +354,5 @@ unsigned char *record_stop(size_t *data_len,uint32_t *duration,struct rec_info *
 	error_simple(0,"Checkpoint record_stop 3");
 	gst_object_unref(GST_OBJECT(pipeline)); // THIS WILL NOT TRIGGER WHEN STOPPING STREAMS
 	/* XXX DO NOT CHANGE THE ORDER OR CONTENTS OF THIS BLOCK XXX END */
-	if(data_len)
-		*data_len = torx_allocation_len(rec_info->buffer);
 	return rec_info->buffer;
 }

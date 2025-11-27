@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.37 2025/11/26 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/11/26 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -1001,7 +1001,7 @@ static void audio_ready(void *arg,const unsigned char *data,const size_t data_le
 	const int call_c = vptoii_i(arg);
 	if(record_cache_add(call_n,call_c,1500,300,data,(uint32_t)data_len) < 1)
 	{
-		unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
+		unsigned char *to_free = record_stop(NULL,&current_recording);
 		torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call. also, XXX WILL NEVER REACH HERE.
 	}
 }
@@ -2004,8 +2004,8 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 			qr_data = qr_bool(torxid,8);
 			sodium_memzero(torxid,sizeof(torxid));
 		}
-		size_t png_size = 0;
-		void* png_data = return_png(&png_size,qr_data);
+		void* png_data = return_png(qr_data);
+		const size_t png_size = torx_allocation_len(png_data);
 		char *file_path = g_file_get_path(chosen_path); // free'd
 		write_bytes(file_path,png_data,png_size);
 	//	printf("Checkpoint png_size: %lu qr_data->size_allocated: %lu saving to: %s\n",png_size,qr_data->size_allocated,file_path);
@@ -2053,8 +2053,8 @@ static int onion_ready_idle(void *arg)
 		if(QR_IS_PNG)
 		{
 			qr_data = qr_bool(torxid,8);
-			size_t png_size = 0;
-			void* png_data = return_png(&png_size,qr_data);
+			void* png_data = return_png(qr_data);
+			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture));
@@ -2172,9 +2172,8 @@ static void ui_on_choose_files(GtkFileDialog *dialog,GAsyncResult *res,const voi
 		{
 			if(int_arg == 2)
 			{ // Stickers
-				size_t data_len = 0;
-				unsigned char *data = read_bytes(&data_len,file_path);
-				const int s = sticker_register(data,data_len);
+				unsigned char *data = read_bytes(file_path);
+				const int s = sticker_register(data,torx_allocation_len(data));
 				sticker_save(s);
 				torx_free((void*)&data);
 			}
@@ -2352,7 +2351,7 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 	int x = 0,y = 0;
 	for(int s = 0; (uint32_t)s < sticker_retrieve_count(); s++)
 	{ // Attach stickers TODO have them only be animated while mouseover, ie: utilize gif_static_new_from_data
-		unsigned char *data = sticker_retrieve_data(NULL,s);
+		unsigned char *data = sticker_retrieve_data(s);
 		GtkWidget *inner_box = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_small);
 		torx_free((void*)&data);
 		if(inner_box)
@@ -4300,7 +4299,7 @@ void tor_log_cb_ui(char *message)
 	const char msg3[] = "GETINFO status/bootstrap-phase\r\n";
 	tor_call_async(&tor_call_async_cb_ui,msg1);
 	tor_call_async(&tor_call_async_cb_ui,msg2);
-	tor_call_async(&tor_call_async_cb_ui,msg3);	*/
+	tor_call_async(&tor_call_async_cb_ui,msg3);	*/ // Do not delete
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
@@ -4348,7 +4347,7 @@ void audio_cache_play(const int n)
 	if(n > -1 && !t_peer[n].audio_playing)
 	{ // Do not call audio_cache_retrieve before checking the other conditons
 		unsigned char *data = NULL;
-		for(unsigned char *tmp ; (tmp = audio_cache_retrieve(NULL,NULL,NULL,n)) ; )
+		for(unsigned char *tmp ; (tmp = audio_cache_retrieve(NULL,NULL,n)) ; )
 		{
 			if(!data)
 				data = tmp;
@@ -4783,8 +4782,8 @@ static void ui_show_qr(void)
 	{
 		generated_qr_code = gtk_image_new();
 		qr_data = qr_bool(torxid,8);
-		size_t png_size = 0;
-		void* png_data = return_png(&png_size,qr_data);
+		void* png_data = return_png(qr_data);
+		const size_t png_size = torx_allocation_len(png_data);
 		GBytes *bytes = g_bytes_new(png_data,png_size);
 		GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 		gtk_image_set_from_paintable(GTK_IMAGE(generated_qr_code),GDK_PAINTABLE(texture));
@@ -5148,8 +5147,8 @@ static void ui_group_generate(GtkWidget *button,const void *arg)
 			if(QR_IS_PNG)
 			{
 				qr_data = qr_bool(group_id_encoded,8);
-				size_t png_size = 0;
-				void* png_data = return_png(&png_size,qr_data);
+				void* png_data = return_png(qr_data);
+				const size_t png_size = torx_allocation_len(png_data);
 				GBytes *bytes = g_bytes_new(png_data,png_size);
 				GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 				gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_group),GDK_PAINTABLE(texture));
@@ -5396,8 +5395,8 @@ static void ui_show_generate(void)
 		{
 			t_main.generated_qr_onion = gtk_image_new();
 			qr_data = qr_bool(torxid,8);
-			size_t png_size = 0;
-			void* png_data = return_png(&png_size,qr_data);
+			void* png_data = return_png(qr_data);
+			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture));
@@ -6044,7 +6043,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			const int s = set_s((unsigned char*)message);
 			if(s > -1)
 			{
-				unsigned char *data = sticker_retrieve_data(NULL,s);
+				unsigned char *data = sticker_retrieve_data(s);
 				msg = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_large);
 				torx_free((void*)&data);
 			}
@@ -6922,8 +6921,8 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 		{
 			generated_qr_code = gtk_image_new();
 			qr_data = qr_bool(group_id_encoded,8);
-			size_t png_size = 0;
-			void* png_data = return_png(&png_size,qr_data);
+			void* png_data = return_png(qr_data);
+			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			gtk_image_set_from_paintable(GTK_IMAGE(generated_qr_code),GDK_PAINTABLE(texture));
@@ -7243,7 +7242,7 @@ static void ui_send_pressed(GtkGestureClick *gesture, int n_press, double x, dou
 		if(current_recording.pipeline)
 		{ // TODO should also call_leave_all_except(-1,-1);
 			error_simple(0,"An existing recording was detected and disposed of. Coding error. Report this to UI Devs.");
-			unsigned char *to_free = record_stop(NULL,NULL,&current_recording);
+			unsigned char *to_free = record_stop(NULL,&current_recording);
 			torx_free((void*)&to_free);
 			call_mute_all_except(-1,-1); // mute active calls, both mic and speaker
 		}
@@ -7259,9 +7258,9 @@ static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, do
 		ui_keypress(NULL, 0, 0, 0, itovp(global_n));
 	else if(button && global_n > -1 && current_recording.pipeline)
 	{ // Handle voice message
-		size_t data_len;
 		uint32_t duration; // milliseconds
-		unsigned char *data = record_stop(&data_len,&duration,&current_recording);
+		unsigned char *data = record_stop(&duration,&current_recording);
+		const size_t data_len = torx_allocation_len(data);
 		if(gtk_widget_contains(button,x,y) && data && data_len && duration > MINIMUM_AUDIO_MESSAGE_LENGTH_IN_MILLISECONDS)
 		{ // TODO check minimum length also (1 second?)
 			data = torx_realloc_shift(data,sizeof(uint32_t) + data_len,1);
