@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/11/26 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/12/19 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -923,6 +923,13 @@ static void gtk_box_remove_all(GtkWidget *box)
 		gtk_box_remove(GTK_BOX(box), child);
 }
 
+static GtkWidget *gtk_image_new_from_paintable_with_size(GdkPaintable *paintable,const int size)
+{
+	GtkWidget *image = gtk_image_new_from_paintable(paintable);
+	gtk_image_set_pixel_size(GTK_IMAGE(image), size);
+	return image;
+}
+
 static void custom_popover_closed(GtkPopover* self,gpointer user_data)
 { // XXX For working-around GTK bug on double level popovers
 	(void)user_data;
@@ -1105,18 +1112,17 @@ static int call_update_idle(void *arg)
 						record_start(&current_recording,16000,audio_ready,iitovp(call_n,call_c)); // 8000, 12000, 16000 works
 
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_dark),size_icon_bottom_right));
 					else
-						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_light),size_icon_bottom_right));
 				}
 				else
 				{
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(mic_off_dark),size_icon_bottom_right));
 					else
-						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light)));
+						gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(mic_off_light),size_icon_bottom_right));
 				}
-				gtk_widget_set_size_request(button_mic, size_icon_bottom_right, size_icon_bottom_right);
 				g_signal_connect(button_mic, "clicked", G_CALLBACK(ui_toggle_mic),printing); // DO NOT FREE arg because this only gets passed ONCE.
 				gtk_box_append(GTK_BOX(row),button_mic);
 
@@ -1126,18 +1132,17 @@ static int call_update_idle(void *arg)
 				if(speaker_on)
 				{
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark)));
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_up_dark),size_icon_bottom_right));
 					else
-						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light)));
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_up_light),size_icon_bottom_right));
 				}
 				else
 				{
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark)));
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_off_dark),size_icon_bottom_right));
 					else
-						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light)));
+						gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_off_light),size_icon_bottom_right));
 				}
-				gtk_widget_set_size_request(button_speaker, size_icon_bottom_right, size_icon_bottom_right);
 				g_signal_connect(button_speaker, "clicked", G_CALLBACK(ui_toggle_speaker),printing); // DO NOT FREE arg because this only gets passed ONCE.
 				gtk_box_append(GTK_BOX(row),button_speaker);
 
@@ -1146,10 +1151,9 @@ static int call_update_idle(void *arg)
 					t_main.button_participants = gtk_button_new();
 					gtk_widget_add_css_class(t_main.button_participants, "invisible");
 					if(global_theme == DARK_THEME)
-						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_dark)));
+						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(group_dark),size_icon_bottom_right));
 					else
-						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable(GDK_PAINTABLE(group_light)));
-					gtk_widget_set_size_request(t_main.button_participants, size_icon_bottom_right, size_icon_bottom_right);
+						gtk_button_set_child(GTK_BUTTON(t_main.button_participants),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(group_light),size_icon_bottom_right));
 					g_signal_connect(t_main.button_participants, "clicked", G_CALLBACK(ui_participant_list),iitovp(call_n,call_c));
 				/*	GtkGesture *click = gtk_gesture_click_new();
 			swapped!	g_signal_connect(click, "pressed", G_CALLBACK(ui_participant_list), iitovp(call_n,call_c)); // DO NOT FREE arg because this only gets passed ONCE.
@@ -1160,10 +1164,9 @@ static int call_update_idle(void *arg)
 			GtkWidget *button_hangup = gtk_button_new();
 			gtk_widget_add_css_class(button_hangup, "invisible");
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_end_dark),size_icon_bottom_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
-			gtk_widget_set_size_request(button_hangup, size_icon_bottom_right, size_icon_bottom_right);
+				gtk_button_set_child(GTK_BUTTON(button_hangup),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_end_light),size_icon_bottom_right));
 			g_signal_connect(button_hangup, "clicked", G_CALLBACK(ui_call_leave),iitovp(call_n,call_c));
 			gtk_box_append(GTK_BOX(row),button_hangup);
 		}
@@ -1180,20 +1183,18 @@ static int call_update_idle(void *arg)
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable(GDK_PAINTABLE(call_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_dark),size_icon_bottom_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable(GDK_PAINTABLE(call_light)));
-			gtk_widget_set_size_request(button_accept, size_icon_bottom_right, size_icon_bottom_right);
+				gtk_button_set_child(GTK_BUTTON(button_accept),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_light),size_icon_bottom_right));
 			g_signal_connect(button_accept, "clicked", G_CALLBACK(ui_call_join),iitovp(call_n,call_c));
 			gtk_box_append(GTK_BOX(row),button_accept);
 
 			GtkWidget *button_reject = gtk_button_new();
 			gtk_widget_add_css_class(button_reject, "invisible");
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_end_dark),size_icon_bottom_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable(GDK_PAINTABLE(call_end_light)));
-			gtk_widget_set_size_request(button_reject, size_icon_bottom_right, size_icon_bottom_right);
+				gtk_button_set_child(GTK_BUTTON(button_reject),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_end_light),size_icon_bottom_right));
 			g_signal_connect(button_reject, "clicked", G_CALLBACK(ui_call_leave),iitovp(call_n,call_c));
 			gtk_box_append(GTK_BOX(row),button_reject);
 		}
@@ -1642,7 +1643,7 @@ static void ui_set_image_lock(const int n)
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
-		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(texture_logo));
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(texture_logo)); // must use set, do not use new
 		const char *identifier;
 		char onion[56+1]; // zero'd
 		if(threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids) == 1)
@@ -1670,7 +1671,7 @@ static void ui_set_image_lock(const int n)
 	{
 		if(status == ENUM_STATUS_BLOCKED) // Handle blocked first
 		{
-			gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_red));
+			gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_red)); // must use set, do not use new
 			gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_0);
 		}
 		else
@@ -1679,22 +1680,22 @@ static void ui_set_image_lock(const int n)
 			const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
 			if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
 			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_green));
+				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_green)); // must use set, do not use new
 				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_1);
 			}
 			else if(sendfd_connected > 0 && recvfd_connected < 1)
 			{  // This occurs when our proxy doesn't realize it is broken yet (common)
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_yellow));
+				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_yellow)); // must use set, do not use new
 				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_2);
 			}
 			else if(sendfd_connected < 1 && recvfd_connected > 0)
 			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_orange));
+				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_orange)); // must use set, do not use new
 				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_3);
 			}
 			else
 			{
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_grey));
+				gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(lock_grey)); // must use set, do not use new
 				gtk_widget_set_tooltip_text(t_main.image_header,text_tooltip_image_header_4);
 			}
 		}
@@ -2057,7 +2058,7 @@ static int onion_ready_idle(void *arg)
 			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
-			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture));
+			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture)); // must use set, do not use new
 			torx_free((void*)&png_data);
 		}
 		else
@@ -2317,7 +2318,7 @@ static inline GtkWidget *ui_sticker_box(GdkPaintable *paintable,const int square
 		return NULL; // consider returning empty box on error. no, probably not good because then gaps in sticker chooser would occur.
 	const double aspect_ratio = gdk_pixbuf_animation_get_width(PIXBUF_PAINTABLE(paintable)->animation) / height;
 	GtkWidget *box;
-	GtkWidget *sticker_image = gtk_picture_new_for_paintable(paintable); // alt: gtk_image_new_from_paintable
+	GtkWidget *sticker_image = gtk_picture_new_for_paintable(paintable); // alt: gtk_image_new_from_paintable, but would need gtk_image_set_pixel_size instead of gtk_widget_set_size_request
 	if(aspect_ratio > 1)
 	{ // wide sticker
 		gtk_widget_set_size_request(sticker_image, square_size,(int)((double)square_size/aspect_ratio)); // x,y
@@ -2495,32 +2496,32 @@ static void ui_set_image_logging(GtkWidget *button,const int n)
 	if(log_messages == -1)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(logging_inactive)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive),size_icon_top_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(logging_inactive_light)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive_light),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_logging_disabled);
 	}
 	else if(log_messages == 0)
 	{
 		if(threadsafe_read_uint8(&mutex_global_variable,&global_log_messages) == 1)
 		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(globe_active)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_active),size_icon_top_right));
 			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_on);
 		}
 		else if(global_theme == DARK_THEME)
 		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(globe_inactive)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive),size_icon_top_right));
 			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_off);
 		}
 		else
 		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(globe_inactive_light)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive_light),size_icon_top_right));
 			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_off);
 		}
 	}
 	else if(log_messages == 1)
 	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(logging_active)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_active),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_logging_enabled);
 	}
 }
@@ -2530,14 +2531,14 @@ static void ui_set_image_mute(GtkWidget *button,const int n)
 	if(t_peer[n].mute == 1)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(bell_inactive)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive),size_icon_top_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(bell_inactive_light)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive_light),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_notifications_off);
 	}
 	else
 	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(bell_active)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_active),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_notifications_on);
 	}
 }
@@ -2547,17 +2548,17 @@ static void ui_set_image_block(GtkWidget *button,const int n)
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if(status == ENUM_STATUS_BLOCKED)
 	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(block_active)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_active),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_on);
 	}
 	else if(global_theme == DARK_THEME)
 	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(block_inactive)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_off);
 	}
 	else
 	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(block_inactive_light)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive_light),size_icon_top_right));
 		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_off);
 	}
 }
@@ -2680,7 +2681,7 @@ static void ui_toggle_kill(GtkWidget *button,const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
 	if(n != -1) // Not global kill
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active)));
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_active),size_icon_top_right));
 	kill_code(n,NULL);
 	popdown(t_main.popover_more)
 //	error_simple("Need to add additional logic here to make this image properly togglable"); // no, currently can't unkill. Kill is kill.
@@ -2691,7 +2692,7 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 { // should not need to ui_populate_peers() because onion_deleted_cb should run
 	const int n = vptoi(data); // DO NOT FREE ARG
 	const int peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index));
-	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
+	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_active),size_icon_top_right));
 	takedown_onion(peer_index,1);
 	popdown(t_main.popover_more)
 //	ui_go_back(data); // do not do here, already doing in onion_deleted_idle
@@ -2700,7 +2701,7 @@ static void ui_toggle_delete(GtkWidget *button,const gpointer data)
 static void ui_delete_log(GtkWidget *button,const gpointer data)
 {
 	const int n = vptoi(data); // DO NOT FREE ARG
-	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_active)));
+	gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_active),size_icon_top_right));
 	delete_log(n);
 }
 
@@ -2856,15 +2857,15 @@ static void ui_decorate_headerbar(void)
 
 	// Build Close Button (inactive)
 	GtkGesture *click_close = gtk_gesture_click_new();
-	GtkWidget *headerbar_button1 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button1));
+	GtkWidget *headerbar_button1 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button1),size_margin_fifteen);
 
 	// Build Minimize Button (inactive)
 	GtkGesture *click_minimize = gtk_gesture_click_new();
-	GtkWidget *headerbar_button2 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button2));
+	GtkWidget *headerbar_button2 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button2),size_margin_fifteen);
 
 	// Build Maximize Button (inactive)
 	GtkGesture *click_maximize = gtk_gesture_click_new();
-	GtkWidget *headerbar_button3 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button3));
+	GtkWidget *headerbar_button3 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button3),size_margin_fifteen);
 
 	// Assemble HeaderBar (inactive)
 	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_enter), headerbar_button1);
@@ -2875,17 +2876,17 @@ static void ui_decorate_headerbar(void)
 	t_main.headerbar_buttons_box_leave = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_eight);
 
 	// Build Close Button (active)
-	GtkWidget *headerbar_button_leave1 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button_leave1));
+	GtkWidget *headerbar_button_leave1 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave1),size_margin_fifteen);
 	g_signal_connect_swapped(click_close, "pressed", G_CALLBACK(cleanup_idle), itovp(0)); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_widget_add_controller(headerbar_button_leave1, GTK_EVENT_CONTROLLER(click_close));
 
 	// Build Minimize Button (active)
-	GtkWidget *headerbar_button_leave2 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button_leave2));
+	GtkWidget *headerbar_button_leave2 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave2),size_margin_fifteen);
 	g_signal_connect_swapped(click_minimize, "pressed", G_CALLBACK(ui_minimize), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_widget_add_controller(headerbar_button_leave2, GTK_EVENT_CONTROLLER(click_minimize));
 
 	// Build Maximize Button (active)
-	GtkWidget *headerbar_button_leave3 = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_headerbar_button_leave3));
+	GtkWidget *headerbar_button_leave3 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave3),size_margin_fifteen);
 	g_signal_connect_swapped(click_maximize, "pressed", G_CALLBACK(ui_toggle_maximize), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_widget_add_controller(headerbar_button_leave3, GTK_EVENT_CONTROLLER(click_maximize));
 
@@ -2975,10 +2976,11 @@ static GtkWidget *gtk_custom_switcher_new(GtkStack* stack,int orientation,uint8_
 			gtk_overlay_set_child(GTK_OVERLAY(overlay),button);
 
 			GtkWidget *overlay2 = gtk_overlay_new();
-			gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
+			const int unread_count_dot_size = (int)((double)size_peerlist_icon_size/1.5);
+			gtk_widget_set_size_request(overlay2,unread_count_dot_size,unread_count_dot_size);
 			gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 			gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
-			GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+			GtkWidget *dot = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),unread_count_dot_size);
 			gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 			char unread_count[21];
@@ -3010,12 +3012,11 @@ static void ui_decorate_panel_left_top(void)
 	if(t_main.add != NULL)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.add);
 	if(t_main.window == window_main || t_main.window == window_group_generate)
-		t_main.add = gtk_image_new_from_paintable(GDK_PAINTABLE(add_active));
+		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		t_main.add = gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive));
+		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_left);
 	else
-		t_main.add = gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive_light));
-	gtk_widget_set_size_request(t_main.add,size_icon_top_left,size_icon_top_left);
+		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_left);
 	if(t_main.window != window_main && t_main.window != window_group_generate)
 	{
 		GtkGesture *click_show_generate = gtk_gesture_click_new();
@@ -3029,12 +3030,11 @@ static void ui_decorate_panel_left_top(void)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.home);
 	GtkWidget *button_home;
 	if(t_main.window == window_home)
-		button_home = gtk_image_new_from_paintable(GDK_PAINTABLE(home_active));
+		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		button_home = gtk_image_new_from_paintable(GDK_PAINTABLE(home_inactive));
+		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive),size_icon_top_left);
 	else
-		button_home = gtk_image_new_from_paintable(GDK_PAINTABLE(home_inactive_light));
-	gtk_widget_set_size_request(button_home,size_icon_top_left,size_icon_top_left);
+		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive_light),size_icon_top_left);
 	t_main.home = gtk_overlay_new();
 	gtk_overlay_set_child(GTK_OVERLAY(t_main.home),button_home);
 	if(t_main.window != window_home)
@@ -3047,10 +3047,11 @@ static void ui_decorate_panel_left_top(void)
 	if(totalIncoming > 0)
 	{ // Badge on home button (Note: some of it starts before)
 		GtkWidget *overlay2 = gtk_overlay_new();
-		gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
+		const int unread_count_dot_size = (int)((double)size_peerlist_icon_size/1.5);
+		gtk_widget_set_size_request(overlay2,unread_count_dot_size,unread_count_dot_size);
 		gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 		gtk_widget_set_valign(overlay2, GTK_ALIGN_START);
-		GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+		GtkWidget *dot = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),unread_count_dot_size);
 		gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 		char incoming_count[21];
@@ -3067,12 +3068,11 @@ static void ui_decorate_panel_left_top(void)
 	if(t_main.settings != NULL)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.settings);
 	if(t_main.window == window_settings) // TODO use gtk_image_set_from_paintable instead of removing?
-		t_main.settings = gtk_image_new_from_paintable(GDK_PAINTABLE(settings_active));
+		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		t_main.settings = gtk_image_new_from_paintable(GDK_PAINTABLE(settings_inactive));
+		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive),size_icon_top_left);
 	else
-		t_main.settings = gtk_image_new_from_paintable(GDK_PAINTABLE(settings_inactive_light));
-	gtk_widget_set_size_request(t_main.settings,size_icon_top_left,size_icon_top_left);
+		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive_light),size_icon_top_left);
 	if(t_main.window != window_settings)
 	{
 		GtkGesture *click_settings = gtk_gesture_click_new();
@@ -3125,17 +3125,17 @@ static void ui_decorate_panel_left(const int n)
 
 	gtk_box_append(GTK_BOX(t_main.chat_headerbar),t_main.chat_headerbar_left);
 
-	/* Build Image Area of Header Bar */
+	/* Build Image Area of Header Bar */ // anal
 	t_main.image_header = gtk_image_new();
+	gtk_image_set_pixel_size(GTK_IMAGE(t_main.image_header), size_image_left_headerbar);
 	if(t_main.window == window_main || t_main.window == window_group_generate) // (add, generate)
-		t_main.image_header = gtk_image_new_from_paintable(GDK_PAINTABLE(add_active));
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(add_active)); // must use set, do not use new
 	else if(t_main.window == window_home || t_main.window == window_global_killcode || t_main.window == window_log_tor || t_main.window == window_log_torx) // Home (friend requests, outgoing requests, active sing, active mult)
-		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(home_active));
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(home_active)); // must use set, do not use new
 	else if(t_main.window == window_settings || t_main.window == window_change_password || t_main.window == window_edit_torrc) // Settings
-		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(settings_active));
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.image_header),GDK_PAINTABLE(settings_active)); // must use set, do not use new
 	else if(t_main.window == window_peer) // Chat window
 		ui_set_image_lock(n);
-	gtk_widget_set_size_request(t_main.image_header, size_image_left_headerbar, size_image_left_headerbar);
 	gtk_widget_set_valign(t_main.image_header, GTK_ALIGN_CENTER);
 
 	GtkGesture *click_image_header = gtk_gesture_click_new();
@@ -4780,13 +4780,12 @@ static void ui_show_qr(void)
 	struct qr_data *qr_data;
 	if(QR_IS_PNG)
 	{
-		generated_qr_code = gtk_image_new();
 		qr_data = qr_bool(torxid,8);
 		void* png_data = return_png(qr_data);
 		const size_t png_size = torx_allocation_len(png_data);
 		GBytes *bytes = g_bytes_new(png_data,png_size);
 		GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
-		gtk_image_set_from_paintable(GTK_IMAGE(generated_qr_code),GDK_PAINTABLE(texture));
+		generated_qr_code = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
 		torx_free((void*)&png_data);
 	}
 	else
@@ -4796,9 +4795,9 @@ static void ui_show_qr(void)
 		if(qr == NULL)
 			return; // bug
 		generated_qr_code = gtk_label_new(qr);
+		gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
 		torx_free((void*)&qr);
 	}
-	gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
 
 	t_main.popover_qr = custom_popover_new(t_main.button_show_qr);
 	GtkWidget *button_copy_qr = gtk_button_new_with_label (text_copy_qr);
@@ -5151,7 +5150,7 @@ static void ui_group_generate(GtkWidget *button,const void *arg)
 				const size_t png_size = torx_allocation_len(png_data);
 				GBytes *bytes = g_bytes_new(png_data,png_size);
 				GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
-				gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_group),GDK_PAINTABLE(texture));
+				gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_group),GDK_PAINTABLE(texture)); // must use set, do not use new
 				torx_free((void*)&png_data);
 			}
 			else
@@ -5233,8 +5232,8 @@ static void ui_show_group_generate(void)
 
 	GtkWidget *button_invite = gtk_button_new_with_label (text_button_generate_invite);
 	GtkWidget *button_public = gtk_button_new_with_label (text_button_generate_public);
-	g_signal_connect_swapped(button_invite, "clicked", G_CALLBACK (ui_group_generate),itovp(1)); // DO NOT FREE arg because this only gets passed ONCE.
-	g_signal_connect_swapped(button_public, "clicked", G_CALLBACK (ui_group_generate),itovp(0)); // DO NOT FREE arg because this only gets passed ONCE.
+	g_signal_connect(button_invite, "clicked", G_CALLBACK (ui_group_generate),itovp(1)); // DO NOT FREE arg because this only gets passed ONCE.
+	g_signal_connect(button_public, "clicked", G_CALLBACK (ui_group_generate),itovp(0)); // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_box_append (GTK_BOX (box_5), button_invite);
 	gtk_box_append (GTK_BOX (box_5), button_public);
 	gtk_widget_set_halign(box_5, GTK_ALIGN_CENTER);
@@ -5255,17 +5254,20 @@ static void ui_show_group_generate(void)
 	t_main.button_save_generated_qr = gtk_button_new_with_label (text_save_qr);
 
 	if(QR_IS_PNG)
+	{
 		t_main.generated_qr_group = gtk_image_new();
+		gtk_image_set_pixel_size(GTK_IMAGE(t_main.generated_qr_group), size_box_qr_code);
+	}
 	else
 	{
 		t_main.generated_qr_group = gtk_label_new(text_qr_code);
+		gtk_widget_set_size_request(t_main.generated_qr_group,size_box_qr_code,size_box_qr_code); // 29 *6font
 		gtk_widget_add_css_class(t_main.generated_qr_group, "textview_qr");
 		gtk_label_set_selectable(GTK_LABEL(t_main.generated_qr_group), TRUE);
 	}
 	gtk_widget_set_visible(t_main.generated_qr_group,FALSE);
 	gtk_widget_set_visible(t_main.button_copy_generated_qr,FALSE);
 	gtk_widget_set_visible(t_main.button_save_generated_qr,FALSE);
-	gtk_widget_set_size_request(t_main.generated_qr_group,size_box_qr_code,size_box_qr_code); // 29 *6font
 	gtk_widget_set_hexpand(t_main.generated_qr_group, FALSE);	// works, do not remove
 	gtk_widget_set_vexpand(t_main.generated_qr_group, FALSE);	// works, do not remove
 	gtk_box_append (GTK_BOX (box_4), t_main.generated_qr_group);
@@ -5393,13 +5395,12 @@ static void ui_show_generate(void)
 		struct qr_data *qr_data;
 		if(QR_IS_PNG)
 		{
-			t_main.generated_qr_onion = gtk_image_new();
 			qr_data = qr_bool(torxid,8);
 			void* png_data = return_png(qr_data);
 			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
-			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture));
+			t_main.generated_qr_onion = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
 			torx_free((void*)&png_data);
 		}
 		else
@@ -5421,16 +5422,19 @@ static void ui_show_generate(void)
 	else
 	{
 		if(QR_IS_PNG)
+		{
 			t_main.generated_qr_onion = gtk_image_new();
+			gtk_image_set_pixel_size(GTK_IMAGE(t_main.generated_qr_onion),size_box_qr_code);
+		}
 		else
 			t_main.generated_qr_onion = gtk_label_new(text_qr_code);
 		gtk_widget_set_visible(t_main.generated_qr_onion,FALSE);
 		gtk_widget_set_visible(t_main.button_copy_generated_qr,FALSE);
 		gtk_widget_set_visible(t_main.button_save_generated_qr,FALSE);
 	}
-	gtk_widget_set_size_request(t_main.generated_qr_onion,size_box_qr_code,size_box_qr_code); // 29 *6font
 	if(!QR_IS_PNG)
 	{
+		gtk_widget_set_size_request(t_main.generated_qr_onion,size_box_qr_code,size_box_qr_code); // 29 *6font
 		gtk_widget_add_css_class(t_main.generated_qr_onion, "textview_qr");
 		gtk_label_set_selectable(GTK_LABEL(t_main.generated_qr_onion), TRUE);
 	}
@@ -5470,33 +5474,33 @@ static GtkWidget *ui_get_icon_from_filename(const char *name)
 	if(name == NULL)
 	{
 		error_simple(2,"File name passed to get_icon_from_filename() is null.");
-		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file));
+		file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon);
 	}
 	else
 	{
 		const size_t name_len = strlen(name);
 		if(compare(".txt",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_txt));
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_txt),size_file_icon);
 		else if(compare(".jpeg",name,name_len) || compare(".jpg",name,name_len) || compare(".png",name,name_len) || compare(".bmp",name,name_len) || compare(".gif",name,name_len) || compare(".tiff",name,name_len) || compare(".svg",name,name_len) || compare(".psd",name,name_len) || compare(".raw",name,name_len) || compare(".webp",name,name_len) || compare(".ico",name,name_len) || compare(".dng",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_image));
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_image),size_file_icon);
 		else if(compare(".mp3",name,name_len) || compare(".wav",name,name_len) || compare(".flac",name,name_len) || compare(".m4a",name,name_len) || compare(".ogg",name,name_len) || compare(".aac",name,name_len) || compare(".wma",name,name_len) || compare(".mid",name,name_len) || compare(".pcm",name,name_len) || compare(".mka",name,name_len) || compare(".opus",name,name_len) || compare(".ape",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_music));
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_music),size_file_icon);
 		else if(compare(".zip",name,name_len) || compare(".rar",name,name_len) || compare(".tar",name,name_len) || compare(".deb",name,name_len) || compare(".iso",name,name_len) || compare(".7z",name,name_len) || compare(".rpm",name,name_len) || compare(".bz2",name,name_len) || compare(".gz",name,name_len) || compare(".xz",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_zip));
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_zip),size_file_icon);
 		else if(compare(".mkv",name,name_len) || compare(".mp4",name,name_len) || compare(".avi",name,name_len) || compare(".mov",name,name_len) || compare(".wmv",name,name_len) || compare(".flv",name,name_len) || compare(".mpg",name,name_len) || compare(".webm",name,name_len) || compare(".3gp",name,name_len) || compare(".mpv",name,name_len) || compare(".mpeg",name,name_len) || compare(".rm",name,name_len) || compare(".divx",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, video file
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, video file
 		else if(compare(".pdf",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, pdf
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, pdf
 		else if(compare(".doc",name,name_len) || compare(".docx",name,name_len) || compare(".odt",name,name_len) || compare(".wps",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, document
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, document
 		else if(compare(".xlsx",name,name_len) || compare(".xls",name,name_len) || compare(".csv",name,name_len) || compare(".ods",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, spreadsheet
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, spreadsheet
 		else if(compare(".pptx",name,name_len) || compare(".ppt",name,name_len) || compare(".odp",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, presentation
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, presentation
 		else if(compare(".exe",name,name_len) || compare(".msi",name,name_len) || compare(".dmg",name,name_len) || compare(".deb",name,name_len) || compare(".rpm",name,name_len) || compare(".apk",name,name_len) || compare(".jar",name,name_len) || compare(".app",name,name_len) || compare(".bin",name,name_len) || compare(".sh",name,name_len) || compare(".bat",name,name_len) || compare(".bash",name,name_len) || compare(".cmd",name,name_len) || compare(".pkg",name,name_len))
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file)); // TODO change this, executive/installer
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon); // TODO change this, executive/installer
 		else
-			file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(file_file));
+			file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(file_file),size_file_icon);
 	}
 	return file_icon;
 }
@@ -5695,7 +5699,6 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 		if(t_peer[n].pm_n > -1)
 		{ // PM was active before edit, restore it
 			char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			const uint32_t len = torx_allocation_len(peernick);
 			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 			torx_free((void*)&peernick);
@@ -5744,7 +5747,6 @@ static void ui_establish_pm(const int n,void *popover)
 	}
 	t_peer[global_n].pm_n = n;
 	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-	const uint32_t len = torx_allocation_len(peernick);
 	char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
 	torx_free((void*)&peernick);
@@ -5920,7 +5922,7 @@ static GtkWidget *ui_message_info(const int n,const int i)
 	if(owner != ENUM_OWNER_GROUP_CTRL && owner != ENUM_OWNER_CTRL)
 		gtk_box_append(GTK_BOX(info_message_box),peernick_widget);
 	if(owner != ENUM_OWNER_GROUP_CTRL && stat == ENUM_MESSAGE_FAIL)
-		gtk_box_append(GTK_BOX(info_message_box),gtk_image_new_from_paintable(GDK_PAINTABLE(fail_ico))); //;//{} //gtk_box_append(GTK_BOX(t_peer[n].t_message[i].info_message_box),t_peer[n].t_message[i].fail_icon);
+		gtk_box_append(GTK_BOX(info_message_box),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(fail_ico),size_message_spacing)); //;//{} //gtk_box_append(GTK_BOX(t_peer[n].t_message[i].info_message_box),t_peer[n].t_message[i].fail_icon);
 	else
 		gtk_box_append(GTK_BOX(info_message_box),message_time);
 	return info_message_box;
@@ -6055,10 +6057,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 					gtk_spinner_start(GTK_SPINNER(msg)); // alt: gtk_spinner_set_spinning(msg,TRUE);
 				}
 				else
-				{
-					msg = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
-					gtk_widget_set_size_request(msg,size_sticker_large,size_sticker_large);
-				}
+					msg = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_logo),size_sticker_large);
 			}
 		}
 		else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
@@ -6143,14 +6142,13 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			else
 			{ // If file doesn't load or doesn't exist, it will show a red x
 				GtkWidget *image = gtk_image_new_from_file(file_path);
-				gtk_widget_set_size_request(image,size_sticker_large,size_sticker_large);
+				gtk_image_set_pixel_size(GTK_IMAGE(image), size_sticker_large);
 				gtk_grid_attach (GTK_GRID(grid),image,0,0,1,1);
 			}
 		}
 		else
 		{
 			file_icon = ui_get_icon_from_filename(filename);
-			gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
 			char *file_size_text = file_progress_string(file_n,f);
 			t_peer[file_n].t_file[f].file_size = gtk_label_new(file_size_text);
 			torx_free((void*)&file_size_text);
@@ -6185,8 +6183,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	}
 	else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 	{
-		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
-		gtk_widget_set_size_request(file_icon, size_file_icon, size_file_icon);
+		file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_logo),size_file_icon);
 		if(stat == ENUM_MESSAGE_RECV)
 		{
 			GtkGesture *gesture = gtk_gesture_click_new();
@@ -6202,8 +6199,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 	}
 	else if(protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE || protocol == ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED)
 	{
-		file_icon = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
-		gtk_widget_set_size_request(file_icon, size_file_icon/2, size_file_icon/2);
+		file_icon = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_logo),size_file_icon/2);
 
 		GtkGesture *gesture = gtk_gesture_click_new(); // XXX DO NOT SET THIS TO "pressed". MUST use "released" otherwise when ui_message_build is called, which triggers splicing, segfaults will occur if the message was clicked on the edges XXX
 		g_signal_connect_swapped(gesture, "released", G_CALLBACK(playback_message),iitovp(n,i)); // do not free
@@ -6212,7 +6208,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		gtk_grid_attach (GTK_GRID(grid),file_icon,0,0,1,1);
 		gtk_grid_attach (GTK_GRID(grid),msg,1,0,1,1);
 		if(stat == ENUM_MESSAGE_RECV && t_peer[n].t_message[i].unheard)
-			gtk_grid_attach (GTK_GRID(grid),gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red)),2,0,1,1);
+			gtk_grid_attach (GTK_GRID(grid),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),size_message_spacing),2,0,1,1);
 	}
 	else
 		gtk_grid_attach (GTK_GRID(grid),msg,0,0,1,1);
@@ -6919,13 +6915,12 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 		struct qr_data *qr_data;
 		if(QR_IS_PNG)
 		{
-			generated_qr_code = gtk_image_new();
 			qr_data = qr_bool(group_id_encoded,8);
 			void* png_data = return_png(qr_data);
 			const size_t png_size = torx_allocation_len(png_data);
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
-			gtk_image_set_from_paintable(GTK_IMAGE(generated_qr_code),GDK_PAINTABLE(texture));
+			generated_qr_code = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
 			torx_free((void*)&png_data);
 		}
 		else
@@ -6935,10 +6930,9 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 			if(qr == NULL)
 				return;
 			generated_qr_code = gtk_label_new(qr);
+			gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
 			torx_free((void*)&qr);
 		}
-		gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
-
 		t_main.popover_qr = custom_popover_new(button_invite);
 
 		GtkWidget *button_copy_qr = gtk_button_new_with_label (text_copy_qr);
@@ -6997,9 +6991,9 @@ static void ui_toggle_keyboard(GtkWidget *button,const gpointer data)
 		gtk_widget_set_visible(t_main.write_message,FALSE);
 		gtk_widget_set_visible(t_main.button_emoji,FALSE);
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(keyboard_dark),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_light)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(keyboard_light),size_icon_bottom_right));
 	}
 	else
 	{
@@ -7009,9 +7003,9 @@ static void ui_toggle_keyboard(GtkWidget *button,const gpointer data)
 		gtk_widget_set_visible(t_main.write_message,TRUE);
 		gtk_widget_set_visible(t_main.button_emoji,TRUE);
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_dark),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_light),size_icon_bottom_right));
 	}
 }
 
@@ -7023,22 +7017,19 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	if(type == ENUM_BUTTON_LOGGING)
 	{
 		ui_set_image_logging(button,n);
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_logging),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_MUTE)
 	{
 		ui_set_image_mute(button,n);
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_mute_button),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_CALL)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(call_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_dark),size_icon_top_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(call_light)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_light),size_icon_top_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_call_start_button),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_KILL)
@@ -7047,13 +7038,12 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	//	if(1) // TODO replace 1 with some sort of if(kill_active). Make kill toggleable.
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_inactive)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive),size_icon_top_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_inactive_light)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive_light),size_icon_top_right));
 	//	}
 	//	else
 	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_kill),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_DELETE_CTRL)
@@ -7062,13 +7052,12 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	//	if(1) // TODO replace 1
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_inactive)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive),size_icon_top_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_inactive_light)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive_light),size_icon_top_right));
 	//	}
 	//	else
 	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_delete),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_DELETE_LOG)
@@ -7077,13 +7066,12 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	//	if(1) // TODO replace 1
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_dark)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_dark),size_icon_top_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(clear_all_light)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_light),size_icon_top_right));
 	//	}
 	//	else
 	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_delete_log),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_ADD_BLOCK)
@@ -7091,10 +7079,9 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		if(owner != ENUM_OWNER_GROUP_CTRL)
 			ui_set_image_block(button,n);
 		else if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive_light)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_right));
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 		{ // Popover peerlist for sending Group Invitation
 			global_group = set_g(n,NULL); // just looking up existing
@@ -7116,10 +7103,9 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		//	gtk_widget_set_tooltip_text(button,text_tooltip_blocked_on); // TODO set some tooltip text for this ("Menu"?)
 		} */
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(more_vert_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(more_vert_dark),size_icon_top_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(more_vert_light)));
-		gtk_widget_set_size_request(button,size_icon_top_right,size_icon_top_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(more_vert_light),size_icon_top_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_vertical),itovp(n));
 	}
 	else if(type == ENUM_BUTTON_KEYBOARD_MICROPHONE)
@@ -7127,54 +7113,49 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		if(show_keyboard)
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_dark),size_icon_bottom_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_light),size_icon_bottom_right));
 		}
 		else
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_dark)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(keyboard_dark),size_icon_bottom_right));
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(keyboard_light)));
+				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(keyboard_light),size_icon_bottom_right));
 		}
-		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_keyboard),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_EMOJI)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(emoji_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(emoji_dark),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(emoji_light)));
-		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(emoji_light),size_icon_bottom_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_emoji),t_main.write_message); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_STICKER)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(gif_box_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(gif_box_dark),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(gif_box_light)));
-		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(gif_box_light),size_icon_bottom_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_sticker_chooser),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_ATTACH)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(attach_dark)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(attach_dark),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(attach_light)));
-		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(attach_light),size_icon_bottom_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_file),itovp(1)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_ADD_STICKER)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_active)));
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_active),size_icon_bottom_right));
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(add_inactive_light)));
-		gtk_widget_set_size_request(button, size_icon_bottom_right, size_icon_bottom_right);
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_bottom_right));
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_choose_file),itovp(2)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else
@@ -7392,9 +7373,9 @@ static void ui_select_changed(const void *arg)
 
 	/* Send Button */
 	if(global_theme == DARK_THEME)
-		t_main.button_send = gtk_image_new_from_paintable(GDK_PAINTABLE(send_dark));
+		t_main.button_send = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(send_dark),size_icon_bottom_right);
 	else
-		t_main.button_send = gtk_image_new_from_paintable(GDK_PAINTABLE(send_light));
+		t_main.button_send = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(send_light),size_icon_bottom_right);
 	GtkGesture *press_send = gtk_gesture_click_new();
 	g_signal_connect(press_send, "pressed", G_CALLBACK(ui_send_pressed),NULL); // DO NOT FREE arg because this only gets passed ONCE.
 	g_signal_connect(press_send, "released", G_CALLBACK(ui_send_released),t_main.button_send); // DO NOT FREE arg because this only gets passed ONCE.
@@ -7488,7 +7469,6 @@ static void ui_select_changed(const void *arg)
 		if(t_peer[n].pm_n > -1)
 		{
 			char *peernick_local = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			const uint32_t len = torx_allocation_len(peernick_local);
 			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
 			torx_free((void*)&peernick_local);
@@ -7654,19 +7634,19 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	/* Build Avatar or Online Status Indicator Image */
 	GtkWidget *image_peerlist;
 	if(owner == ENUM_OWNER_GROUP_CTRL) // Handle group TODO should have a > arrow that goes to downward pointing upon click, to show individual GROUP_PEERs
-		image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
+		image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_logo),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 	else if(status == ENUM_STATUS_BLOCKED) // Handling blocks second
-		image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+		image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 	else
 	{
 		if(sendfd_connected > 0 && recvfd_connected > 0) // https://docs.gtk.org/Pango/enum.Weight.html
-			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_green));
+			image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_green),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 		else if(sendfd_connected > 0 && recvfd_connected < 1)
-			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_yellow));
+			image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_yellow),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 		else if(sendfd_connected < 1 && recvfd_connected > 0)
-			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_orange));
+			image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_orange),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 		else
-			image_peerlist = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_grey));
+			image_peerlist = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_grey),minimal_size ? size_peerlist_icon_size/2 : size_peerlist_icon_size);
 	}
 	gtk_widget_set_halign(image_peerlist, GTK_ALIGN_FILL);
 	gtk_widget_set_valign(image_peerlist, GTK_ALIGN_CENTER);
@@ -7674,14 +7654,14 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	gtk_overlay_set_child(GTK_OVERLAY(overlay),image_peerlist);
 	if(minimal_size == 0)
 	{
-		gtk_widget_set_size_request(image_peerlist,size_peerlist_icon_size,size_peerlist_icon_size);
 		if(t_peer[n].unread > 0)
 		{ // Handle "Badges"
 			GtkWidget *overlay2 = gtk_overlay_new();
-			gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/1.5),(int)((double)size_peerlist_icon_size/1.5));
+			const int unread_count_dot_size = (int)((double)size_peerlist_icon_size/1.5);
+			gtk_widget_set_size_request(overlay2,unread_count_dot_size,unread_count_dot_size);
 			gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 			gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
-			GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+			GtkWidget *dot = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),unread_count_dot_size);
 			gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 			char unread_count[21];
@@ -7703,10 +7683,11 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 		//	if(currently speaking) // TODO
 		//	{ // Handle "Badges"
 				GtkWidget *overlay2 = gtk_overlay_new();
-				gtk_widget_set_size_request(overlay2,(int)((double)size_peerlist_icon_size/2/1.5),(int)((double)size_peerlist_icon_size/2/1.5));
+				const int unread_count_dot_size = (int)((double)size_peerlist_icon_size/1.5);
+				gtk_widget_set_size_request(overlay2,unread_count_dot_size,unread_count_dot_size);
 				gtk_widget_set_halign(overlay2, GTK_ALIGN_START);
 				gtk_widget_set_valign(overlay2, GTK_ALIGN_END);
-				GtkWidget *dot = gtk_image_new_from_paintable(GDK_PAINTABLE(dot_red));
+				GtkWidget *dot = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(dot_red),unread_count_dot_size);
 				gtk_overlay_set_child(GTK_OVERLAY(overlay2),dot);
 
 				gtk_overlay_add_overlay(GTK_OVERLAY(overlay),overlay2);
@@ -7832,18 +7813,17 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 		if(participant_mic)
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(mic_off_dark),size_peerlist_icon_size));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(mic_off_light)));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(mic_off_light),size_peerlist_icon_size));
 		}
 		else
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_dark),size_peerlist_icon_size));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable(GDK_PAINTABLE(microphone_light)));
+				gtk_button_set_child(GTK_BUTTON(button_mic),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_light),size_peerlist_icon_size));
 		}
-		gtk_widget_set_size_request(button_mic, size_peerlist_icon_size, size_peerlist_icon_size);
 		g_signal_connect(button_mic, "clicked", G_CALLBACK(ui_toggle_mic),printing);
 		gtk_box_append(GTK_BOX(chat_info),button_mic);
 
@@ -7852,18 +7832,17 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 		if(participant_speaker)
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_off_dark),size_peerlist_icon_size));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_off_light)));
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_off_light),size_peerlist_icon_size));
 		}
 		else
 		{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_dark)));
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_up_dark),size_peerlist_icon_size));
 			else
-				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable(GDK_PAINTABLE(volume_up_light)));
+				gtk_button_set_child(GTK_BUTTON(button_speaker),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(volume_up_light),size_peerlist_icon_size));
 		}
-		gtk_widget_set_size_request(button_speaker, size_peerlist_icon_size, size_peerlist_icon_size);
 		g_signal_connect(button_speaker, "clicked", G_CALLBACK(ui_toggle_speaker),printing);
 		gtk_box_append(GTK_BOX(chat_info),button_speaker);
 	}
@@ -7881,8 +7860,8 @@ static void ui_show_main_screen(void)
 	gtk_widget_set_vexpand(t_main.panel_left, TRUE); // Forces it to grow to fit its parent
 //	gtk_widget_add_css_class(t_main.panel_left, "panel_left");
 	/* Build Logo */
-	GtkWidget *logo = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo));
-	gtk_widget_set_size_request(logo, size_logo_top, size_logo_top);
+	GtkWidget *logo = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_logo),size_logo_top);
+
 	/* Build Search Bar */
 	t_main.search_panel = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
 	gtk_widget_set_halign(t_main.search_panel, GTK_ALIGN_CENTER);
@@ -7969,8 +7948,8 @@ static void ui_show_main_screen(void)
 
 	/* Set Panel Size Requests */
 	gtk_window_set_child(GTK_WINDOW(t_main.main_window), frame);
-//	gtk_widget_set_size_request (t_main.panel_left,size_natural,size_natural);
-//	gtk_widget_set_size_request (t_main.panel_right,size_natural,size_natural);
+//	gtk_widget_set_size_request(t_main.panel_left,size_natural,size_natural);
+//	gtk_widget_set_size_request(t_main.panel_right,size_natural,size_natural);
 
 	ui_populate_peers(itovp(0));
 	ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
@@ -8063,24 +8042,29 @@ void ui_show_auth_screen(void)
 
 	/* Build title, logo, password area */
 /*	GtkWidget *auth_logo = gtk_image_new_from_paintable(GDK_PAINTABLE(texture_logo)); // goat
-	gtk_widget_set_size_request(auth_logo,size_logo_auth,size_logo_auth);
+	gtk_image_set_pixel_size (GTK_IMAGE(image_logo), size_logo_auth);
 	gtk_box_append (GTK_BOX(auth_logo_box), auth_logo);	*/
 
 // TESTING TODO Do NOT delete. This is a ready-to-go colored .svg / symbolic icon setup, but it won't work until GTK 4.14, according to #gtk
 	GFile *file = g_file_new_for_uri("resource:///org/torx/gtk4/other/scalable/apps/logo-torx-symbolic.svg");
 	GtkIconPaintable *paintable = gtk_icon_paintable_new_for_file (file,size_logo_auth,1);
-	if(gtk_icon_paintable_is_symbolic(paintable) == TRUE)
-		error_simple(0,RED"is symbolic"RESET); // goat
-	else
-		error_simple(0,RED"is NOT symbolic"RESET);
-	GdkRGBA colors = {1.0,0.0,0.0,1.0};
+	GdkRGBA colors = {1.0,0.0,0.0,1.0}; // red, full opacity
 //	gdk_rgba_parse(&colors,"rgb(200,70,70)");
 	GdkSnapshot* snapshot = gtk_snapshot_new();
 	gtk_symbolic_paintable_snapshot_symbolic(GTK_SYMBOLIC_PAINTABLE(paintable),snapshot,size_logo_auth,size_logo_auth,&colors,1);
 	GdkPaintable *colored = gtk_snapshot_free_to_paintable(snapshot,NULL);
 	GtkWidget *image_logo = gtk_image_new_from_paintable(GDK_PAINTABLE(colored));
-	gtk_widget_set_size_request(image_logo,size_logo_auth,size_logo_auth);
+	gtk_image_set_pixel_size(GTK_IMAGE(image_logo), size_logo_auth); // workaround for >= 4.19 bug
 	gtk_box_append (GTK_BOX(auth_logo_box),image_logo);
+//	if(gtk_icon_paintable_is_symbolic(paintable) == TRUE) // depreciated
+//		error_simple(0,RED"is symbolic"RESET);
+//	else
+//		error_simple(0,RED"is NOT symbolic"RESET);
+
+/*	GtkWidget *image_logo = gtk_image_new_from_resource("/org/torx/gtk4/other/scalable/apps/logo-torx-symbolic.svg");
+	gtk_image_set_pixel_size (GTK_IMAGE(image_logo), size_logo_auth);
+	gtk_box_append (GTK_BOX(auth_logo_box),image_logo);	*/
+
 // TESTING TODO
 	GtkWidget *auth_text_next_logo = gtk_label_new(text_title);
 	gtk_box_append (GTK_BOX(auth_logo_box), auth_text_next_logo);
