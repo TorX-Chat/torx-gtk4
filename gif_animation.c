@@ -75,6 +75,8 @@ Note: For retrieving sizes (in UI) ( Useful for aspect ratio )
 
 */
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 enum { // Currently we only have one property (ie the data itself), but we can specify more
 	GIF_DATA = 1
 };
@@ -174,3 +176,5 @@ static inline void pixbuf_paintable_class_init(ILiekCatsClass *paintable_class)
 	object_class->set_property = set_property;
 	g_object_class_install_property(object_class,GIF_DATA,g_param_spec_string("gif-data",NULL,NULL,NULL,G_PARAM_READWRITE));
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS

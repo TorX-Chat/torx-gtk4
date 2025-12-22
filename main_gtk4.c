@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/12/19 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/12/21 by TorX\n© Copyright 2025 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2104,13 +2104,26 @@ static GdkPaintable *gif_animated_new_from_data(const unsigned char *data,const 
 {
 	if(!data || !data_len)
 		return NULL;
-	struct gif_data gif_data;
-	gif_data.data = data;
-	gif_data.data_len = data_len;
-
-	GdkPaintable *paintable = g_object_new(GTK_MAKES_ME_RAGE,"gif-data",&gif_data,NULL);
-//	g_object_unref(paintable);
-	return paintable;
+	if(GTK_MAJOR_VERSION >= 4 && GTK_MINOR_VERSION >= 21)
+	{ // newer, untested
+		GBytes* bytes = g_bytes_new_static(data,data_len);
+		GInputStream *stream = g_memory_input_stream_new_from_bytes (bytes);
+		GtkMediaStream *media = gtk_media_file_new_for_input_stream (stream);
+		gtk_media_stream_set_loop (GTK_MEDIA_STREAM (media), TRUE);
+		gtk_media_stream_set_muted (GTK_MEDIA_STREAM (media), TRUE);
+		gtk_media_stream_play (GTK_MEDIA_STREAM (media));
+	//	GtkWidget *image = gtk_image_new_from_paintable_with_size (GDK_PAINTABLE (media),300);
+		return GDK_PAINTABLE (media);
+	}
+	else
+	{ // older, use gif_animation.c/gif_animation.h
+		struct gif_data gif_data;
+		gif_data.data = data;
+		gif_data.data_len = data_len;
+		GdkPaintable *paintable = g_object_new(GTK_MAKES_ME_RAGE,"gif-data",&gif_data,NULL);
+	//	g_object_unref(paintable);
+		return paintable;
+	}
 }
 
 static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,char **global_location,const char *name)
@@ -2313,10 +2326,12 @@ static inline GtkWidget *ui_sticker_box(GdkPaintable *paintable,const int square
 		error_simple(0,"A gif is bunk. Message 2.");
 		return NULL; // consider returning empty box on error. no, probably not good because then gaps in sticker chooser would occur.
 	}
+	G_GNUC_BEGIN_IGNORE_DEPRECATIONS // <4.21 legacy
 	const double height = gdk_pixbuf_animation_get_height(PIXBUF_PAINTABLE(paintable)->animation);
 	if(height < 1)
 		return NULL; // consider returning empty box on error. no, probably not good because then gaps in sticker chooser would occur.
 	const double aspect_ratio = gdk_pixbuf_animation_get_width(PIXBUF_PAINTABLE(paintable)->animation) / height;
+	G_GNUC_END_IGNORE_DEPRECATIONS // <4.21 legacy
 	GtkWidget *box;
 	GtkWidget *sticker_image = gtk_picture_new_for_paintable(paintable); // alt: gtk_image_new_from_paintable, but would need gtk_image_set_pixel_size instead of gtk_widget_set_size_request
 	if(aspect_ratio > 1)
