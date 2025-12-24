@@ -1080,7 +1080,7 @@ static int call_update_idle(void *arg)
 		{
 			t_peer[call_n].t_call[call_c].column = gtk_box_new(GTK_ORIENTATION_VERTICAL, size_spacing_zero);
 			g_object_ref(t_peer[call_n].t_call[call_c].column); // XXX THIS IS NECESSARY BECAUSE OTHERWISE IT WILL BE DESTROYED WHEN WE NAVIGATE AWAY. Otherwise we need to re-write this function and call_update instead of just adding .column to .call_box
-			if(call_n == global_n || group_n == global_n)
+			if(global_n > -1 && (call_n == global_n || group_n == global_n))
 				gtk_box_append(GTK_BOX(t_main.call_box), t_peer[call_n].t_call[call_c].column);
 		}
 		else
@@ -1546,6 +1546,8 @@ static int transfer_progress_idle(void *arg)
 	const int f = progress->f;
 	const uint64_t transferred = progress->transferred;
 	torx_free((void*)&progress);
+	if(global_n < 0)
+		return 0;
 	int g = -1;
 	int group_n = -1;
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -6520,7 +6522,7 @@ static int message_deleted_idle(void *arg)
 			const int g = set_g(n,NULL);
 			group_n = getter_group_int(g,offsetof(struct group_list,n));
 		}
-		if(n == global_n || group_n == global_n) // TODO cannot occur when we already wiped
+		if(global_n > -1 && (n == global_n || group_n == global_n)) // TODO cannot occur when we already wiped
 		{
 			IntPair *pair = int_pair_new(n,i,-1,-1);
 			if(INVERSION_TEST)
@@ -7550,6 +7552,7 @@ static void ui_select_changed(const void *arg)
 	if(MESSAGES_START_AT_TOP_OF_WINDOW == 0)
 		gtk_widget_set_valign(list_view, GTK_ALIGN_END);
 	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view); // Do not change. ListView should be a direct child of a Scrolled Window otherwise weird things happen with > 205 widgets.
+	gtk_widget_grab_focus(t_main.write_message);
 }
 
 GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)
