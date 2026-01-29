@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.38 2025/12/21 by TorX\n© Copyright 2025 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.39 2026/01/29 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -513,8 +513,6 @@ static const char *text_generate_onionid = {0};
 static const char *text_generate_torxid = {0};
 static const char *text_disable = {0};
 static const char *text_enable = {0};
-static const char *text_no = {0};
-static const char *text_yes = {0};
 static const char *text_leave_after = {0};
 static const char *text_delete_after = {0};
 static const char *text_select = {0};
@@ -2639,7 +2637,7 @@ static void ui_toggle_mute(const gpointer data)
 	const int n = vptoi(data);// DO NOT FREE ARG
 	const int peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index));
 	// Update Setting
-	toggle_int8(&t_peer[n].mute); // safe usage
+	t_peer[n].mute = !t_peer[n].mute;
 	popdown(t_main.popover_group_peerlist)
 	// Save Setting
 	char p1[21];
@@ -3353,8 +3351,6 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_generate_torxid = "Generate TorX-ID";
 		text_disable = "Disable";
 		text_enable = "Enable";
-		text_no = "No";
-		text_yes = "Yes";
 		text_leave_after = "Leave After";
 		text_delete_after = "Delete After";
 		text_select = "Select";
@@ -3378,8 +3374,8 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_edit = "Edit";
 		text_incoming = "Incoming Requests";
 		text_outgoing = "Outgoing Requests";
-		text_active_mult = "Active Multi-Use IDs";
-		text_active_sing = "Active Single-Use IDs";
+		text_active_mult = "Multi-Use IDs";
+		text_active_sing = "Single-Use IDs";
 		text_you = "You";
 		text_queued = "Queued";
 		text_draft = "Draft";
@@ -3405,7 +3401,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_hold_to_talk = "Hold to Talk";
 		text_cancel_editing = "Cancel editing";
 		text_private_messaging = "Private Messaging";
-		text_rename = "Rename";	
+		text_rename = "Rename";
 		text_button_add = "Send\nFriend\nRequest";
 		text_button_join = "Attempt\nTo\nJoin";
 		text_button_sing = "Generate Single-Use ID";
@@ -3560,8 +3556,6 @@ after each comes online and receives the code.";
 		text_generate_torxid = "生成TorX-ID";
 		text_disable = "禁用";
 		text_enable = "启用";
-		text_no = "否";
-		text_yes = "是";
 		text_leave_after = "离开时间";
 		text_delete_after = "删除时间";
 		text_select = "选择";
@@ -3585,8 +3579,8 @@ after each comes online and receives the code.";
 		text_edit = "编辑";
 		text_incoming = " 收到的请求";
 		text_outgoing = " 发出的请求";
-		text_active_mult = "活跃多次IDs";
-		text_active_sing = "活跃一次性IDs";
+		text_active_mult = "多次IDs";
+		text_active_sing = "一次性IDs";
 		text_you = "你";
 		text_accept = "接受";
 		text_reject = "拒绝";
@@ -3705,11 +3699,10 @@ after each comes online and receives the code.";
 
 static void ui_change_theme(const gpointer combobox)
 { // Set and save a custom UI Setting in unencrypted form
-	const int local_setting = (int)gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
-	threadsafe_write(&mutex_global_variable,&global_theme,&local_setting,sizeof(local_setting));
-	ui_theme(local_setting);
+	global_theme = (int)gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
+	ui_theme(global_theme);
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
+	snprintf(p1,sizeof(p1),"%d",global_theme);
 	sql_setting(1,-1,"theme",p1,strlen(p1));
 }
 
@@ -4053,7 +4046,7 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 	const char *text = gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(entry)));
 	const size_t text_len = text ? strlen(text) : 0;
 	pthread_rwlock_rdlock(&mutex_global_variable); // 🟧
-	const size_t current_len = control_password_clear ? strlen(control_password_clear) : 0;
+	const size_t current_len = control_password_clear ? torx_allocation_len(control_password_clear) - 1 : 0;
 	uint8_t changed = 0;
 	if((text_len || current_len) && (current_len != text_len || strcmp(text,control_password_clear)))
 		changed = 1;
@@ -4177,7 +4170,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_validity_mult,ENUM_SPIN_MULT_EXPIRATION,(int)threadsafe_read_uint32(&mutex_global_variable,&mult_expiration_days),0,5475)); // setting reasonable max of 15 years because it it over-runs 2038 we gonna have issues
 
 	// Automatically Accept Mult
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_mult,&ui_change_auto_accept_mult,auto_accept_mult,text_no,text_yes,NULL));
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_auto_mult,&ui_change_auto_accept_mult,auto_accept_mult,text_disable,text_enable,NULL));
 
 	// Tor SOCKS5 Port
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_spinbutton(text_set_tor_port_socks,ENUM_SPIN_TOR_PORT_SOCKS,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_socks_port),0,65536));
@@ -5532,13 +5525,15 @@ static int custom_setting_idle(void *arg)
 	const int plaintext = custom_setting->plaintext;
 	if(!strncmp(setting_name,"theme",5))
 	{
-		global_theme = (int)strtoll(setting_value, NULL, 10);
-		if(global_theme != THEME_DEFAULT)
+		const int proposed_theme = (int)strtoll(setting_value, NULL, 10);
+		if(proposed_theme != global_theme && global_theme > -1 && proposed_theme != THEME_DEFAULT)
+		{ // Checking that it is (a) a change and (b) that we have already initialized, or that we haven't but we are different than default
+			global_theme = proposed_theme;
 			ui_theme(global_theme);
+		}
 	}
 	else if(!strncmp(setting_name,"language",8) && sizeof(language) == setting_value_len+1)
 	{ // We are requiring the language to be exactly 5 characters long to be considered valid (ex: en_US)
-	//	printf("Checkpoint language %s vs %s\n",language,setting_value);
 		if(memcmp(language,setting_value,sizeof(language)))
 		{ // Loading a different language setting. This check is to avoid unnecessarily calling ui_show_auth_screen twice.
 			memcpy(language,setting_value,setting_value_len);
