@@ -550,7 +550,7 @@ static const char *text_pause = {0};
 static const char *text_choose_file = {0};
 static const char *text_choose_files = {0};
 static const char *text_choose_folder = {0};
-static const char *text_open_folder = {0}; // TODO implement after 4.10 drops
+static const char *text_open_folder = {0};
 static const char *text_cancel = {0};
 static const char *text_transfer_paused = {0};
 static const char *text_transfer_rejected = {0};
@@ -2100,32 +2100,6 @@ void onion_ready_cb_ui(const int n)
 	return GDK_PAINTABLE(texture);
 } */
 
-static GdkPaintable *gif_animated_new_from_data(const unsigned char *data,const size_t data_len)
-{
-	if(!data || !data_len)
-		return NULL;
-	if(GTK_MAJOR_VERSION >= 4 && GTK_MINOR_VERSION >= 21)
-	{ // newer, untested
-		GBytes* bytes = g_bytes_new_static(data,data_len);
-		GInputStream *stream = g_memory_input_stream_new_from_bytes (bytes);
-		GtkMediaStream *media = gtk_media_file_new_for_input_stream (stream);
-		gtk_media_stream_set_loop (GTK_MEDIA_STREAM (media), TRUE);
-		gtk_media_stream_set_muted (GTK_MEDIA_STREAM (media), TRUE);
-		gtk_media_stream_play (GTK_MEDIA_STREAM (media));
-	//	GtkWidget *image = gtk_image_new_from_paintable_with_size (GDK_PAINTABLE (media),300);
-		return GDK_PAINTABLE (media);
-	}
-	else
-	{ // older, use gif_animation.c/gif_animation.h
-		struct gif_data gif_data;
-		gif_data.data = data;
-		gif_data.data_len = data_len;
-		GdkPaintable *paintable = g_object_new(GTK_MAKES_ME_RAGE,"gif-data",&gif_data,NULL);
-	//	g_object_unref(paintable);
-		return paintable;
-	}
-}
-
 static void handle_chosen_file_and_restart_tor(GtkWidget *button,GFile *file,char **global_location,const char *name)
 { // TODO consider having a option to unset / reset default path
 	char *path = g_file_get_path(file); // free'd
@@ -2319,19 +2293,46 @@ static void ui_sticker_send(gpointer *arg)
 	torx_free((void*)&checksum);
 }
 
-static inline GtkWidget *ui_sticker_box(GdkPaintable *paintable,const int square_size)
+static inline GtkWidget *ui_sticker_box(const unsigned char *data,const size_t data_len,const int square_size)
 { // Put sticker in an appropriate box of an appropriate size. XXX WARNING: we use this for gifs of all types, not just stickers. XXX
+	if(!data || !data_len)
+		return NULL;
+	GdkPaintable *paintable;
+	if(GTK_MAJOR_VERSION >= 4444 && GTK_MINOR_VERSION >= 21)
+	{ // newer, XXX XXX XXX TODO TODO TODO DOES NOT WORK for ui_sticker_chooser, for unknown reason
+		unsigned char *permanently_lost = torx_secure_malloc(data_len); // XXX XXX XXX TODO TODO TODO bad, but alternative is to use sticker[s].data without locks
+		memcpy(permanently_lost,data,data_len); // XXX XXX XXX TODO TODO TODO bad, but alternative is to use sticker[s].data without locks
+		GBytes* bytes = g_bytes_new_static(permanently_lost,data_len);
+		GInputStream *stream = g_memory_input_stream_new_from_bytes (bytes);
+		GtkMediaStream *media = gtk_media_file_new_for_input_stream (stream);
+		gtk_media_stream_set_loop (GTK_MEDIA_STREAM (media), TRUE);
+		gtk_media_stream_set_muted (GTK_MEDIA_STREAM (media), TRUE);
+		gtk_media_stream_play (GTK_MEDIA_STREAM (media));
+		GtkWidget *image = gtk_image_new_from_paintable(GDK_PAINTABLE (media));
+		gtk_image_set_pixel_size(GTK_IMAGE(image), square_size);
+		return image;
+	}
+	else
+	{ // older, use gif_animation.c/gif_animation.h
+		struct gif_data gif_data;
+		gif_data.data = data;
+		gif_data.data_len = data_len;
+		paintable = g_object_new(pixbuf_paintable_get_type(),"gif-data",&gif_data,NULL); // do not replace pixbuf_paintable_get_type() with a hardcoded type. Returns GType, which is an integer, however it is not static so we can't hardcode it.
+	//	g_object_unref(paintable);
+	}
 	if(!paintable || !GDK_IS_PIXBUF_ANIMATION(PIXBUF_PAINTABLE(paintable)->animation))
 	{
 		error_simple(0,"A gif is bunk. Message 2.");
 		return NULL; // consider returning empty box on error. no, probably not good because then gaps in sticker chooser would occur.
 	}
+	double height;
+	double aspect_ratio;
 	G_GNUC_BEGIN_IGNORE_DEPRECATIONS // <4.21 legacy
-	const double height = gdk_pixbuf_animation_get_height(PIXBUF_PAINTABLE(paintable)->animation);
+	height = gdk_pixbuf_animation_get_height(PIXBUF_PAINTABLE(paintable)->animation);
+	aspect_ratio = gdk_pixbuf_animation_get_width(PIXBUF_PAINTABLE(paintable)->animation) / height;
+	G_GNUC_END_IGNORE_DEPRECATIONS // <4.21 legacy
 	if(height < 1)
 		return NULL; // consider returning empty box on error. no, probably not good because then gaps in sticker chooser would occur.
-	const double aspect_ratio = gdk_pixbuf_animation_get_width(PIXBUF_PAINTABLE(paintable)->animation) / height;
-	G_GNUC_END_IGNORE_DEPRECATIONS // <4.21 legacy
 	GtkWidget *box;
 	GtkWidget *sticker_image = gtk_picture_new_for_paintable(paintable); // alt: gtk_image_new_from_paintable, but would need gtk_image_set_pixel_size instead of gtk_widget_set_size_request
 	if(aspect_ratio > 1)
@@ -2368,7 +2369,7 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 	for(int s = 0; (uint32_t)s < sticker_retrieve_count(); s++)
 	{ // Attach stickers TODO have them only be animated while mouseover, ie: utilize gif_static_new_from_data
 		unsigned char *data = sticker_retrieve_data(s);
-		GtkWidget *inner_box = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_small);
+		GtkWidget *inner_box = ui_sticker_box(data,torx_allocation_len(data),size_sticker_small);
 		torx_free((void*)&data);
 		if(inner_box)
 		{ // verify sticker is valid
@@ -2828,9 +2829,8 @@ static int cleanup_idle(void *arg)
 		snprintf(p1,sizeof(p1),"%d",size);
 		sql_setting(1,-1,"gtk4-height",p1,strlen(p1));
 	}
-	/* Log Unread Message Count in the same manner that we store last_seen */
 	if(log_unread == 1)
-	{
+	{ // Log Unread Message Count in the same manner that we store last_seen
 		for(int peer_index,n = 0 ; (peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index))) > -1 || getter_byte(n,INT_MIN,-1,offsetof(struct peer_list,onion)) != 0 ; n++)
 		{ // storing last_seen time to .key file. NOTE: this will execute more frequently than we might want if logging is disabled. however there is little we can do.
 			if(peer_index < 0)
@@ -4749,7 +4749,7 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 		const int g = set_g(n,NULL);
 		const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 		if(!g_invite_required)
-		{ // Public gropu, copy group_id
+		{ // Public group, copy group_id
 			unsigned char id[GROUP_ID_SIZE]; // zero'd
 			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
 			memcpy(id,group[g].id,sizeof(id));
@@ -6058,7 +6058,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			if(s > -1)
 			{
 				unsigned char *data = sticker_retrieve_data(s);
-				msg = ui_sticker_box(gif_animated_new_from_data(data,torx_allocation_len(data)),size_sticker_large);
+				msg = ui_sticker_box(data,torx_allocation_len(data),size_sticker_large);
 				torx_free((void*)&data);
 			}
 			if(msg == NULL)
@@ -6145,7 +6145,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			{ // We check if bytes_file exists because otherwise there can be issues once we reach g_bytes_get_data
 				size_t bytes_size = 0;
 				const void *bytes = g_bytes_get_data(bytes_file,&bytes_size);
-				GtkWidget *gif = ui_sticker_box(gif_animated_new_from_data(bytes,bytes_size),size_sticker_large);
+				GtkWidget *gif = ui_sticker_box(bytes,bytes_size,size_sticker_large);
 				if(gif) // not bunk
 					gtk_grid_attach (GTK_GRID(grid),gif,0,0,1,1);
 				else
@@ -8406,8 +8406,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	{ // Do not use starting_dir because cwd has been changed by initial
 		char tdd_full_path[PATH_MAX];
 		const int tdd_len = snprintf(tdd_full_path,sizeof(tdd_full_path),"%s%ctor_data_directory",current_working_directory,platform_slash) + 1;
+		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
 		tor_data_directory = torx_insecure_malloc((size_t)tdd_len);
 		memcpy(tor_data_directory,tdd_full_path,(size_t)tdd_len);
+		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	}
 
 	ui_initialize_language(NULL);
