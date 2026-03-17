@@ -138,7 +138,9 @@ XXX ERRORS XXX
 #define RESOURCE_CSS_LIGHT "/org/torx/gtk4/theme/light_chat.css"
 #define MESSAGES_START_AT_TOP_OF_WINDOW 1 // 0 seems a bit buggy
 #define INVERSION_TEST 1 // https://gitlab.gnome.org/GNOME/gtk/-/issues/4680 NOTE: using g_list_store_insert / g_list_store_splice at position 0 will cause a rebuild of the entire list
-#define GTK_FACTORY_BUG 1 // Memory intensive. Enabling this is kind of necessary until https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/7420 is widely merged.
+#if GTK_MAJOR_VERSION == 4 && GTK_MINOR_VERSION < 17
+	#define GTK_FACTORY_BUG 1 // Memory intensive. The fix was merged at 4.17.0. https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/7420
+#endif
 static GtkWidget *popover_level_one = NULL; // XXX For working-around GTK bug on double level popovers
 #define QR_IS_PNG 1
 /* XXX NOTE: Bundled files are the two below, the .desktop, and /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png XXX */
@@ -203,7 +205,7 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 
 #define ENUM_STATUS_GROUP_CTRL 4
 
-static struct t_peer_list { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	size_t unread; // number of new unread messages (currently since startup only, otherwise this needs to be in peer not t_peer
 	int8_t mute; // 0 no, 1 yes
 	int pm_n;
@@ -250,7 +252,7 @@ do {\
 	}\
 } while(0);
 
-static struct { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily initialize as NULL
+static struct { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX // Putting these global values in a struct lets us easily initialize as NULL
 	GListStore *treestore_incoming;
 	GListStore *treestore_outgoing;
 	GListStore *treestore_mult;
@@ -800,23 +802,23 @@ struct long_presses {
 	int n;
 }; */
 
-struct stack_change { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct stack_change { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	GtkStack *stack;
 	size_t iter;
 };
 
-struct printing { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct printing { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	int i;
 	int scroll;
 };
 
-struct notification { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct notification { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	char *heading;
 	char *message;
 };
 
-struct custom_setting { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct custom_setting { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	char *setting_name;
 	char *setting_value;
@@ -824,13 +826,13 @@ struct custom_setting { // XXX Do not sodium_malloc structs unless they contain 
 	int plaintext;
 };
 
-struct progress { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct progress { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	int f;
 	uint64_t transferred;
 };
 
-struct stream_data { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct stream_data { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	int p_iter;
 	char *data;
@@ -843,7 +845,7 @@ struct int_p_p {
 	int *loaded_array_i;
 };
 
-struct int_int { // XXX Do not sodium_malloc structs unless they contain sensitive arrays XXX
+struct int_int { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	int n;
 	int i;
 };
