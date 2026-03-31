@@ -2835,15 +2835,23 @@ static int cleanup_idle(void *arg)
 	}
 	if(log_unread == 1)
 	{ // Log Unread Message Count in the same manner that we store last_seen
+		const uint8_t global_log_messages_local = threadsafe_read_uint8(&mutex_global_variable,&global_log_messages);
 		for(int peer_index,n = 0 ; (peer_index = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,peer_index))) > -1 || getter_byte(n,INT_MIN,-1,offsetof(struct peer_list,onion)) != 0 ; n++)
-		{ // storing last_seen time to .key file. NOTE: this will execute more frequently than we might want if logging is disabled. however there is little we can do.
-			if(peer_index < 0)
-				continue;
-			const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-			if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
-			{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
-				const size_t len = (size_t)snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
-				sql_setting(0,peer_index,"unread",p1,len);
+		{
+			const int8_t log_messages = getter_int8(n,INT_MIN,-1,offsetof(struct peer_list,log_messages));
+			if(peer_index > -1 && (log_messages == 1 || (!log_messages && global_log_messages_local)))
+			{
+				const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+				if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
+				{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
+					if(t_peer[n].unread)
+					{
+						const size_t len = (size_t)snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
+						sql_setting(0,peer_index,"unread",p1,len);
+					}
+					else
+						sql_delete_setting(0,peer_index,"unread");
+				}
 			}
 		}
 	}
@@ -4065,10 +4073,7 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 		memcpy(control_password_clear,text,text_len+1);
 	}
 	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-	if(text_len)
-		sql_setting(0,-1,"control_password_clear",text,text_len);
-	else
-		sql_delete_setting(0,-1,"control_password_clear");
+	sql_setting(0,-1,"control_password_clear",text,text_len); // Will delete if NULL/0
 	error_simple(0,"Checkpoint UI password change and restarting Tor!!!");
 	start_tor();
 }
@@ -5565,17 +5570,22 @@ static int custom_setting_idle(void *arg)
 		t_peer[n].mute = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"unread",6))
 	{
-		if(log_unread != 1)
-			return 0; // ignoring (potentially old)
-		t_peer[n].unread = strtoull(setting_value, NULL, 10);
-		if(t_peer[n].unread > 0)
-		{
-			const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-			if (owner == ENUM_OWNER_GROUP_CTRL)
-				totalUnreadGroup += t_peer[n].unread;
-			else
-				totalUnreadPeer += t_peer[n].unread;
-			ui_decorate_panel_left_top();
+		if(log_unread == 1)
+		{ // Ignoring if not logging, since they may be potentially old
+			const int8_t log_messages = getter_int8(n,INT_MIN,-1,offsetof(struct peer_list,log_messages));
+			if(log_messages == 1 || (!log_messages && threadsafe_read_uint8(&mutex_global_variable,&global_log_messages)))
+			{
+				t_peer[n].unread = strtoull(setting_value, NULL, 10);
+				if(t_peer[n].unread > 0)
+				{
+					const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+					if(owner == ENUM_OWNER_GROUP_CTRL)
+						totalUnreadGroup += t_peer[n].unread;
+					else
+						totalUnreadPeer += t_peer[n].unread;
+					ui_decorate_panel_left_top();
+				}
+			}
 		}
 	}
 	else if(plaintext == 0)
