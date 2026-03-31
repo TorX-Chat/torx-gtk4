@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.39 2026/01/29 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.40 2026/03/30 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -2320,7 +2320,9 @@ static inline GtkWidget *ui_sticker_box(const unsigned char *data,const size_t d
 		gif_data.data = data;
 		gif_data.data_len = data_len;
 		paintable = g_object_new(pixbuf_paintable_get_type(),"gif-data",&gif_data,NULL); // do not replace pixbuf_paintable_get_type() with a hardcoded type. Returns GType, which is an integer, however it is not static so we can't hardcode it.
-	//	g_object_unref(paintable);
+	////	GBytes *bytes = g_bytes_new(data,data_len); // not presently possible to use g_bytes_new_static
+	////	paintable = GDK_PAINTABLE(gdk_texture_new_from_bytes(bytes,NULL)); // not working?
+	////	g_object_unref(paintable);
 	}
 	if(!paintable || !GDK_IS_PIXBUF_ANIMATION(PIXBUF_PAINTABLE(paintable)->animation))
 	{
@@ -2631,8 +2633,8 @@ static void ui_toggle_logging(GtkWidget *button,const gpointer data)
 	ui_set_image_logging(button,n);
 	// Save Setting
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",log_messages);
-	sql_setting(0,peer_index,"logging",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",log_messages);
+	sql_setting(0,peer_index,"logging",p1,len);
 }
 
 static void ui_toggle_mute(const gpointer data)
@@ -2644,8 +2646,8 @@ static void ui_toggle_mute(const gpointer data)
 	popdown(t_main.popover_group_peerlist)
 	// Save Setting
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",t_peer[n].mute);
-	sql_setting(0,peer_index,"mute",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",t_peer[n].mute);
+	sql_setting(0,peer_index,"mute",p1,len);
 }
 
 static void ui_toggle_mute_button(GtkWidget *button,const gpointer data)
@@ -2823,13 +2825,13 @@ static int cleanup_idle(void *arg)
 	int size;
 	if((size = gtk_widget_get_width(t_main.main_window)) != size_window_default_width)
 	{ // default h/w is loaded_size, so there is no wasted disk IO. fancy.
-		snprintf(p1,sizeof(p1),"%d",size);
-		sql_setting(1,-1,"gtk4-width",p1,strlen(p1));
+		const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
+		sql_setting(1,-1,"gtk4-width",p1,len);
 	}
 	if((size = gtk_widget_get_height(t_main.main_window)) != size_window_default_height)
 	{ // TODO does gtk_widget_get_height need to be on the main thread? hope not
-		snprintf(p1,sizeof(p1),"%d",size);
-		sql_setting(1,-1,"gtk4-height",p1,strlen(p1));
+		const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
+		sql_setting(1,-1,"gtk4-height",p1,len);
 	}
 	if(log_unread == 1)
 	{ // Log Unread Message Count in the same manner that we store last_seen
@@ -2840,8 +2842,8 @@ static int cleanup_idle(void *arg)
 			const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 			if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
 			{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
-				snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
-				sql_setting(0,peer_index,"unread",p1,strlen(p1));
+				const size_t len = (size_t)snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
+				sql_setting(0,peer_index,"unread",p1,len);
 			}
 		}
 	}
@@ -3327,8 +3329,8 @@ static void ui_initialize_language(GtkWidget *combobox)
 	if(combobox != NULL) // from settings page
 	{
 		const unsigned int selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
-		snprintf(language,sizeof(language),"%s",languages_available_code[selected]);
-		sql_setting(1,-1,"language",language,strlen(language));
+		const size_t len = (size_t)snprintf(language,sizeof(language),"%s",languages_available_code[selected]);
+		sql_setting(1,-1,"language",language,len);
 	}
 	if(language[0] == '\0' || !strncmp(language,"en_US",5))
 	{
@@ -3704,8 +3706,8 @@ static void ui_change_theme(const gpointer combobox)
 	global_theme = (int)gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox));
 	ui_theme(global_theme);
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",global_theme);
-	sql_setting(1,-1,"theme",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",global_theme);
+	sql_setting(1,-1,"theme",p1,len);
 }
 
 static void ui_change_id_type(const gpointer combobox)
@@ -3715,8 +3717,8 @@ static void ui_change_id_type(const gpointer combobox)
 		local_setting = 1;
 	threadsafe_write(&mutex_global_variable,&shorten_torxids,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"shorten_torxids",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"shorten_torxids",p1,len);
 }
 
 static void ui_change_global_logging(const gpointer combobox)
@@ -3726,8 +3728,8 @@ static void ui_change_global_logging(const gpointer combobox)
 		local_setting = 1;
 	threadsafe_write(&mutex_global_variable,&global_log_messages,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"global_log_messages",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"global_log_messages",p1,len);
 }
 
 static void ui_change_resume(const gpointer combobox)
@@ -3737,8 +3739,8 @@ static void ui_change_resume(const gpointer combobox)
 		local_setting = 1;
 	threadsafe_write(&mutex_global_variable,&auto_resume_inbound,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"auto_resume_inbound",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"auto_resume_inbound",p1,len);
 }
 
 static void ui_change_stickers_save_all(const gpointer combobox)
@@ -3748,8 +3750,8 @@ static void ui_change_stickers_save_all(const gpointer combobox)
 		stickers_save_all = 1; // NOTE: is in UI thread already, no need to use locks
 	threadsafe_write(&mutex_global_variable,&stickers_save_all,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"stickers_save_all",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"stickers_save_all",p1,len);
 }
 
 static void ui_change_daemonize(const gpointer combobox)
@@ -3759,8 +3761,8 @@ static void ui_change_daemonize(const gpointer combobox)
 	else
 		minimize_to_tray = 0; // NOTE: is in UI thread already, no need to use locks
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%u",minimize_to_tray);
-	sql_setting(0,-1,"minimize_to_tray",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",minimize_to_tray);
+	sql_setting(0,-1,"minimize_to_tray",p1,len);
 }
 
 static void ui_change_auto_accept_mult(const gpointer combobox)
@@ -3770,8 +3772,8 @@ static void ui_change_auto_accept_mult(const gpointer combobox)
 		local_setting = 1;
 	threadsafe_write(&mutex_global_variable,&auto_accept_mult,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"auto_accept_mult",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"auto_accept_mult",p1,len);
 }
 
 static void ui_change_destroy_input(GtkWidget *combobox)
@@ -3781,8 +3783,8 @@ static void ui_change_destroy_input(GtkWidget *combobox)
 		local_setting = 1;
 	threadsafe_write(&mutex_global_variable,&destroy_input,&local_setting,sizeof(local_setting));
 	char p1[21];
-	snprintf(p1,sizeof(p1),"%d",local_setting);
-	sql_setting(0,-1,"destroy_input",p1,strlen(p1));
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",local_setting);
+	sql_setting(0,-1,"destroy_input",p1,len);
 }
 
 static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
@@ -3823,41 +3825,41 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		else if(spin == ENUM_SPIN_CPU_THREADS)
 		{
 			global_threads = (uint32_t)value_current;
-			snprintf(p1,sizeof(p1),"%u",global_threads);
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",global_threads);
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			sql_setting(0,-1,"global_threads",p1,strlen(p1));
+			sql_setting(0,-1,"global_threads",p1,len);
 		}
 		else if(spin == ENUM_SPIN_SUFFIX_LENGTH)
 		{
 			suffix_length = (uint8_t)value_current;
-			snprintf(p1,sizeof(p1),"%u",suffix_length);
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",suffix_length);
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			sql_setting(0,-1,"suffix_length",p1,strlen(p1));
+			sql_setting(0,-1,"suffix_length",p1,len);
 		}
 		else if(spin == ENUM_SPIN_SING_EXPIRATION)
 		{
 			sing_expiration_days = (uint32_t)value_current;
-			snprintf(p1,sizeof(p1),"%u",sing_expiration_days);
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",sing_expiration_days);
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			sql_setting(0,-1,"sing_expiration_days",p1,strlen(p1));
+			sql_setting(0,-1,"sing_expiration_days",p1,len);
 		}
 		else if(spin == ENUM_SPIN_MULT_EXPIRATION)
 		{
 			mult_expiration_days = (uint32_t)value_current;
-			snprintf(p1,sizeof(p1),"%u",mult_expiration_days);
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",mult_expiration_days);
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			sql_setting(0,-1,"mult_expiration_days",p1,strlen(p1));
+			sql_setting(0,-1,"mult_expiration_days",p1,len);
 		}
 		else if(spin == ENUM_SPIN_TOR_PORT_SOCKS)
 		{
 			const uint16_t tor_socks_port_local = tor_socks_port = (uint16_t)value_current;
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			printf("Checkpoint UI socks port change and restarting tor!!!\n");
+			error_simple(0,"Checkpoint UI socks port change and restarting Tor");
 			start_tor();
 			if(tor_socks_port_local)
 			{
-				snprintf(p1,sizeof(p1),"%u",tor_socks_port_local);
-				sql_setting(0,-1,"tor_socks_port",p1,strlen(p1));
+				const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",tor_socks_port_local);
+				sql_setting(0,-1,"tor_socks_port",p1,len);
 			}
 			else // if 0, delete setting
 				sql_delete_setting(0,-1,"tor_socks_port");
@@ -3866,12 +3868,12 @@ static void ui_spin_change(GtkWidget *spinbutton, gpointer data)
 		{
 			const uint16_t tor_ctrl_port_local = tor_ctrl_port = (uint16_t)value_current;
 			pthread_rwlock_unlock(&mutex_global_variable); // 🟩
-			printf("Checkpoint UI ctrl port change and restarting tor!!!\n");
+			error_simple(0,"Checkpoint UI socks port change and restarting Tor");
 			start_tor();
 			if(tor_ctrl_port_local)
 			{
-				snprintf(p1,sizeof(p1),"%u",tor_ctrl_port_local);
-				sql_setting(0,-1,"tor_ctrl_port",p1,strlen(p1));
+				const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",tor_ctrl_port_local);
+				sql_setting(0,-1,"tor_ctrl_port",p1,len);
 			}
 			else // if 0, delete setting
 				sql_delete_setting(0,-1,"tor_ctrl_port");
@@ -4067,7 +4069,7 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 		sql_setting(0,-1,"control_password_clear",text,text_len);
 	else
 		sql_delete_setting(0,-1,"control_password_clear");
-	printf("Checkpoint UI password change and restarting tor!!!\n");
+	error_simple(0,"Checkpoint UI password change and restarting Tor!!!");
 	start_tor();
 }
 
@@ -4286,7 +4288,7 @@ static int tor_log_idle(void *data)
 		gtk_text_buffer_insert(t_main.tor_log_buffer,&end,data,(int)len);
 		if(t_main.window == window_log_tor)
 			scroll_to_bottom(t_main.scrolled_window_right);
-		printf(WHITE"CHECKPOINT TOR LOG: %s\n"RESET,(char*)data);
+	//	printf(WHITE"CHECKPOINT TOR LOG: %s\n"RESET,(char*)data);
 		torx_free((void*)&data);
 	}
 /*	if(t_main.window == window_log_tor)
@@ -6501,7 +6503,6 @@ static int message_deleted_idle(void *arg)
 		breakpoint();
 		return 0;
 	}
-	printf("Checkpoint message_deleted_idle n=%d i=%d\n",n,i);
 	#if GTK_FACTORY_BUG
 	if(t_peer[n].t_message[i].message_box)
 	{
