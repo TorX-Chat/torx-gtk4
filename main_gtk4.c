@@ -2843,7 +2843,7 @@ static int cleanup_idle(void *arg)
 			{
 				const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 				if(owner == ENUM_OWNER_CTRL || owner == ENUM_OWNER_GROUP_CTRL)
-				{ // for private messages, will need to be more complicated than just adding GROUP_PEER here
+				{
 					if(t_peer[n].unread)
 					{
 						const size_t len = (size_t)snprintf(p1,sizeof(p1),"%zu",t_peer[n].unread);
