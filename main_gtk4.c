@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.40 2026/03/30 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.40 2026/04/30 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -4371,6 +4371,7 @@ void audio_cache_play(const int n)
 				const size_t new = torx_allocation_len(tmp);
 				data = torx_realloc(data,existing + new);
 				memcpy(&data[existing],tmp,new);
+				torx_free((void*)&tmp);
 			}
 		}
 		if(data)
@@ -4384,7 +4385,7 @@ void audio_cache_play(const int n)
 			play_info->callback = play_callback;
 
 			t_peer[n].audio_playing = 1;
-			playback_start(play_info);
+			playback_start(play_info); // This will free `data` and struct, in play_callback
 		}
 	}
 }
@@ -4480,26 +4481,6 @@ static void beep(void)
 		current_play_beep.callback = play_callback;
 	}
 	playback_start(&current_play_beep);
-/*	#ifdef WIN32
-	{ // call PlaySound asyncronously to prevent having to CreateProcess
-		PlaySound(FILENAME_BEEP, NULL, SND_FILENAME | SND_ASYNC);
-	}
-	#else
-	{
-		pid_t pid;
-		if((pid = fork()) == -1)
-			error_simple(-1,"fork");
-		if(pid == 0)
-		{ // Alternatively, gresource can probably provide the audio to stdin on *nix but probably not on windows
-			if(execlp("paplay","paplay",FILENAME_BEEP,NULL))
-				if(execlp("aplay","aplay","-q",FILENAME_BEEP,NULL))
-					if(execlp("afplay","afplay","-q",FILENAME_BEEP,NULL)) // OSX, untested
-						error_printf(0,"Error finding paplay, aplay, or afplay, or beep file missing: %s",FILENAME_BEEP); // DO NOT MAKE error_ll, as its forked
-			exit(0); // TODO wait() or waitpid() to clean up
-		}
-	}
-	#endif
-*/
 }
 
 static int error_idle(void *arg)
