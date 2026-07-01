@@ -106,7 +106,7 @@ target_link_libraries(
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
 		torx
-		png
+		z
 		sodium
 	##	event
 		event_core
@@ -121,7 +121,7 @@ target_link_libraries(
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
 		torx
-		png		## TODO required ONLY when BUILD_SHARED_LIBS=0
+		z		## TODO required ONLY when BUILD_SHARED_LIBS=0
 		sodium		## TODO required ALWAYS for sodium_memzero
 	##	event
 		event_core	## TODO required ALWAYS for evutil_closesocket (and probably things like evutil_socket_t)

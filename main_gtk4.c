@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.41 2026/04/30 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.44 2026/06/25 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -206,13 +206,15 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 #define ENUM_STATUS_GROUP_CTRL 4
 
 static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
+	char *unsent;
 	size_t unread; // number of new unread messages (currently since startup only, otherwise this needs to be in peer not t_peer
 	int8_t mute; // 0 no, 1 yes
 	int pm_n;
 	int edit_n;
 	int edit_i;
+	uint8_t search_active;
+	char *search_text;
 	int pointer_location;
-	GtkTextBuffer* buffer_write;
 	uint8_t audio_playing;
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		int pos;
@@ -259,6 +261,7 @@ static struct { // XXX Do not torx_secure_malloc structs unless they contain sen
 	GListStore *treestore_sing;
 
 	GListStore *list_store_chat;
+	GtkFilter *search_filter; // borrowed ref; owned by the GtkFilterListModel in the chat view chain
 
 	int global_pos_max;
 	int global_pos_min;
@@ -318,6 +321,7 @@ static struct { // XXX Do not torx_secure_malloc structs unless they contain sen
 	GtkWidget *popover_group_peerlist;
 	GtkWidget *popover_participant_list;
 	GtkWidget *popover_more;
+	GtkTextBuffer* buffer_write;
 
 	/* Home Page */
 	GtkWidget *treeview_incoming; // TODO can probably be eliminated with lots of work
@@ -425,6 +429,7 @@ enum windows { // for t_main.window = none
 };
 
 enum buttons { // for ui_button_generate
+	ENUM_BUTTON_SEARCH,
 	ENUM_BUTTON_LOGGING,
 	ENUM_BUTTON_MUTE,
 	ENUM_BUTTON_CALL,
@@ -507,7 +512,6 @@ static const char *text_placeholder_add_identifier = {0};
 static const char *text_placeholder_add_onion = {0};
 static const char *text_placeholder_add_group_identifier = {0};
 static const char *text_placeholder_add_group_id = {0};
-static const char *text_placeholder_search = {0};
 static const char *text_dark = {0};
 static const char *text_light = {0};
 static const char *text_minimize_to_tray = {0};
@@ -565,6 +569,7 @@ static const char *text_delete_log = {0};
 static const char *text_hold_to_talk = {0};
 static const char *text_cancel_editing = {0};
 static const char *text_private_messaging = {0};
+static const char *text_search = {0};
 static const char *text_rename = {0};
 static const char *text_button_add = {0};
 static const char *text_button_join = {0};
@@ -675,6 +680,7 @@ static void ui_show_generate(void);
 static void ui_show_home(void);
 static void ui_show_settings(void);
 static void ui_go_back(void *arg);
+static void ui_toggle_search(GtkWidget *button,const gpointer data);
 static int ui_populate_peers(void *arg);
 static void ui_decorate_panel_left_top(void);
 static GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (*callback_click)(const void *),const int minimal_size)__attribute__((warn_unused_result));
@@ -706,6 +712,10 @@ static GdkTexture *file_zip;
 
 static GIcon *search_dark;
 static GIcon *search_light;
+
+static GdkTexture *search_inactive;
+static GdkTexture *search_inactive_light;
+static GdkTexture *search_active;
 static GdkTexture *fail_ico;
 static GdkTexture *add_active;
 static GdkTexture *add_inactive;
@@ -1221,12 +1231,14 @@ void call_update_cb_ui(const int call_n,const int call_c)
 static int initialize_n_idle(void *arg)
 { // Remember to also cleanup in onion_deleted_idle
 	const int n = vptoi(arg);
+	t_peer[n].unsent = NULL;
 	t_peer[n].unread = 0;
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
-	t_peer[n].buffer_write = NULL;
+	t_peer[n].search_active = 0;
+	t_peer[n].search_text = NULL;
 
 	t_peer[n].audio_playing = 0;
 
@@ -1776,12 +1788,13 @@ static int onion_deleted_idle(void *arg)
 	const int n = vptoii_n(arg);
 	const int owner = vptoii_i(arg);
 	const size_t cleared = ui_unread_clear(n); // yes, necessary.
+	torx_free((void*)&t_peer[n].unsent);
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
-	if(t_peer[n].buffer_write)
-		t_peer[n].buffer_write = NULL; // g_free(t_peer[n].buffer_write); // Causes issues when sending a kill. Do not g_free before NULLing.
+	t_peer[n].search_active = 0;
+	torx_free((void*)&t_peer[n].search_text);
 
 	t_peer[n].audio_playing = 0;
 
@@ -1797,7 +1810,7 @@ static int onion_deleted_idle(void *arg)
 		generated_n = -1;
 		if(t_main.window == window_main)
 		{
-			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,"",-1);
+			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,"",0);
 			gtk_widget_set_visible(t_main.generated_qr_onion,FALSE);
 			gtk_widget_set_visible(t_main.button_copy_generated_qr,FALSE);
 			gtk_widget_set_visible(t_main.button_save_generated_qr,FALSE);
@@ -1822,7 +1835,7 @@ static int onion_deleted_idle(void *arg)
 		const int n = set_n(buffer);
 		if(strstr(peer[n].onion,buffer) == NULL)
 		{
-			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,"",-1);
+			gtk_text_buffer_set_text(t_main.textbuffer_generated_onion,"",0);
 			gtk_widget_set_visible(t_main.generated_qr_onion,FALSE);
 			gtk_widget_set_visible(t_main.button_copy_generated_qr,FALSE);
 			gtk_widget_set_visible(t_main.button_save_generated_qr,FALSE);
@@ -2417,30 +2430,45 @@ static inline void ui_button_determination(const int n)
 { // Must be fast as it runs on every keypress
 	if(!t_main.button_send || n < 0)
 		return; // Sanity check
-	if(t_peer[n].buffer_write == NULL || !gtk_text_buffer_get_char_count(t_peer[n].buffer_write))
+	if(show_keyboard)
 	{
-		if(gtk_widget_get_visible(t_main.button_send)/* && t_peer[n].edit_n == -1*/) // TODO enabling this diverges from Flutter but hides some things that should be hidden (mic, attach, gif)
+		gtk_widget_set_visible(t_main.button_record,FALSE);
+		gtk_widget_set_visible(t_main.write_message,TRUE);
+		gtk_widget_set_visible(t_main.button_emoji,TRUE);
+	}
+	else
+	{ // !show_keyboard
+		gtk_widget_set_visible(t_main.button_send,FALSE);
+		gtk_widget_set_visible(t_main.button_record,TRUE);
+		gtk_widget_set_visible(t_main.write_message,FALSE);
+		gtk_widget_set_visible(t_main.button_emoji,FALSE);
+	}
+
+	if(t_peer[n].search_active)
+	{ // Must be checked FIRST because edit_n or pm_n could also be set
+		gtk_widget_set_visible(t_main.button_send,FALSE);
+		gtk_widget_set_visible(t_main.button_keyboard_microphone,FALSE);
+		gtk_widget_set_visible(t_main.button_sticker,FALSE);
+		gtk_widget_set_visible(t_main.button_attach,FALSE);
+	}
+	else if(torx_allocation_len(t_peer[n].unsent) > 1)
+	{ // Draft exists
+		gtk_widget_set_visible(t_main.button_send,TRUE);
+		if(vertical_mode)
 		{
-			gtk_widget_set_visible(t_main.button_send,FALSE);
-			if(vertical_mode)
-			{
-				gtk_widget_set_visible(t_main.button_keyboard_microphone,TRUE);
-				gtk_widget_set_visible(t_main.button_sticker,TRUE);
-				gtk_widget_set_visible(t_main.button_attach,TRUE);
-			}
+			gtk_widget_set_visible(t_main.button_keyboard_microphone,FALSE);
+			gtk_widget_set_visible(t_main.button_sticker,FALSE);
+			gtk_widget_set_visible(t_main.button_attach,FALSE);
 		}
 	}
 	else
-	{
-		if(!gtk_widget_get_visible(t_main.button_send))
+	{ // No draft exists
+		gtk_widget_set_visible(t_main.button_send,FALSE);
+		if(vertical_mode)
 		{
-			gtk_widget_set_visible(t_main.button_send,TRUE);
-			if(vertical_mode)
-			{
-				gtk_widget_set_visible(t_main.button_keyboard_microphone,FALSE);
-				gtk_widget_set_visible(t_main.button_sticker,FALSE);
-				gtk_widget_set_visible(t_main.button_attach,FALSE);
-			}
+			gtk_widget_set_visible(t_main.button_keyboard_microphone,TRUE);
+			gtk_widget_set_visible(t_main.button_sticker,TRUE);
+			gtk_widget_set_visible(t_main.button_attach,TRUE);
 		}
 	}
 }
@@ -2503,6 +2531,20 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 		}
 	}
 	torx_free((void*)&file_path);
+}
+
+static void ui_set_image_search(GtkWidget *button,const int n)
+{
+	if(t_peer[n].search_active == 0)
+	{
+		if(global_theme == DARK_THEME)
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive),size_icon_top_right));
+		else
+			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive_light),size_icon_top_right));
+	}
+	else
+		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_active),size_icon_top_right));
+	gtk_widget_set_tooltip_text(button,text_search);
 }
 
 static void ui_set_image_logging(GtkWidget *button,const int n)
@@ -2582,7 +2624,7 @@ static void ui_go_back(void *arg)
 { // go back
 	treeview_n = -1;
 	const int n = vptoi(arg);
-	if(n > -1 && t_peer[n].buffer_write != NULL)
+	if(n > -1 && torx_allocation_len(t_peer[n].unsent) > 1)
 	{ // Draft exists
 		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
 		if(owner == ENUM_OWNER_GROUP_CTRL)
@@ -3350,7 +3392,6 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_placeholder_add_onion = "Peer TorX-ID or OnionID (provided by peer)";
 		text_placeholder_add_group_identifier = "Group Nickname";
 		text_placeholder_add_group_id = "Public Group ID (provided by peer)";
-		text_placeholder_search = "Search";
 		text_dark = "Dark";
 		text_light = "Light";
 		text_minimize_to_tray = "Minimize to tray";
@@ -3408,6 +3449,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_hold_to_talk = "Hold to Talk";
 		text_cancel_editing = "Cancel editing";
 		text_private_messaging = "Private Messaging";
+		text_search = "Search";
 		text_rename = "Rename";
 		text_button_add = "Send\nFriend\nRequest";
 		text_button_join = "Attempt\nTo\nJoin";
@@ -3555,7 +3597,6 @@ after each comes online and receives the code.";
 		text_placeholder_add_onion = "好友TorX-ID或洋葱ID（由好友提供）";
 		text_placeholder_add_group_identifier = "群聊昵称";
 		text_placeholder_add_group_id = "公共群聊ID（由好友提供）";
-		text_placeholder_search = "搜索";
 		text_dark = "深色";
 		text_light = "浅色";
 		text_minimize_to_tray = "最小化至托盘";
@@ -3603,6 +3644,7 @@ after each comes online and receives the code.";
 		text_hold_to_talk = "按住说话";
 		text_cancel_editing = "取消编辑";
 		text_private_messaging = "私密消息";
+		text_search = "搜索";
 		text_rename = "重命名";
 		text_button_add = "发送好友请求";
 		text_button_join = "尝试加入";
@@ -5688,30 +5730,34 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 { // Cancel active activity
 	(void)button;
 	const int n = vptoi(data);
-	if(t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // make it safe to call from select_changed
+	if(t_peer[n].search_active == 0 && t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // make it safe to call from select_changed
 		return;
 //	if(t_main.write_message == NULL || t_main.button_activity == NULL)
 //		return;
-	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
-	gtk_text_buffer_set_text(buffer,"",0);
-	if(t_peer[n].edit_n > -1 || t_peer[n].edit_i > INT_MIN)
-	{ // Editing was active (of message or a GROUP_PEER peernick)
-		t_peer[n].edit_n = -1;
-		t_peer[n].edit_i = INT_MIN;
-		if(t_peer[n].pm_n > -1)
-		{ // PM was active before edit, restore it
-			char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
-			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-			torx_free((void*)&peernick);
-			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
-			sodium_memzero(cancel_message,sizeof(cancel_message));
+	if(t_peer[n].search_active) // Must be checked FIRST because edit_n or pm_n could also be set // Going back to PM or whatever was previously active, or regular messaging, from search. Restoring unsent.
+		ui_toggle_search(NULL,itovp(n));
+	else
+	{ // Going back to regular messaging, from edit or PM. Must clear buffer for safety.
+		gtk_text_buffer_set_text(t_main.buffer_write,"",0);
+		if(t_peer[n].edit_n > -1 || t_peer[n].edit_i > INT_MIN)
+		{ // Editing was active (of message or a GROUP_PEER peernick)
+			t_peer[n].edit_n = -1;
+			t_peer[n].edit_i = INT_MIN;
+			if(t_peer[n].pm_n > -1)
+			{ // PM was active before edit, restore it
+				char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+				char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
+				snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
+				torx_free((void*)&peernick);
+				gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
+				sodium_memzero(cancel_message,sizeof(cancel_message));
+			}
 		}
+		else if(t_peer[n].pm_n > -1) // DO NOT MAKE ELSE. PM was active and editing was not
+			t_peer[n].pm_n = -1;
 	}
-	else if(t_peer[n].pm_n > -1) // DO NOT MAKE ELSE. PM was active and editing was not
-		t_peer[n].pm_n = -1;
 	ui_button_determination(n);
-	if(t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // DO NOT MAKE ELSE.	
+	if(t_peer[n].search_active == 0 && t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // DO NOT MAKE ELSE.
 	{
 		gtk_widget_set_visible(t_main.button_activity,FALSE);
 		if(!INVERSION_TEST) // do not remove conditional
@@ -5800,8 +5846,11 @@ static void ui_activity_edit(const gpointer data)
 	if(null_terminated_len == 1)
 	{
 		char *message = getter_string(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
-		gtk_text_buffer_set_text(buffer,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
-		torx_free((void*)&message);
+		if(message)
+		{
+			gtk_text_buffer_set_text(buffer,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
+			torx_free((void*)&message);
+		}
 		ui_button_determination(global_n);
 	}
 	else
@@ -6375,6 +6424,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 	}
 	if(nn == global_n)
 	{ // Print it. DO NOT make this else if (needs to occur even if window not visible)
+		// NOTE: Search filtering is handled by message_search_match() on the GtkFilterListModel, NOT here. All messages are appended to the base store so they reappear when search is cleared without a reprint.
 		int f = -1;
 		if(protocol == ENUM_PROTOCOL_FILE_OFFER || protocol == ENUM_PROTOCOL_FILE_OFFER_PRIVATE)
 			f = set_f(n,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
@@ -6641,16 +6691,35 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 //	fprintf(stderr,"%d ",keyval); // TODO with the results of this, we can do ctrl+enter for send,etc (edit: nope, not viable. ctrl+k is same if held or not)
 	if(!show_keyboard)
 		error_simple(0,"Keypress occured while keyboard was hidden. Coding error. Report this to UI devs.");
+	else if(t_peer[n].search_active)
+	{ // NOTE: This will also catch newlines
+		GtkTextIter start, end;
+		gtk_text_buffer_get_bounds(t_main.buffer_write, &start, &end);
+		char *message = gtk_text_buffer_get_text(t_main.buffer_write, &start, &end, FALSE); // false ignores hidden chars
+		if(message)
+		{
+			const size_t buf_len = strlen(message);
+			torx_free((void*)&t_peer[n].search_text);
+			t_peer[n].search_text = torx_secure_malloc(buf_len+1);
+			memcpy(t_peer[n].search_text,message,buf_len+1);
+			sodium_memzero(message,buf_len);
+			g_free(message);
+			message = NULL;
+
+			gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_DIFFERENT); // re-filter in place; search_text was just updated above
+			scroll_to_bottom(t_main.scrolled_window_right);
+		}
+	}
 	else if(!keyval || ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))) // 0 == pressed enter
 	{
-		if(keyval && gtk_text_buffer_get_char_count(t_peer[n].buffer_write) == 1)
+		if(keyval && gtk_text_buffer_get_char_count(t_main.buffer_write) == 1)
 		{ // User pressed enter on an empty message box. Just clear it.
-			gtk_text_buffer_set_text(t_peer[n].buffer_write,"",-1);
+			gtk_text_buffer_set_text(t_main.buffer_write,"",0);
 			return;
 		}
 		GtkTextIter start, end;
-		gtk_text_buffer_get_bounds(t_peer[n].buffer_write, &start, &end);
-		char *message = gtk_text_buffer_get_text(t_peer[n].buffer_write, &start, &end, FALSE); // false ignores hidden chars
+		gtk_text_buffer_get_bounds(t_main.buffer_write, &start, &end);
+		char *message = gtk_text_buffer_get_text(t_main.buffer_write, &start, &end, FALSE); // false ignores hidden chars
 		if(!message)
 		{ // Should not occur due to earlier length check
 			ui_button_determination(n);
@@ -6658,12 +6727,17 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		}
 		size_t buf_len = strlen(message);
 		if((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK) && message[buf_len-1] == '\n')
-		{ // Strip Trailing Newline, if applicable
+		{ // Strip Trailing Newline, if triggered by pressing enter instead of pressing Send button
 			message[buf_len-1] = '\0';
 			buf_len--;
 		}
 		else if((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))
-			return; // enter press but not at end of line, do not send yet
+		{ // enter press but not at end of line, do not send yet
+			sodium_memzero(message,buf_len);
+			g_free(message);
+			message = NULL;
+			return; // Doing this here avoids unnecessary call to ui_button_determination
+		}
 		if(gtk_widget_get_visible(t_main.button_activity))
 		{ // PM / edits require button_activity to be functional to trigger (this is really good)
 			if(t_peer[n].edit_n > -1 && t_peer[n].edit_i > INT_MIN)
@@ -6680,7 +6754,8 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 			else if(t_peer[n].pm_n > -1)
 			{ // send to GROUP_PEER instead of GROUP_CTRL
 				message_send(t_peer[n].pm_n,ENUM_PROTOCOL_UTF8_TEXT_PRIVATE,message,(uint32_t)strlen(message));
-				gtk_text_buffer_set_text(t_peer[n].buffer_write, "", 0); // this occurs in ui_activity_cancel
+				gtk_text_buffer_set_text(t_main.buffer_write, "", 0); // this occurs in ui_activity_cancel
+				torx_free((void*)&t_peer[n].unsent);
 			}
 			else
 			{
@@ -6704,12 +6779,29 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		//		message_send(n,ENUM_PROTOCOL_UTF8_TEXT_SIGNED,message,(uint32_t)strlen(message));
 			else // regular messages, private messages (in authenticated pipes), public messages in public groups (in authenticated pipes)
 				message_send(n,ENUM_PROTOCOL_UTF8_TEXT,message,(uint32_t)strlen(message));
-			gtk_text_buffer_set_text(t_peer[n].buffer_write, "", 0); // this occurs in ui_activity_cancel
+			gtk_text_buffer_set_text(t_main.buffer_write, "", 0); // this occurs in ui_activity_cancel
+			torx_free((void*)&t_peer[n].unsent);
 		}
 		sodium_memzero(message,buf_len);
 		g_free(message);
 		message = NULL;
-	} /* else Non-enter keypresses are unhandled */
+	}
+	else
+	{ // Setting .unsent for consistency and convenience
+		GtkTextIter start, end;
+		gtk_text_buffer_get_bounds(t_main.buffer_write, &start, &end);
+		char *message = gtk_text_buffer_get_text(t_main.buffer_write, &start, &end, FALSE); // false ignores hidden chars
+		if(message)
+		{
+			const size_t buf_len = strlen(message);
+			torx_free((void*)&t_peer[n].unsent);
+			t_peer[n].unsent = torx_secure_malloc(buf_len+1);
+			memcpy(t_peer[n].unsent,message,buf_len+1);
+			sodium_memzero(message,buf_len);
+			g_free(message);
+			message = NULL;
+		}
+	}
 	ui_button_determination(n);
 }
 
@@ -6894,7 +6986,7 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 		gtk_widget_set_valign(entry_search_popover, GTK_ALIGN_CENTER);
 		gtk_widget_add_css_class(entry_search_popover, "search_field");
 		gtk_entry_buffer_set_max_length(GTK_ENTRY_BUFFER (gtk_entry_get_buffer(GTK_ENTRY(entry_search_popover))), 56);
-		gtk_entry_set_placeholder_text(GTK_ENTRY(entry_search_popover),text_placeholder_search);
+		gtk_entry_set_placeholder_text(GTK_ENTRY(entry_search_popover),text_search);
 		g_signal_connect(entry_search_popover, "notify::text", G_CALLBACK (ui_populate_peer_popover),box_popover_inner); // TODO Callback for typed characters  // DO NOT FREE arg because this only gets passed ONCE.
 		gtk_entry_set_icon_from_gicon(GTK_ENTRY(entry_search_popover),GTK_ENTRY_ICON_SECONDARY, global_theme == DARK_THEME ? search_dark : search_light);
 		gtk_box_append(GTK_BOX(box_popover_outer), entry_search_popover);
@@ -6970,6 +7062,7 @@ static void ui_choose_vertical(GtkWidget *button,const gpointer data)
 	gtk_widget_add_css_class(box_popover, "popover_inner");
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_more),box_popover);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_SEARCH,n));
 	gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_CALL,n));
 	if(owner != ENUM_OWNER_GROUP_CTRL)
 	{
@@ -6987,10 +7080,7 @@ static void ui_toggle_keyboard(GtkWidget *button,const gpointer data)
 	if(show_keyboard)
 	{
 		show_keyboard = 0;
-		gtk_widget_set_visible(t_main.button_send,FALSE);
-		gtk_widget_set_visible(t_main.button_record,TRUE);
-		gtk_widget_set_visible(t_main.write_message,FALSE);
-		gtk_widget_set_visible(t_main.button_emoji,FALSE);
+		ui_button_determination(n);
 		if(global_theme == DARK_THEME)
 			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(keyboard_dark),size_icon_bottom_right));
 		else
@@ -7000,13 +7090,38 @@ static void ui_toggle_keyboard(GtkWidget *button,const gpointer data)
 	{
 		show_keyboard = 1;
 		ui_button_determination(n);
-		gtk_widget_set_visible(t_main.button_record,FALSE);
-		gtk_widget_set_visible(t_main.write_message,TRUE);
-		gtk_widget_set_visible(t_main.button_emoji,TRUE);
 		if(global_theme == DARK_THEME)
 			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_dark),size_icon_bottom_right));
 		else
 			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(microphone_light),size_icon_bottom_right));
+	}
+}
+
+static void ui_toggle_search(GtkWidget *button,const gpointer data)
+{
+	const int n = vptoi(data); // DO NOT FREE ARG
+	const size_t former_len = torx_allocation_len(t_peer[n].search_text);
+	const uint8_t was_active = t_peer[n].search_active;
+	t_peer[n].search_active = !t_peer[n].search_active;
+	if(button)
+		ui_set_image_search(button,n);
+	ui_button_determination(n);
+	if(was_active)
+	{ // Search was active
+		torx_free((void*)&t_peer[n].search_text);
+		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
+		if(former_len > 1)
+		{
+			gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_LESS_STRICT); // search_text was just freed above -> filter now matches all
+			scroll_to_bottom(t_main.scrolled_window_right);
+		}
+	}
+	else
+	{ // Search now active
+		gtk_text_buffer_set_text(t_main.buffer_write, "",-1);
+		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_search);
+		g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
+		gtk_widget_set_visible(t_main.button_activity,TRUE);
 	}
 }
 
@@ -7015,7 +7130,12 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	GtkWidget *button = gtk_button_new();
 	gtk_widget_add_css_class(button, "invisible");
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-	if(type == ENUM_BUTTON_LOGGING)
+	if(type == ENUM_BUTTON_SEARCH)
+	{
+		ui_set_image_search(button,n);
+		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_search),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
+	}
+	else if(type == ENUM_BUTTON_LOGGING)
 	{
 		ui_set_image_logging(button,n);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_logging),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
@@ -7185,7 +7305,7 @@ static void ui_group_peerlist(const gpointer data)
 	gtk_widget_set_valign(entry_search_popover, GTK_ALIGN_CENTER);
 	gtk_widget_add_css_class(entry_search_popover, "search_field");
 	gtk_entry_buffer_set_max_length(GTK_ENTRY_BUFFER (gtk_entry_get_buffer(GTK_ENTRY(entry_search_popover))), 56);
-	gtk_entry_set_placeholder_text(GTK_ENTRY(entry_search_popover),text_placeholder_search);
+	gtk_entry_set_placeholder_text(GTK_ENTRY(entry_search_popover),text_search);
 	g_signal_connect(entry_search_popover, "notify::text", G_CALLBACK (ui_populate_group_peerlist_popover),box_popover_inner); // TODO Callback for typed characters  // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_entry_set_icon_from_gicon(GTK_ENTRY(entry_search_popover),GTK_ENTRY_ICON_SECONDARY, global_theme == DARK_THEME ? search_dark : search_light);
 	gtk_box_append(GTK_BOX(box_popover_outer), entry_search_popover);
@@ -7272,6 +7392,84 @@ static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, do
 	}
 }
 
+static gboolean message_search_match(gpointer item, gpointer user_data)
+{ // GtkCustomFilter for the chat search bar; runs on the UI thread. Returns TRUE to show the message. Mirrors the predicate formerly inline in ui_print_message().
+	(void) user_data;
+	if(global_n < 0 || !t_peer[global_n].search_text || t_peer[global_n].search_text[0] == '\0')
+		return TRUE; // search inactive -> show everything
+	const IntPair *pair = item;
+	const int n = pair->first;
+	const int i = pair->second;
+	const int p_iter = getter_int(n,i,-1,offsetof(struct message_list,p_iter));
+	if(p_iter < 0)
+		return FALSE;
+	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
+	const uint8_t utf8 = protocols[p_iter].utf8;
+	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
+	pthread_rwlock_unlock(&mutex_protocols); // 🟩
+	if(!utf8 || !null_terminated_len)
+		return FALSE; // non-text message types are hidden during search
+	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
+	const gboolean hit = (message && mit_strcasestr(message,t_peer[global_n].search_text)) ? TRUE : FALSE;
+	torx_free((void*)&message);
+	return hit;
+}
+
+static void ui_print_messages(const uint8_t owner,const int g,const int n)
+{ // VERY EXPENSIVE, DO NOT DO UNNECESSARILY. XXX CANNOT BE CALLED MULTIPLE TIMES WITHOUT CALLING select_changed() BETWEEN CALLS (due to globalized t_main.list_store_chat)
+	if(owner == ENUM_OWNER_GROUP_CTRL)
+	{
+		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
+		struct msg_list *page = group[g].msg_first;
+		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
+		while(page)
+		{
+			if(page->message_next)
+				ui_print_message(page->n,page->i,0); // no scroll
+			else
+				ui_print_message(page->n,page->i,1); // last message, scroll
+			page = page->message_next;
+		}
+	}
+	else
+	{
+		const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
+		const int min_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,min_i));
+		for(int i = min_i; i <= max_i; i++)
+		{ // Display messages
+			if(i == max_i)
+				ui_print_message(n,i,1); // scroll, but no new message
+			else
+				ui_print_message(n,i,0); // no scroll
+		}
+	}
+	/* NOTE: This block MUST come AFTER ui_print_message */
+	GtkCustomFilter *filter = gtk_custom_filter_new((GtkCustomFilterFunc)message_search_match,NULL,NULL);
+	t_main.search_filter = GTK_FILTER(filter); // borrowed; ownership transfers to filter_model below
+	GtkFilterListModel *filter_model = gtk_filter_list_model_new(G_LIST_MODEL(t_main.list_store_chat),GTK_FILTER(filter)); // takes the store's owning ref, as gtk_no_selection_new did previously
+	GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (filter_model));
+	GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
+	g_signal_connect(factory, "bind", G_CALLBACK(message_builder),NULL); // not using unbind, setup, etc. Have tried setup but it didn't work as well as we'd hope.
+/*NO	GtkWidget *list_view = gtk_column_view_new(GTK_SELECTION_MODEL (ns));
+	gtk_column_view_set_row_factory(GTK_COLUMN_VIEW(list_view),factory);
+	gtk_column_view_insert_column(GTK_COLUMN_VIEW(list_view),0,gtk_column_view_column_new("fishsticks",factory));	NO*/
+	GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
+	if(INVERSION_TEST)
+	{
+	// OPTION 1, do not delete. This seperates the list view and the scroll bar (though effect is the same)
+	//	gtk_widget_add_css_class(list_view,"invert-vertical");
+	//	gtk_widget_add_css_class(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(t_main.scrolled_window_right)),"invert-vertical");
+	// OPTION 2, do not delete. This just inverts the scrolled window
+		gtk_widget_add_css_class(t_main.scrolled_window_right,"invert-vertical");
+	}
+
+	gtk_widget_add_css_class(list_view, "invisible"); // XXX important
+	gtk_widget_set_vexpand(list_view, TRUE); // works, do not remove
+	if(MESSAGES_START_AT_TOP_OF_WINDOW == 0)
+		gtk_widget_set_valign(list_view, GTK_ALIGN_END);
+	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view); // Do not change. ListView should be a direct child of a Scrolled Window otherwise weird things happen with > 205 widgets.
+}
+
 static void ui_select_changed(const void *arg)
 { /* show_peer() Triggered when a peer is selected from the peer list */
 	const int n = vptoi(arg); // DO NOT FREE ARG
@@ -7339,6 +7537,7 @@ static void ui_select_changed(const void *arg)
 	}
 	else
 	{
+		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_SEARCH,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_CALL,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_KILL,n));
@@ -7388,10 +7587,10 @@ static void ui_select_changed(const void *arg)
 
 	/* Write Message Box (inner) */
 	t_main.write_message = gtk_text_view_new();
-	if(t_peer[n].buffer_write == NULL)
-		t_peer[n].buffer_write = gtk_text_buffer_new(NULL);
-
-	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_peer[n].buffer_write);
+	if(t_main.buffer_write == NULL)
+		t_main.buffer_write = gtk_text_buffer_new(NULL);
+	gtk_text_buffer_set_text(t_main.buffer_write, t_peer[n].search_active ? t_peer[n].search_text ? t_peer[n].search_text : "" : t_peer[n].unsent ? t_peer[n].unsent : "", -1);
+	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_main.buffer_write);
 	gtk_widget_add_css_class(t_main.write_message, "write_message");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
 
@@ -7417,13 +7616,6 @@ static void ui_select_changed(const void *arg)
 	t_main.button_keyboard_microphone = ui_button_generate(ENUM_BUTTON_KEYBOARD_MICROPHONE,n);
 	t_main.button_sticker = ui_button_generate(ENUM_BUTTON_STICKER,n);
 	t_main.button_attach = ui_button_generate(ENUM_BUTTON_ATTACH,n);
-
-	if(gtk_text_buffer_get_char_count(t_peer[n].buffer_write))
-	{
-		gtk_widget_set_visible(t_main.button_keyboard_microphone,FALSE);
-		gtk_widget_set_visible(t_main.button_sticker,FALSE);
-		gtk_widget_set_visible(t_main.button_attach,FALSE);
-	}
 
 	ui_button_determination(n);
 
@@ -7488,54 +7680,8 @@ static void ui_select_changed(const void *arg)
 
 	gtk_box_append(GTK_BOX(t_main.panel_right), write_box);
 
-	if(owner == ENUM_OWNER_GROUP_CTRL)
-	{
-		pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
-		struct msg_list *page = group[g].msg_first;
-		pthread_rwlock_unlock(&mutex_expand_group); // 🟩
-		while(page)
-		{
-			if(page->message_next)
-				ui_print_message(page->n,page->i,0); // no scroll
-			else
-				ui_print_message(page->n,page->i,1); // last message, scroll
-			page = page->message_next;
-		}
-	}
-	else
-	{
-		const int max_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,max_i));
-		const int min_i = getter_int(n,INT_MIN,-1,offsetof(struct peer_list,min_i));
-		for(int i = min_i; i <= max_i; i++)
-		{ // Display messages
-			if(i == max_i)
-				ui_print_message(n,i,1); // scroll, but no new message
-			else
-				ui_print_message(n,i,0); // no scroll
-		}
-	}
-	/* NOTE: This block MUST come AFTER ui_print_message */
-	GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (t_main.list_store_chat));
-	GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
-	g_signal_connect(factory, "bind", G_CALLBACK(message_builder),NULL); // not using unbind, setup, etc. Have tried setup but it didn't work as well as we'd hope.
-/*NO	GtkWidget *list_view = gtk_column_view_new(GTK_SELECTION_MODEL (ns));
-	gtk_column_view_set_row_factory(GTK_COLUMN_VIEW(list_view),factory);
-	gtk_column_view_insert_column(GTK_COLUMN_VIEW(list_view),0,gtk_column_view_column_new("fishsticks",factory));	NO*/
-	GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory);
-	if(INVERSION_TEST)
-	{
-	// OPTION 1, do not delete. This seperates the list view and the scroll bar (though effect is the same)
-	//	gtk_widget_add_css_class(list_view,"invert-vertical");
-	//	gtk_widget_add_css_class(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(t_main.scrolled_window_right)),"invert-vertical");
-	// OPTION 2, do not delete. This just inverts the scrolled window
-		gtk_widget_add_css_class(t_main.scrolled_window_right,"invert-vertical");
-	}
+	ui_print_messages(owner,g,n);
 
-	gtk_widget_add_css_class(list_view, "invisible"); // XXX important
-	gtk_widget_set_vexpand(list_view, TRUE); // works, do not remove
-	if(MESSAGES_START_AT_TOP_OF_WINDOW == 0)
-		gtk_widget_set_valign(list_view, GTK_ALIGN_END);
-	gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW (t_main.scrolled_window_right), list_view); // Do not change. ListView should be a direct child of a Scrolled Window otherwise weird things happen with > 205 widgets.
 	gtk_widget_grab_focus(t_main.write_message);
 }
 
@@ -7712,15 +7858,8 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	if(minimal_size == 0)
 	{
 		char last_message[80+1] = {0}; // length is arbitrary here, could be more. another issue is that it newline support complicates this.
-		if(t_peer[n].buffer_write != NULL && gtk_text_buffer_get_char_count(t_peer[n].buffer_write) > 0)
-		{ // Draft exists
-			GtkTextIter start, end;
-			gtk_text_buffer_get_bounds(t_peer[n].buffer_write, &start, &end);
-			char *text = gtk_text_buffer_get_text(t_peer[n].buffer_write, &start, &end, FALSE);
-			snprintf(last_message,sizeof(last_message),"%s: %s",text_draft,text);
-			g_free(text);
-			text = NULL;
-		}
+		if(torx_allocation_len(t_peer[n].unsent) > 1) // Draft exists
+			snprintf(last_message,sizeof(last_message),"%s: %s",text_draft,t_peer[n].unsent);
 		else
 		{ // No draft
 			int last_message_n;
@@ -7879,7 +8018,7 @@ static void ui_show_main_screen(void)
 	gtk_widget_set_hexpand(t_main.entry_search, TRUE); // DOES NOT WORK TODO */
 	gtk_widget_add_css_class(t_main.entry_search, "search_field");
 	gtk_entry_buffer_set_max_length(GTK_ENTRY_BUFFER (gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_search))), 56);
-	gtk_entry_set_placeholder_text(GTK_ENTRY(t_main.entry_search),text_placeholder_search);
+	gtk_entry_set_placeholder_text(GTK_ENTRY(t_main.entry_search),text_search);
 	g_signal_connect_swapped(t_main.entry_search, "notify::text", G_CALLBACK (ui_populate_peers),itovp(0)); // Callback for typed characters  // DO NOT FREE arg because this only gets passed ONCE.
 	g_signal_connect_swapped(t_main.entry_search, "notify::text", G_CALLBACK (ui_populate_peers),itovp(ENUM_STATUS_GROUP_CTRL)); // Callback for typed characters  // DO NOT FREE arg because this only gets passed ONCE.
 	gtk_entry_set_icon_from_gicon(GTK_ENTRY(t_main.entry_search),GTK_ENTRY_ICON_SECONDARY, global_theme == DARK_THEME ? search_dark : search_light);
@@ -8458,6 +8597,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	search_dark = g_file_icon_new(g_file_new_for_uri("resource:///org/torx/gtk4/other/search_200dp_D2D2D2.svg"));
 	search_light = g_file_icon_new(g_file_new_for_uri("resource:///org/torx/gtk4/other/search_200dp_474747.svg"));
+
+	search_inactive = gdk_texture_new_from_resource("/org/torx/gtk4/other/search_200dp_D2D2D2.svg");
+	search_inactive_light = gdk_texture_new_from_resource("/org/torx/gtk4/other/search_200dp_474747.svg");
+	search_active = gdk_texture_new_from_resource("/org/torx/gtk4/other/search_200dp_ECB365.svg");
 	fail_ico = gdk_texture_new_from_resource("/org/torx/gtk4/other/cancel_200dp_FF0000.svg");
 	add_active = gdk_texture_new_from_resource("/org/torx/gtk4/other/add_200dp_ECB365.svg");
 	add_inactive = gdk_texture_new_from_resource("/org/torx/gtk4/other/add_200dp_D2D2D2.svg");
