@@ -2470,6 +2470,72 @@ static inline void ui_button_determination(const int n)
 	}
 }
 
+static void ui_activity_determination(const int n)
+{ // Single source of truth for button_activity (visibility + label) and buffer_write contents, in priority order: search_active > edit_n/edit_i > pm_n
+	if(!t_main.button_activity || n < 0)
+		return; // Sanity check
+	if(t_peer[n].search_active)
+	{ // Must be checked FIRST because edit_n or pm_n could also be set
+		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_search);
+		gtk_widget_set_visible(t_main.button_activity,TRUE);
+		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].search_text ? t_peer[n].search_text : "",-1);
+	}
+	else if(t_peer[n].edit_n > -1 || t_peer[n].edit_i > INT_MIN)
+	{ // Editing (message edit if edit_i is set, otherwise a GROUP_PEER peernick rename). DO NOT MAKE ELSE, takes priority over pm_n.
+		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
+		gtk_widget_set_visible(t_main.button_activity,TRUE);
+		if(t_peer[n].edit_i > INT_MIN)
+		{ // Message edit
+			const int p_iter = getter_int(t_peer[n].edit_n,t_peer[n].edit_i,-1,offsetof(struct message_list,p_iter));
+			if(p_iter < 0)
+			{
+				error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.5");
+				breakpoint(); // message is deleted or buggy
+			}
+			else
+			{
+				pthread_rwlock_rdlock(&mutex_protocols); // 🟧
+				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
+				pthread_rwlock_unlock(&mutex_protocols); // 🟩
+				if(null_terminated_len == 1)
+				{
+					char *message = getter_string(t_peer[n].edit_n,t_peer[n].edit_i,-1,offsetof(struct message_list,message));
+					if(message)
+					{
+						gtk_text_buffer_set_text(t_main.buffer_write,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
+						torx_free((void*)&message);
+					}
+				}
+				else
+					error_simple(0,"Attempting to edit a message type that hasn't yet been configured for editing");
+			}
+		}
+		else
+		{ // GROUP_PEER peernick rename
+			char *peernick = getter_string(t_peer[n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+			const uint32_t len = torx_allocation_len(peernick);
+			gtk_text_buffer_set_text(t_main.buffer_write,peernick,(int)len - 1);
+			torx_free((void*)&peernick);
+		}
+	}
+	else if(t_peer[n].pm_n > -1)
+	{ // Private messaging a GROUP_PEER. DO NOT MAKE ELSE.
+		char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
+		char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
+		snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
+		torx_free((void*)&peernick);
+		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
+		sodium_memzero(cancel_message,sizeof(cancel_message));
+		gtk_widget_set_visible(t_main.button_activity,TRUE);
+		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
+	}
+	else
+	{ // No activity. Restore the regular unsent draft.
+		gtk_widget_set_visible(t_main.button_activity,FALSE);
+		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
+	}
+}
+
 static void ui_emoji_picked(const GtkEmojiChooser *chooser,const char *text,GtkText *self)
 {
 	(void) chooser;
@@ -5726,50 +5792,33 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 		return;
 //	if(t_main.write_message == NULL || t_main.button_activity == NULL)
 //		return;
-	if(t_peer[n].search_active) // Must be checked FIRST because edit_n or pm_n could also be set // Going back to PM or whatever was previously active, or regular messaging, from search. Restoring unsent.
+	if(t_peer[n].search_active) // Must be checked FIRST because edit_n or pm_n could also be set // Going back to PM or whatever was previously active, or regular messaging, from search. ui_toggle_search re-renders via ui_activity_determination.
 		ui_toggle_search(NULL,itovp(n));
 	else
-	{ // Going back to regular messaging, from edit or PM. Must clear buffer for safety.
-		gtk_text_buffer_set_text(t_main.buffer_write,"",0);
+	{ // Peel one layer: editing takes priority over PM. ui_activity_determination then re-renders whatever remains active (restoring PM, or the regular unsent draft).
 		if(t_peer[n].edit_n > -1 || t_peer[n].edit_i > INT_MIN)
 		{ // Editing was active (of message or a GROUP_PEER peernick)
 			t_peer[n].edit_n = -1;
 			t_peer[n].edit_i = INT_MIN;
-			if(t_peer[n].pm_n > -1)
-			{ // PM was active before edit, restore it
-				char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-				char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
-				snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-				torx_free((void*)&peernick);
-				gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
-				sodium_memzero(cancel_message,sizeof(cancel_message));
-			}
 		}
 		else if(t_peer[n].pm_n > -1) // DO NOT MAKE ELSE. PM was active and editing was not
 			t_peer[n].pm_n = -1;
+		torx_free((void*)&t_peer[n].unsent); // safety: discard the (possibly private) draft
+		ui_activity_determination(n);
+		ui_button_determination(n);
 	}
-	ui_button_determination(n);
 	if(t_peer[n].search_active == 0 && t_peer[n].edit_n == -1 && t_peer[n].edit_i == INT_MIN && t_peer[n].pm_n == -1) // DO NOT MAKE ELSE.
-	{
-		gtk_widget_set_visible(t_main.button_activity,FALSE);
 		if(!INVERSION_TEST) // do not remove conditional
 			scroll_to_bottom(t_main.scrolled_window_right);
-	}
 }
 
 static void ui_activity_rename(const gpointer data)
 { // Rename a GROUP_PEER via change_nick(n,nick);
 	t_peer[global_n].edit_n = vptoi(data);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
-	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
-	gtk_widget_set_visible(t_main.button_activity,TRUE);
+	t_peer[global_n].edit_i = INT_MIN; // Nick rename, not a message edit
 	popdown(t_main.popover_message)
 	popdown(t_main.popover_group_peerlist)
-	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
-	char *peernick = getter_string(t_peer[global_n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-	const uint32_t len = torx_allocation_len(peernick);
-	gtk_text_buffer_set_text(buffer,peernick,(int)len - 1);
-	torx_free((void*)&peernick);
+	ui_activity_determination(global_n);
 	ui_button_determination(global_n);
 }
 
@@ -5786,14 +5835,7 @@ static void ui_establish_pm(const int n,void *popover)
 		t_peer[global_n].edit_i = INT_MIN;
 	}
 	t_peer[global_n].pm_n = n;
-	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-	char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
-	snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-	torx_free((void*)&peernick);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
-	sodium_memzero(cancel_message,sizeof(cancel_message));
-	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
-	gtk_widget_set_visible(t_main.button_activity,TRUE);
+	ui_activity_determination(global_n);
 //	popdown(t_main.popover_group_peerlist)
 	if(popover)
 	{
@@ -5820,33 +5862,9 @@ static void ui_activity_edit(const gpointer data)
 {
 	t_peer[global_n].edit_n = vptoii_n(data);
 	t_peer[global_n].edit_i = vptoii_i(data);
-	gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
-	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
-	gtk_widget_set_visible(t_main.button_activity,TRUE);
 	popdown(t_main.popover_message)
-	GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(t_main.write_message));
-	const int p_iter = getter_int(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,p_iter));
-	if(p_iter < 0)
-	{
-		error_simple(0,"Message's p_iter is <0 which indicates it is deleted or buggy.5");
-		breakpoint();
-		return; // message is deleted or buggy
-	}
-	pthread_rwlock_rdlock(&mutex_protocols); // 🟧
-	const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
-	pthread_rwlock_unlock(&mutex_protocols); // 🟩
-	if(null_terminated_len == 1)
-	{
-		char *message = getter_string(t_peer[global_n].edit_n,t_peer[global_n].edit_i,-1,offsetof(struct message_list,message));
-		if(message)
-		{
-			gtk_text_buffer_set_text(buffer,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
-			torx_free((void*)&message);
-		}
-		ui_button_determination(global_n);
-	}
-	else
-		error_simple(0,"Attempting to edit a message type that hasn't yet been configured for editing");
+	ui_activity_determination(global_n);
+	ui_button_determination(global_n);
 }
 
 static void ui_message_delete(const gpointer data)
@@ -7097,23 +7115,14 @@ static void ui_toggle_search(GtkWidget *button,const gpointer data)
 	t_peer[n].search_active = !t_peer[n].search_active;
 	if(button)
 		ui_set_image_search(button,n);
-	ui_button_determination(n);
-	if(was_active)
-	{ // Search was active
+	if(was_active) // Search was active, now toggled off. Free stale search text before re-rendering so ui_activity_determination restores the unsent/edit/pm state instead.
 		torx_free((void*)&t_peer[n].search_text);
-		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
-		if(former_len > 1)
-		{
-			gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_LESS_STRICT); // search_text was just freed above -> filter now matches all
-			scroll_to_bottom(t_main.scrolled_window_right);
-		}
-	}
-	else
-	{ // Search now active
-		gtk_text_buffer_set_text(t_main.buffer_write, "",-1);
-		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_search);
-		g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(global_n));
-		gtk_widget_set_visible(t_main.button_activity,TRUE);
+	ui_button_determination(n);
+	ui_activity_determination(n);
+	if(was_active && former_len > 1)
+	{ // search_text was just freed above -> filter now matches all
+		gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_LESS_STRICT);
+		scroll_to_bottom(t_main.scrolled_window_right);
 	}
 }
 
@@ -7581,8 +7590,7 @@ static void ui_select_changed(const void *arg)
 	t_main.write_message = gtk_text_view_new();
 	if(t_main.buffer_write == NULL)
 		t_main.buffer_write = gtk_text_buffer_new(NULL);
-	gtk_text_buffer_set_text(t_main.buffer_write, t_peer[n].search_active ? t_peer[n].search_text ? t_peer[n].search_text : "" : t_peer[n].unsent ? t_peer[n].unsent : "", -1);
-	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_main.buffer_write);
+	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_main.buffer_write); // contents set by ui_activity_determination below, once button_activity exists
 	gtk_widget_add_css_class(t_main.write_message, "write_message");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
 
@@ -7647,28 +7655,12 @@ static void ui_select_changed(const void *arg)
 		}
 	}
 
-	// Current activity (Edit, private message)
+	// Current activity (Edit, private message). Connect the cancel handler ONCE here; ui_activity_determination renders visibility/label and the buffer contents.
 	t_main.button_activity = gtk_button_new();
-	if(t_peer[n].pm_n > -1 || t_peer[n].edit_n > -1)
-	{
-		if(t_peer[n].pm_n > -1)
-		{
-			char *peernick_local = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
-			char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
-			snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick_local);
-			torx_free((void*)&peernick_local);
-			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
-			sodium_memzero(cancel_message,sizeof(cancel_message));
-		}
-		else if(t_peer[n].edit_n > -1)
-			gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_cancel_editing);
-		g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(n));
-		gtk_widget_set_visible(t_main.button_activity,TRUE);
-	}
-	else
-		gtk_widget_set_visible(t_main.button_activity,FALSE);
+	g_signal_connect(t_main.button_activity, "clicked", G_CALLBACK(ui_activity_cancel),itovp(n));
 	gtk_widget_set_size_request(t_main.button_activity, size_icon_send_width, size_icon_bottom_right);
 	gtk_box_append(GTK_BOX(t_main.panel_right), t_main.button_activity);
+	ui_activity_determination(n);
 
 	gtk_box_append(GTK_BOX(t_main.panel_right), write_box);
 
