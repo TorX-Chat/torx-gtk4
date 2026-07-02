@@ -1766,14 +1766,13 @@ void incoming_friend_request_cb_ui(const int n)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
 }
 
-static size_t ui_unread_clear(const int n)
-{ // Note: No action need be taken to update the tray icon, icon_communicator() will poll the variables every 500ms. ui_decorate_panel_left_top may need to be called if in horizontal mode.
+static size_t ui_unread_clear(const int n,const uint8_t owner)
+{ // Note: No action need be taken to update the tray icon, icon_communicator() will poll the variables every 500ms. ui_decorate_panel_left_top may need to be called if in horizontal mode. // XXX owner must be passed in, NOT fetched via a getter, because the deletion path calls this after the peer struct has been zero'd
 	size_t cleared = 0;
 	if(n > -1 && t_peer[n].unread > 0)
 	{ // MUST check n > -1, and not treat -1 as global
 		cleared = t_peer[n].unread;
-		const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
-		if (owner == ENUM_OWNER_GROUP_CTRL)
+		if(owner == ENUM_OWNER_GROUP_CTRL)
 			totalUnreadGroup -= t_peer[n].unread;
 		else
 			totalUnreadPeer -= t_peer[n].unread;
@@ -1785,8 +1784,8 @@ static size_t ui_unread_clear(const int n)
 static int onion_deleted_idle(void *arg)
 {
 	const int n = vptoii_n(arg);
-	const int owner = vptoii_i(arg);
-	const size_t cleared = ui_unread_clear(n); // yes, necessary.
+	const uint8_t owner = (uint8_t)vptoii_i(arg);
+	const size_t cleared = ui_unread_clear(n,owner); // yes, necessary.
 	torx_free((void*)&t_peer[n].unsent);
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
@@ -7478,7 +7477,7 @@ static void ui_select_changed(const void *arg)
 	int g = -1;
 //	if(t_peer[n].unread)
 //	{ // TODO 2024/03/22 this conditional SHOULD exist, but it causes problems in horizonal mode because "clicked" callbacks are only available once.
-		ui_unread_clear(n);
+		ui_unread_clear(n,owner);
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 			ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
 		else
@@ -8446,7 +8445,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 		{ // Note: Same memory space, this is OUR APPLICATION receiving a signal.
 			if(global_n > -1)
 			{
-				const size_t cleared = ui_unread_clear(global_n); // Clears tray icon and RAM
+				const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,offsetof(struct peer_list,owner));
+				const size_t cleared = ui_unread_clear(global_n,owner); // Clears tray icon and RAM
 				if(!vertical_mode && cleared)
 				{ // Clears left panel
 					ui_decorate_panel_left_top();
