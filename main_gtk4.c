@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.44 2026/06/25 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.45 2026/07/01 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -625,7 +625,6 @@ static const char *text_set_auto_resume_inbound = {0};
 static const char *text_set_stickers_save_all = {0};
 static const char *text_set_download_directory = {0};
 static const char *text_tor = {0};
-static const char *text_snowflake = {0};
 static const char *text_lyrebird = {0};
 static const char *text_conjure = {0};
 static const char *text_binary_location = {0};
@@ -2136,8 +2135,6 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 		const char *name = gtk_widget_get_name(button);
 		if(!strncmp(name,"tor_location",12))
 			handle_chosen_file_and_restart_tor(button,file,&tor_location,name);
-		else if(!strncmp(name,"snowflake_location",18))
-			handle_chosen_file_and_restart_tor(button,file,&snowflake_location,name);
 		else if(!strncmp(name,"lyrebird_location",17))
 			handle_chosen_file_and_restart_tor(button,file,&lyrebird_location,name);
 		else if(!strncmp(name,"conjure_location",16))
@@ -3506,7 +3503,6 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_stickers_save_all = "Save All Stickers";
 		text_set_download_directory = "Select Download Directory";
 		text_tor = "Tor"; // part B
-		text_snowflake = "Snowflake"; // part B
 		text_lyrebird = "Lyrebird"; // part B
 		text_conjure = "Conjure"; // part B
 		text_binary_location = "binary location (effective immediately)"; // part C
@@ -3699,7 +3695,6 @@ after each comes online and receives the code.";
 		text_set_download_directory = "选择下载目录";
 		//text_set_tor = "选择自定义Tor二进制文件路径（立即生效）";
 		text_tor = "Tor"; // part B
-		text_snowflake = "Snowflake"; // part B
 		text_lyrebird = "Lyrebird"; // part B
 		text_conjure = "Conjure"; // part B
 		text_binary_location = "二进制地址(即刻生效)"; // part C
@@ -4193,9 +4188,6 @@ static void ui_show_settings(void)
 
 	// Tor binary location
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&tor_location,"tor_location",text_tor));
-
-	// Snowflake binary location
-	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
 
 	// Lyrebird binary location
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_choose_binary(&lyrebird_location,"lyrebird_location",text_lyrebird));
@@ -8242,7 +8234,7 @@ void ui_show_auth_screen(void)
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_error);
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_entry_pass);
 	gtk_box_append (GTK_BOX(auth_background), t_main.auth_button);
-	if(snowflake_location)
+	if(lyrebird_location)
 	{
 		t_main.switch_censored_region = gtk_switch_new();
 		if(threadsafe_read_uint8(&mutex_global_variable,&censored_region))
@@ -8289,7 +8281,6 @@ void ui_show_missing_binaries(void)
 	ui_determine_orientation();
 
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&tor_location,"tor_location",text_tor));
-	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&snowflake_location,"snowflake_location",text_snowflake));
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&lyrebird_location,"lyrebird_location",text_lyrebird));
 	gtk_box_append (GTK_BOX (auth_background), ui_choose_binary(&conjure_location,"conjure_location",text_conjure));
 	gtk_box_append (GTK_BOX (auth_background), ui_spinbutton(text_set_tor_port_socks,ENUM_SPIN_TOR_PORT_SOCKS,(int)threadsafe_read_uint16(&mutex_global_variable,&tor_socks_port),0,65536));

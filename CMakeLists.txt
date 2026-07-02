@@ -87,6 +87,21 @@ add_executable( ${PROJECT_NAME} main_gtk4.c )
 
 execute_process(COMMAND glib-compile-resources --generate-source torx-gtk4.gresource.xml --target ${CMAKE_CURRENT_BINARY_DIR}/torx-gtk4.c WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Regenerate the GResource bundle at BUILD time whenever the XML or any bundled asset changes.
+set(GRESOURCE_XML ${CMAKE_CURRENT_SOURCE_DIR}/torx-gtk4.gresource.xml)
+set(GRESOURCE_C ${CMAKE_CURRENT_BINARY_DIR}/torx-gtk4.c)
+execute_process(
+	COMMAND glib-compile-resources --sourcedir=${CMAKE_CURRENT_SOURCE_DIR} --generate-dependencies ${GRESOURCE_XML}
+	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+	OUTPUT_VARIABLE GRESOURCE_DEPS OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(REPLACE "\n" ";" GRESOURCE_DEPS "${GRESOURCE_DEPS}") # absolute paths, since --sourcedir is absolute
+add_custom_command(
+	OUTPUT ${GRESOURCE_C}
+	COMMAND glib-compile-resources --sourcedir=${CMAKE_CURRENT_SOURCE_DIR} --generate-source ${GRESOURCE_XML} --target ${GRESOURCE_C}
+	DEPENDS ${GRESOURCE_XML} ${GRESOURCE_DEPS}
+	VERBATIM)
+set_source_files_properties(main_gtk4.c PROPERTIES OBJECT_DEPENDS ${GRESOURCE_C})
+
 find_package(PkgConfig REQUIRED)	# Requires GTK-4-dev to exist on local system
 pkg_check_modules(GTK4 REQUIRED gtk4 gstreamer-1.0 gstreamer-app-1.0)
 
