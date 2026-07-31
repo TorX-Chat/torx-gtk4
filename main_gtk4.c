@@ -2017,7 +2017,6 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		const size_t png_size = torx_allocation_len(png_data);
 		char *file_path = g_file_get_path(chosen_path); // free'd
 		write_bytes(file_path,png_data,png_size);
-	//	printf("Checkpoint png_size: %lu qr_data->size_allocated: %lu saving to: %s\n",png_size,qr_data->size_allocated,file_path);
 		g_free(file_path); file_path = NULL;
 	//	sodium_memzero(png_data,png_size);
 		torx_free((void*)&png_data);
@@ -2084,7 +2083,6 @@ static int onion_ready_idle(void *arg)
 		gtk_widget_set_visible(t_main.generated_qr_onion,TRUE);
 		gtk_widget_set_visible(t_main.button_copy_generated_qr,TRUE);
 		gtk_widget_set_visible(t_main.button_save_generated_qr,TRUE);
-	//	sodium_memzero(qr,qr_data->size_allocated); 
 		sodium_memzero(torxid,sizeof(torxid));
 		torx_free((void*)&qr_data->data);
 		torx_free((void*)&qr_data);
@@ -4906,7 +4904,6 @@ static void ui_show_qr(void)
 	gtk_widget_set_halign(box, GTK_ALIGN_CENTER);
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_qr),box);
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_qr));
-//	sodium_memzero(qr,qr_data->size_allocated);
 	sodium_memzero(torxid,sizeof(torxid));
 	torx_free((void*)&qr_data->data);
 	torx_free((void*)&qr_data);
@@ -7056,7 +7053,6 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 		gtk_widget_set_halign(box, GTK_ALIGN_CENTER);
 		gtk_popover_set_child(GTK_POPOVER(t_main.popover_qr),box);
 		gtk_popover_popup(GTK_POPOVER(t_main.popover_qr));
-	//	sodium_memzero(qr,qr_data->size_allocated);	
 		torx_free((void*)&qr_data->data);
 		torx_free((void*)&qr_data);
 		torx_free((void*)&group_id_encoded);
