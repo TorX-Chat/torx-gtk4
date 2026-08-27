@@ -38,12 +38,26 @@ else()
 endif()
 message(STATUS "TorX repository: ${LAN_REPO}")
 
-## START BLOCK: Try to keep this the same in torx-gtk4 and libtorx. XXX It WILL be passed to libtorx, but libtorx also has a default in case of independent build. XXX
+## START BLOCK: Try to keep this the same in torx-gtk4, torx-ncurses, and libtorx. XXX It WILL be passed to libtorx, but libtorx also has a default in case of independent build. XXX
 	#### C90 crap: -Wvla -Wdeclaration-after-statement
 	#### Unimportant: -Waggregate-return
 	#### Heavily CPU + RAM + time intensive junk static analyzer that throws mainly "possible null dereference" warnings (requires 9+gb ram): -fanalyzer
 	#### other static analyzer binaries: cppcheck clang-tidy
 if(NOT DEFINED CMAKE_C_FLAGS OR CMAKE_C_FLAGS STREQUAL "")
+	## XXX -mshstk is x86 only and a HARD ERROR on other architectures, so it must stay probed, never hardcoded. -mbranch-protection=standard is the ARM equivalent.
+	include(CheckCCompilerFlag)
+	check_c_compiler_flag("-mshstk" TORX_HAVE_MSHSTK)
+	if(TORX_HAVE_MSHSTK)
+		set(TORX_CFI_FLAG "-mshstk")
+	else()
+		check_c_compiler_flag("-mbranch-protection=standard" TORX_HAVE_BRANCH_PROTECTION)
+		if(TORX_HAVE_BRANCH_PROTECTION)
+			set(TORX_CFI_FLAG "-mbranch-protection=standard")
+		else()
+			set(TORX_CFI_FLAG "")
+			message(STATUS "${PROJECT_NAME} no control-flow protection flag available for this compiler/architecture")
+		endif()
+	endif()
 	if (CMAKE_BUILD_TYPE STREQUAL "Debug") ## XXX Dev builds can add either of: -fsanitize=thread -fsanitize=address
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=0 -O0")
 		if(NOT WIN32)
@@ -52,10 +66,10 @@ if(NOT DEFINED CMAKE_C_FLAGS OR CMAKE_C_FLAGS STREQUAL "")
 	else()
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_FORTIFY_SOURCE=2 -O2")
 	endif()
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -fwrapv -mshstk -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion -Wformat-security")
-	string(FIND ${CMAKE_C_COMPILER} "clang" found_clang)
-	if(found_clang GREATER -1)
-		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage -Wno-pre-c11-compat -Wno-switch-enum -Wno-covered-switch-default")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -fwrapv ${TORX_CFI_FLAG} -Wstrict-overflow=5 -Wshadow -Wpedantic -Wcast-qual -Wno-overlength-strings -Wwrite-strings -Wnull-dereference -Wstrict-prototypes -Wstrict-aliasing -Wmissing-prototypes -Wmissing-declarations -fstack-protector-strong -Wconversion -Wformat-security")
+	## XXX Match the compiler ID, not the path (/usr/bin/cc is clang on macOS). MATCHES not STREQUAL: Apple's toolchain reports AppleClang.
+	if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align -Weverything -Wno-missing-variable-declarations -Wno-declaration-after-statement -Wno-cast-function-type-strict -Wno-reserved-identifier -Wno-padded -Wno-vla -Wno-used-but-marked-unused -Wno-disabled-macro-expansion -Wno-documentation -Wno-documentation-unknown-command -Wno-double-promotion -Wno-unsafe-buffer-usage -Wno-pre-c11-compat -Wno-switch-enum -Wno-covered-switch-default -Wno-implicit-void-ptr-cast -Wno-jump-misses-init")
 	else() # GCC
 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wcast-align=strict -Wformat-signedness") # Dropped -fwhole-program because it caused linking errors when passed to libtorx. Likely responsible for other linking abnormalities.
 	endif()

@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.0.45 2026/07/01 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.1.47 2026/08/21 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -996,7 +996,7 @@ static void ui_participant_list(GtkWidget *button,void *arg)
 		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 		for(size_t iter = 0 ; iter < participant_count ; iter++)
 			g_list_store_append(list_store, int_pair_new(participant_list[iter],call_n,call_c,2));
-		torx_free((void*)&participant_list);
+		torx_free((void**)&participant_list);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),NULL); // TODO make click do something
 		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
@@ -1013,7 +1013,7 @@ static void audio_ready(void *arg,const unsigned char *data,const size_t data_le
 	if(record_cache_add(call_n,call_c,1500,300,data,(uint32_t)data_len) < 1)
 	{
 		unsigned char *to_free = record_stop(NULL,&current_recording);
-		torx_free((void*)&to_free); // This is already NULL assuming we are recording a voice call. also, XXX WILL NEVER REACH HERE.
+		torx_free((void**)&to_free); // This is already NULL assuming we are recording a voice call. also, XXX WILL NEVER REACH HERE.
 	}
 }
 
@@ -1093,7 +1093,7 @@ static int call_update_idle(void *arg)
 		{
 			char *peernick = getter_string(call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_label_new(peernick);
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			gtk_box_append(GTK_BOX(t_peer[call_n].t_call[call_c].column),label);
 		}
 		GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
@@ -1182,7 +1182,7 @@ static int call_update_idle(void *arg)
 				t_peer[call_n].t_call[call_c].ringing = 1;
 				char *peernick = getter_string(call_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 				ui_notify(text_incoming_call,peernick);
-				torx_free((void*)&peernick);
+				torx_free((void**)&peernick);
 			}
 			GtkWidget *button_accept = gtk_button_new();
 			gtk_widget_add_css_class(button_accept, "invisible");
@@ -1479,9 +1479,9 @@ static inline int display_notification_idle(void *arg)
 	g_application_send_notification (G_APPLICATION (gtk_application_gtk4), NULL, gnotification); // was g_application_gtk4
 	g_object_unref (icon_logo);
 	g_object_unref (gnotification);
-	torx_free((void*)&notification->heading);
-	torx_free((void*)&notification->message);
-	torx_free((void*)&arg);
+	torx_free((void**)&notification->heading);
+	torx_free((void**)&notification->message);
+	torx_free((void**)&arg);
 	return 0;
 }
 
@@ -1541,7 +1541,7 @@ static int ui_populate_list(void *arg)
 			g_list_store_append(list_store,int_pair_new(n,list,-1,-1));
 		}
 	}
-	torx_free((void*)&array);
+	torx_free((void**)&array);
 	return 0;
 }
 
@@ -1551,7 +1551,7 @@ static int transfer_progress_idle(void *arg)
 	const int n = progress->n;
 	const int f = progress->f;
 	const uint64_t transferred = progress->transferred;
-	torx_free((void*)&progress);
+	torx_free((void**)&progress);
 	if(global_n < 0)
 		return 0;
 	int g = -1;
@@ -1568,7 +1568,7 @@ static int transfer_progress_idle(void *arg)
 	char *file_path = getter_string(n,INT_MIN,f,offsetof(struct file_list,file_path));
 	char *file_size_text = file_progress_string(n,f);
 	gtk_label_set_text(GTK_LABEL(t_peer[n].t_file[f].file_size),file_size_text);
-	torx_free((void*)&file_size_text);
+	torx_free((void**)&file_size_text);
 	double fraction = 0;
 	if(size > 0)
 		fraction = ((double)transferred*1.000/(double)size);
@@ -1585,7 +1585,7 @@ static int transfer_progress_idle(void *arg)
 				char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 				char heading[ARBITRARY_ARRAY_SIZE]; // zero'd
 				snprintf(heading,sizeof(heading),"%s: %s",text_transfer_completed,peernick);
-				torx_free((void*)&peernick);
+				torx_free((void**)&peernick);
 				ui_notify(heading,file_path);
 				sodium_memzero(heading,sizeof(heading));
 			}
@@ -1599,7 +1599,7 @@ static int transfer_progress_idle(void *arg)
 	}
 	if(file_status == ENUM_FILE_INACTIVE_COMPLETE && is_image_file(file_path))
 		ui_print_message(t_peer[n].t_file[f].n,t_peer[n].t_file[f].i,2); // rebuild message to display image. Do this last.
-	torx_free((void*)&file_path);
+	torx_free((void**)&file_path);
 	return 0;
 }
 
@@ -1673,7 +1673,7 @@ static void ui_set_image_lock(const int n)
 		gtk_widget_set_tooltip_text(t_main.image_header,tooltip);
 		sodium_memzero(onion,sizeof(onion));
 		sodium_memzero(tooltip,sizeof(tooltip));
-		torx_free((void*)&groupid);
+		torx_free((void**)&groupid);
 	}
 	else
 	{
@@ -1718,7 +1718,7 @@ static void ui_set_last_seen(const int n)
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{
 		const int g = set_g(n,NULL); // just looking up existing
-		const uint32_t g_peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
+		const uint32_t g_peercount = group_peercount(g);
 		char peer_count[256];
 		snprintf(peer_count,sizeof(peer_count),"%s: %d %s %u",text_status_online,group_online(g),text_of,g_peercount);
 		gtk_label_set_text(GTK_LABEL(t_main.last_online),peer_count);
@@ -1762,7 +1762,7 @@ void incoming_friend_request_cb_ui(const int n)
 { // GUI Callback
 	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	ui_notify(peernick,text_new_friend);
-	torx_free((void*)&peernick);
+	torx_free((void**)&peernick);
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,incoming_friend_request_idle,itovp(ENUM_OWNER_CTRL),NULL);
 }
 
@@ -1786,13 +1786,13 @@ static int onion_deleted_idle(void *arg)
 	const int n = vptoii_n(arg);
 	const uint8_t owner = (uint8_t)vptoii_i(arg);
 	const size_t cleared = ui_unread_clear(n,owner); // yes, necessary.
-	torx_free((void*)&t_peer[n].unsent);
+	torx_free((void**)&t_peer[n].unsent);
 	t_peer[n].mute = 0;
 	t_peer[n].pm_n = -1;
 	t_peer[n].edit_n = -1;
 	t_peer[n].edit_i = INT_MIN;
 	t_peer[n].search_active = 0;
-	torx_free((void*)&t_peer[n].search_text);
+	torx_free((void**)&t_peer[n].search_text);
 
 	t_peer[n].audio_playing = 0;
 
@@ -1888,7 +1888,7 @@ static int peer_online_idle(void *arg)
 		{
 			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			ui_notify(peernick,text_online);
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 		}
 	}
 	return 0;
@@ -1967,7 +1967,7 @@ static void ui_copy_qr(GtkWidget *button,const void *arg)
 		char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 		sodium_memzero(id,sizeof(id));
 		qr_data = qr_bool(group_id_encoded,1);
-		torx_free((void*)&group_id_encoded);
+		torx_free((void**)&group_id_encoded);
 	}
 	else
 	{
@@ -1980,10 +1980,10 @@ static void ui_copy_qr(GtkWidget *button,const void *arg)
 	if(qr)
 	{
 		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),qr);
-		torx_free((void*)&qr);
+		torx_free((void**)&qr);
 	}
-	torx_free((void*)&qr_data->data);
-	torx_free((void*)&qr_data);
+	torx_free((void**)&qr_data->data);
+	torx_free((void**)&qr_data);
 }
 
 static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpointer data)
@@ -2004,7 +2004,7 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 			char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 			sodium_memzero(id,sizeof(id));
 			qr_data = qr_bool(group_id_encoded,8);
-			torx_free((void*)&group_id_encoded);
+			torx_free((void**)&group_id_encoded);
 		}
 		else
 		{
@@ -2019,10 +2019,10 @@ static void ui_save_qr_to_file(GtkFileDialog *dialog,GAsyncResult *res,const gpo
 		write_bytes(file_path,png_data,png_size);
 		g_free(file_path); file_path = NULL;
 	//	sodium_memzero(png_data,png_size);
-		torx_free((void*)&png_data);
+		torx_free((void**)&png_data);
 
-		torx_free((void*)&qr_data->data);
-		torx_free((void*)&qr_data);
+		torx_free((void**)&qr_data->data);
+		torx_free((void**)&qr_data);
 		g_object_unref (chosen_path);
 	}
 }
@@ -2066,7 +2066,7 @@ static int onion_ready_idle(void *arg)
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_onion),GDK_PAINTABLE(texture)); // must use set, do not use new
-			torx_free((void*)&png_data);
+			torx_free((void**)&png_data);
 		}
 		else
 		{
@@ -2075,7 +2075,7 @@ static int onion_ready_idle(void *arg)
 			if(qr)
 			{
 				gtk_label_set_text(GTK_LABEL(t_main.generated_qr_onion),qr);
-				torx_free((void*)&qr);
+				torx_free((void**)&qr);
 			}
 		}
 		g_signal_connect(t_main.button_copy_generated_qr, "clicked", G_CALLBACK(ui_copy_qr),itovp(n));
@@ -2084,8 +2084,8 @@ static int onion_ready_idle(void *arg)
 		gtk_widget_set_visible(t_main.button_copy_generated_qr,TRUE);
 		gtk_widget_set_visible(t_main.button_save_generated_qr,TRUE);
 		sodium_memzero(torxid,sizeof(torxid));
-		torx_free((void*)&qr_data->data);
-		torx_free((void*)&qr_data);
+		torx_free((void**)&qr_data->data);
+		torx_free((void**)&qr_data);
 	}
 	else if(t_main.window == window_home)
 		ui_populate_list(itovp(owner));
@@ -2144,7 +2144,7 @@ static void ui_on_choose_file(GtkFileDialog *dialog,GAsyncResult *res,GtkWidget 
 			t_main.custom_input_location = g_file_get_path(file); // TODO g_free
 			char *privkey = custom_input_file(path);
 			gtk_entry_buffer_set_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_custom_privkey)),privkey,-1);
-			torx_free((void*)&privkey);
+			torx_free((void**)&privkey);
 			g_free(path); path = NULL;
 		}
 // ??? what??	fprintf(stderr,"GTK bug where placeholder text is not overwritten. Should be fixed by publication time.\n"); // https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/4875
@@ -2167,7 +2167,7 @@ static void ui_on_choose_files(GtkFileDialog *dialog,GAsyncResult *res,const voi
 				unsigned char *data = read_bytes(file_path);
 				const int s = sticker_register(data,torx_allocation_len(data));
 				sticker_save(s);
-				torx_free((void*)&data);
+				torx_free((void**)&data);
 			}
 			else // Files
 				file_send(n,file_path);
@@ -2188,7 +2188,7 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 		char *allocation = torx_secure_malloc(len+1);
 		memcpy(allocation,folder_path,len+1);
 		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
-		torx_free((void*)&download_dir);
+		torx_free((void**)&download_dir);
 		download_dir = allocation;
 		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		sql_setting(0,-1,"download_dir",folder_path,len);
@@ -2197,7 +2197,7 @@ static void ui_on_choose_download_dir(GtkFileDialog *dialog,GAsyncResult *res,co
 	else
 	{ // Unset if cancelled
 		pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
-		torx_free((void*)&download_dir);
+		torx_free((void**)&download_dir);
 		pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 		sql_delete_setting(0,-1,"download_dir");
 	}
@@ -2228,7 +2228,7 @@ static void ui_on_choose_folder(GtkFileDialog *dialog,GAsyncResult *res,gpointer
 			if(folder_path == NULL || !write_test(folder_path)) // null has happened, stupid GTK
 				return;
 			torx_write(n) // 🟥🟥🟥
-			torx_free((void*)&peer[n].file[f].file_path);
+			torx_free((void**)&peer[n].file[f].file_path);
 			const size_t maxlen = strlen(folder_path) + strlen(peer[n].file[f].filename) + 2;
 			peer[n].file[f].file_path = torx_secure_malloc(maxlen);
 			snprintf(peer[n].file[f].file_path,maxlen,"%s%c%s",folder_path,platform_slash,peer[n].file[f].filename);
@@ -2294,7 +2294,7 @@ static void ui_sticker_send(gpointer *arg)
 		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH_DATE_SIGNED,checksum,torx_allocation_len(checksum));
 	else // regular messages, private messages (in authenticated pipes), public messages in public groups (in authenticated pipes)
 		message_send(recipient_n,ENUM_PROTOCOL_STICKER_HASH,checksum,torx_allocation_len(checksum));
-	torx_free((void*)&checksum);
+	torx_free((void**)&checksum);
 }
 
 static inline GtkWidget *ui_sticker_box(const unsigned char *data,const size_t data_len,const int square_size)
@@ -2376,7 +2376,7 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 	{ // Attach stickers TODO have them only be animated while mouseover, ie: utilize gif_static_new_from_data
 		unsigned char *data = sticker_retrieve_data(s);
 		GtkWidget *inner_box = ui_sticker_box(data,torx_allocation_len(data),size_sticker_small);
-		torx_free((void*)&data);
+		torx_free((void**)&data);
 		if(inner_box)
 		{ // verify sticker is valid
 			GtkWidget *outer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
@@ -2500,7 +2500,7 @@ static void ui_activity_determination(const int n)
 					if(message)
 					{
 						gtk_text_buffer_set_text(t_main.buffer_write,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
-						torx_free((void*)&message);
+						torx_free((void**)&message);
 					}
 				}
 				else
@@ -2512,7 +2512,7 @@ static void ui_activity_determination(const int n)
 			char *peernick = getter_string(t_peer[n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			const uint32_t len = torx_allocation_len(peernick);
 			gtk_text_buffer_set_text(t_main.buffer_write,peernick,(int)len - 1);
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 		}
 	}
 	else if(t_peer[n].pm_n > -1)
@@ -2520,7 +2520,7 @@ static void ui_activity_determination(const int n)
 		char *peernick = getter_string(t_peer[n].pm_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 		char cancel_message[ARBITRARY_ARRAY_SIZE]; // zero'd
 		snprintf(cancel_message,sizeof(cancel_message),"%s %s",text_private_messaging,peernick);
-		torx_free((void*)&peernick);
+		torx_free((void**)&peernick);
 		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
 		sodium_memzero(cancel_message,sizeof(cancel_message));
 		gtk_widget_set_visible(t_main.button_activity,TRUE);
@@ -2590,7 +2590,7 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 			file_accept(n,f);
 		}
 	}
-	torx_free((void*)&file_path);
+	torx_free((void**)&file_path);
 }
 
 static void ui_set_image_search(GtkWidget *button,const int n)
@@ -2959,8 +2959,8 @@ static int cleanup_idle(void *arg)
 		torx_debug_level(2); // For safety, to avoid sensitive things being written to stderr by error_cb
 	}
 	t_main.window = none; // must be first, maybe even earlier
-	torx_free((void*)&current_play_ringtone.data);
-	torx_free((void*)&current_play_beep.data);
+	torx_free((void**)&current_play_ringtone.data);
+	torx_free((void**)&current_play_beep.data);
 	cleanup_lib(sig_num);
 	gtk_window_destroy(GTK_WINDOW (t_main.main_window));
 	exit(sig_num); // 2024/02/06 better than returning, which sometimes lead to gtk criticals
@@ -3320,7 +3320,7 @@ static void ui_save_torrc(GtkWidget *button, gpointer arg)
 
 		gtk_popover_set_child(GTK_POPOVER(t_main.popover_torrc_errors),box);
 		gtk_popover_popup(GTK_POPOVER(t_main.popover_torrc_errors));
-		torx_free((void*)&torrc_errors);
+		torx_free((void**)&torrc_errors);
 	}
 }
 
@@ -4161,7 +4161,7 @@ static void ui_tor_control_password_change(GtkWidget *entry, gpointer data)
 	if(!changed)
 		return;
 	pthread_rwlock_wrlock(&mutex_global_variable); // 🟥
-	torx_free((void*)&control_password_clear);
+	torx_free((void**)&control_password_clear);
 	if(text_len)
 	{
 		control_password_clear = torx_secure_malloc(text_len+1);
@@ -4284,7 +4284,7 @@ static void ui_show_settings(void)
 	char *control_password_clear_local = torx_copy(control_password_clear);
 	pthread_rwlock_unlock(&mutex_global_variable); // 🟩
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_setting_entry(ui_tor_control_password_change,text_set_tor_password,control_password_clear_local));
-	torx_free((void*)&control_password_clear_local);
+	torx_free((void**)&control_password_clear_local);
 
 	// Custom Input
 	GtkWidget *box8 = gtk_box_new(vertical_mode ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
@@ -4386,7 +4386,7 @@ static int tor_log_idle(void *data)
 		if(t_main.window == window_log_tor)
 			scroll_to_bottom(t_main.scrolled_window_right);
 	//	printf(WHITE"CHECKPOINT TOR LOG: %s\n"RESET,(char*)data);
-		torx_free((void*)&data);
+		torx_free((void**)&data);
 	}
 /*	if(t_main.window == window_log_tor)
 		return 1; // continue
@@ -4398,7 +4398,7 @@ static int tor_log_idle(void *data)
 /* static void tor_call_async_cb_ui(char *message)
 { // Do not delete
 	printf("Checkpoint async_cb: %s\n",message);
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 } */
 
 void tor_log_cb_ui(char *message)
@@ -4434,13 +4434,13 @@ printf("Checkpoint setting n=%d playing to zero\n",play_info->n);
 			playback_stop(play_info);
 			t_peer[play_info->n].audio_playing = 0; // necessary or cache_play will not function
 			audio_cache_play(play_info->n);
-			torx_free((void*)&play_info->data); // necessary to free
-			torx_free((void*)&play_info); // necessary to free
+			torx_free((void**)&play_info->data); // necessary to free
+			torx_free((void**)&play_info); // necessary to free
 		}
 		else
 		{ // Ex: Voice message
 			playback_stop(play_info);
-			torx_free((void*)&play_info->data);
+			torx_free((void**)&play_info->data);
 		}
 		if(type == GST_MESSAGE_ERROR)
 		{ // Probably corrupt data, or data of a strange type
@@ -4468,7 +4468,7 @@ void audio_cache_play(const int n)
 				const size_t new = torx_allocation_len(tmp);
 				data = torx_realloc(data,existing + new);
 				memcpy(&data[existing],tmp,new);
-				torx_free((void*)&tmp);
+				torx_free((void**)&tmp);
 			}
 		}
 		if(data)
@@ -4499,7 +4499,7 @@ static void playback_message(void* arg)
 	if(current_play_pausable.pipeline)
 	{
 		playback_stop(&current_play_pausable);
-		torx_free((void*)&current_play_pausable.data);
+		torx_free((void**)&current_play_pausable.data);
 		if(last_played_n == n && last_played_i == i)
 			return;
 	}
@@ -4522,7 +4522,7 @@ static void playback_message(void* arg)
 	current_play_pausable.callback = play_callback;
 	playback_start(&current_play_pausable);
 
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 	if(t_peer[n].t_message[i].unheard && getter_uint8(n,i,-1,offsetof(struct message_list,stat)) == ENUM_MESSAGE_RECV)
 	{
 		t_peer[n].t_message[i].unheard = 0;
@@ -4839,7 +4839,7 @@ static void ui_copy(GtkWidget *button,const gpointer data)
 			char *group_id_encoded = b64_encode(id,GROUP_ID_SIZE);
 			sodium_memzero(id,sizeof(id));
 			gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),group_id_encoded);
-			torx_free((void*)&group_id_encoded);
+			torx_free((void**)&group_id_encoded);
 		} // else { Coding error. Copying a private group ID or viewing QR code serves no purpose. }
 	}
 	else
@@ -4878,7 +4878,7 @@ static void ui_show_qr(void)
 		GBytes *bytes = g_bytes_new(png_data,png_size);
 		GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 		generated_qr_code = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
-		torx_free((void*)&png_data);
+		torx_free((void**)&png_data);
 	}
 	else
 	{
@@ -4888,7 +4888,7 @@ static void ui_show_qr(void)
 			return; // bug
 		generated_qr_code = gtk_label_new(qr);
 		gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
-		torx_free((void*)&qr);
+		torx_free((void**)&qr);
 	}
 
 	t_main.popover_qr = custom_popover_new(t_main.button_show_qr);
@@ -4905,8 +4905,8 @@ static void ui_show_qr(void)
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_qr),box);
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_qr));
 	sodium_memzero(torxid,sizeof(torxid));
-	torx_free((void*)&qr_data->data);
-	torx_free((void*)&qr_data);
+	torx_free((void**)&qr_data->data);
+	torx_free((void**)&qr_data);
 }
 
 static gboolean ui_treeview_toggled(GtkSwitch *self,gboolean state,gpointer data)
@@ -4944,7 +4944,7 @@ static void item_builder(GtkListItemFactory *factory, GtkListItem *list_item, gp
 			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			GtkWidget *label = gtk_editable_label_new(peernick);
 			g_signal_connect(label, "notify::editing", G_CALLBACK(ui_rename),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			gtk_box_append(GTK_BOX(box), label);
 		}
 		if(column_number == 1)
@@ -5242,18 +5242,18 @@ static void ui_group_generate(GtkWidget *button,const void *arg)
 				GBytes *bytes = g_bytes_new(png_data,png_size);
 				GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 				gtk_image_set_from_paintable(GTK_IMAGE(t_main.generated_qr_group),GDK_PAINTABLE(texture)); // must use set, do not use new
-				torx_free((void*)&png_data);
+				torx_free((void**)&png_data);
 			}
 			else
 			{
 				qr_data = qr_bool(group_id_encoded,1);
 				char *qr = qr_utf8(qr_data);
 				gtk_label_set_text(GTK_LABEL(t_main.generated_qr_group),qr);
-				torx_free((void*)&qr);
+				torx_free((void**)&qr);
 			}
-			torx_free((void*)&group_id_encoded);
-			torx_free((void*)&qr_data->data);
-			torx_free((void*)&qr_data);
+			torx_free((void**)&group_id_encoded);
+			torx_free((void**)&qr_data->data);
+			torx_free((void**)&qr_data);
 			g_signal_connect(t_main.button_copy_generated_qr, "clicked", G_CALLBACK(ui_copy_qr),itovp(group_n));
 			g_signal_connect(t_main.button_save_generated_qr, "clicked", G_CALLBACK(ui_save_qr),itovp(group_n)); // DO NOT FREE arg because this only gets passed ONCE.
 			gtk_widget_set_visible(t_main.generated_qr_group,TRUE);
@@ -5492,18 +5492,18 @@ static void ui_show_generate(void)
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			t_main.generated_qr_onion = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
-			torx_free((void*)&png_data);
+			torx_free((void**)&png_data);
 		}
 		else
 		{
 			qr_data = qr_bool(torxid,1);
 			char *qr = qr_utf8(qr_data);
 			t_main.generated_qr_onion = gtk_label_new(qr);
-			torx_free((void*)&qr);
+			torx_free((void**)&qr);
 		}
 		sodium_memzero(torxid,sizeof(torxid));
-		torx_free((void*)&qr_data->data);
-		torx_free((void*)&qr_data);
+		torx_free((void**)&qr_data->data);
+		torx_free((void**)&qr_data);
 		g_signal_connect(t_main.button_copy_generated_qr, "clicked", G_CALLBACK(ui_copy_qr),itovp(generated_n));
 		g_signal_connect(t_main.button_save_generated_qr, "clicked", G_CALLBACK(ui_save_qr),itovp(generated_n)); // DO NOT FREE arg because this only gets passed ONCE.
 		gtk_widget_set_visible(t_main.generated_qr_onion,TRUE);
@@ -5664,9 +5664,9 @@ static int custom_setting_idle(void *arg)
 		error_printf(3,"Unrecognized encrypted config option: %s",setting_name);
 	else if(plaintext == 1)
 		error_printf(0,"Unrecognized unencrypted config option: %s",setting_name);
-	torx_free((void*)&custom_setting->setting_name);
-	torx_free((void*)&custom_setting->setting_value);
-	torx_free((void*)&custom_setting);
+	torx_free((void**)&custom_setting->setting_name);
+	torx_free((void**)&custom_setting->setting_value);
+	torx_free((void**)&custom_setting);
 	return 0;
 }
 
@@ -5704,7 +5704,7 @@ static void ui_message_copy(const gpointer data)
 	{
 		char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
 		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()),message);
-		torx_free((void*)&message);
+		torx_free((void**)&message);
 	}
 	else
 		error_simple(0,"Attempting to copy a message type that hasn't yet been configured for copying");
@@ -5777,7 +5777,7 @@ static void ui_open_folder(const gpointer data)
 	GFile *file = g_file_new_for_path(file_path);
 	GtkFileLauncher *launcher = gtk_file_launcher_new (file);
 	gtk_file_launcher_open_containing_folder (launcher,GTK_WINDOW(t_main.main_window),NULL,NULL,NULL);
-	torx_free((void*)&file_path);
+	torx_free((void**)&file_path);
 }
 
 static void ui_activity_cancel(GtkWidget *button,const gpointer data)
@@ -5799,7 +5799,7 @@ static void ui_activity_cancel(GtkWidget *button,const gpointer data)
 		}
 		else if(t_peer[n].pm_n > -1) // DO NOT MAKE ELSE. PM was active and editing was not
 			t_peer[n].pm_n = -1;
-		torx_free((void*)&t_peer[n].unsent); // safety: discard the (possibly private) draft
+		torx_free((void**)&t_peer[n].unsent); // safety: discard the (possibly private) draft
 		ui_activity_determination(n);
 		ui_button_determination(n);
 	}
@@ -5911,7 +5911,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		const int f = set_f(file_n,(const unsigned char*)message,CHECKSUM_BIN_LEN-1);
 		if(f < 0)
 		{
-			torx_free((void*)&message);
+			torx_free((void**)&message);
 			error_simple(0,"ui_message_long_press with f=-1. Coding error. Report this.");
 			breakpoint();
 			return;
@@ -5952,7 +5952,7 @@ static void ui_message_long_press(GtkGestureLongPress* self,gdouble x,gdouble y,
 		if(owner == ENUM_OWNER_GROUP_PEER)
 			create_button(text_rename,ui_activity_rename,itovp(n))
 	}
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 	create_button(text_delete,ui_message_delete,data)
 	t_main.popover_message = custom_popover_new(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(self)));
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_message),box);
@@ -5966,11 +5966,11 @@ static GtkWidget *ui_message_info(const int n,const int i)
 	char *timebuffer = message_time_string(n,i);
 	GtkWidget *message_time = gtk_label_new(timebuffer);
 	gtk_widget_add_css_class(message_time, "message_info_time");
-	torx_free((void*)&timebuffer);
+	torx_free((void**)&timebuffer);
 
 	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *peernick_widget = gtk_label_new(peernick);
-	torx_free((void*)&peernick);
+	torx_free((void**)&peernick);
 	gtk_widget_add_css_class(peernick_widget, "message_info_peernick");
 
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
@@ -6063,7 +6063,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			g = set_g(-1,message); // necessary to do this again even if we have g because it reserves. also WE MIGHT NOT ALREADY HAVE IT
 			const int group_n = getter_group_int(g,offsetof(struct group_list,n));
 			uint32_t peercount = be32toh(align_uint32((void*)&message[GROUP_ID_SIZE])); // XXX cannot use g_peercount because its zero
-			const uint32_t g_peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
+			const uint32_t g_peercount = group_peercount(g);
 			const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 			if(peercount < g_peercount)
 				peercount = g_peercount; // override if it has grown (when we already joined the group)
@@ -6091,9 +6091,9 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 				char *group_encoded = b64_encode(id,GROUP_ID_SIZE);
 				sodium_memzero(id,sizeof(id));
 				snprintf(group_message,sizeof(group_message),"%s\n%s: %u\n%s",group_type,text_current_members,peercount,group_encoded);
-				torx_free((void*)&group_encoded);
+				torx_free((void**)&group_encoded);
 			}
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			msg = gtk_label_new(group_message);
 			sodium_memzero(group_message,sizeof(group_message));
 		}
@@ -6104,7 +6104,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			{
 				unsigned char *data = sticker_retrieve_data(s);
 				msg = ui_sticker_box(data,torx_allocation_len(data),size_sticker_large);
-				torx_free((void*)&data);
+				torx_free((void**)&data);
 			}
 			if(msg == NULL)
 			{ // Does not exist yet
@@ -6208,7 +6208,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 			file_icon = ui_get_icon_from_filename(filename);
 			char *file_size_text = file_progress_string(file_n,f);
 			t_peer[file_n].t_file[f].file_size = gtk_label_new(file_size_text);
-			torx_free((void*)&file_size_text);
+			torx_free((void**)&file_size_text);
 			double fraction = 0;
 			const uint64_t size = getter_uint64(file_n,INT_MIN,f,offsetof(struct file_list,size));
 			const uint64_t transferred = calculate_transferred(file_n,f);
@@ -6235,8 +6235,8 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 		//	gtk_box_append(GTK_BOX(inner_message_box),text_area);
 		//	printf("Checkpoint ui_print_message file_n==%d f==%d\n",file_n,f);
 		}
-		torx_free((void*)&filename);
-		torx_free((void*)&file_path);
+		torx_free((void**)&filename);
+		torx_free((void**)&file_path);
 	}
 	else if(protocol == ENUM_PROTOCOL_GROUP_OFFER || protocol == ENUM_PROTOCOL_GROUP_OFFER_FIRST)
 	{
@@ -6278,7 +6278,7 @@ static GtkWidget *ui_message_generator(const int n,const int i,const int f,int g
 
 //	if(scroll != 3)
 		gtk_widget_add_controller(outer_message_box, GTK_EVENT_CONTROLLER(long_press));
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 	return outer_message_box;
 }
 
@@ -6399,19 +6399,19 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				{
 					char *filename = getter_string(n,INT_MIN,f,offsetof(struct file_list,filename));
 					ui_notify(peernick,filename);
-					torx_free((void*)&filename);
+					torx_free((void**)&filename);
 				}
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP || protocol == ENUM_PROTOCOL_FILE_OFFER_GROUP_DATE_SIGNED)
 			{ // group, so use group_n
-				torx_free((void*)&peernick);
+				torx_free((void**)&peernick);
 				peernick = getter_string(nn,INT_MIN,-1,offsetof(struct peer_list,peernick)); // XXX
 				const int f = set_f(nn,(unsigned char*)message,CHECKSUM_BIN_LEN-1);
 				if(f > -1)
 				{
 					char *filename = getter_string(nn,INT_MIN,f,offsetof(struct file_list,filename));
 					ui_notify(peernick,filename);
-					torx_free((void*)&filename);
+					torx_free((void**)&filename);
 				}
 			}
 			else if(protocol == ENUM_PROTOCOL_FILE_REQUEST)
@@ -6424,7 +6424,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 				ui_notify(peernick,text_sticker);
 			else
 				error_printf(0,"A notifiable message was received that we don't know how to print: %u",protocol);
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			beep();
 		}
 	}
@@ -6440,7 +6440,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		{
 			if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX
 				scroll_to_bottom(t_main.scrolled_window_right);
-			torx_free((void*)&message);
+			torx_free((void**)&message);
 			return; // do not display other types of files messages
 		}
 		// Handle :sent: TODO
@@ -6490,7 +6490,7 @@ static void ui_print_message(const int n,const int i,const int scroll)
 		if(scroll == 1) // Done printing messages. Last in a list. (Such as, when select_changed() prints a bunch at once). Things that only go once go here. XXX 2024/03/09 note: ==3 because message could change size
 			scroll_to_bottom(t_main.scrolled_window_right);
 	}
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 	skip_printing: {}
 //printf("Checkpoint print n=%d i=%d p_iter=%d scroll=%d pos=%d msg=%s\n",n,i,p_iter,scroll,t_peer[n].t_message[i].pos,peer[n].message[i].message);
 	if(scroll > 0)
@@ -6513,7 +6513,7 @@ static int print_message_idle(void *arg)
 { // this step is necessary
 	struct printing *printing = (struct printing*) arg; // Casting passed struct
 	ui_print_message(printing->n,printing->i,printing->scroll);
-	torx_free((void*)&printing);
+	torx_free((void**)&printing);
 	return 0;
 }
 
@@ -6613,13 +6613,13 @@ static int stream_idle(void *arg)
 	if((owner == ENUM_OWNER_GROUP_PEER && t_peer[n].mute) || status == ENUM_STATUS_BLOCKED)
 		goto end; // ignored or blocked
 	error_printf(0,"Unknown stream data received: protocol=%u data_len=%u",protocol,data_len);
-	torx_free((void*)&data);
-	torx_free((void*)&arg);
+	torx_free((void**)&data);
+	torx_free((void**)&arg);
 	return 0;
 	end: {}
 	error_simple(0,"Potential issue in stream_cb."); // 2025/04/22 Occured when receiving a CALL JOIN from an ignore'd peer in a group chat
-	torx_free((void*)&data);
-	torx_free((void*)&arg);
+	torx_free((void**)&data);
+	torx_free((void**)&arg);
 	return 0;
 }
 
@@ -6653,8 +6653,8 @@ static int message_extra_idle(void *arg)
 		else
 			error_printf(0,"message_extra_cb received %u unknown bytes on protocol %u",data_len,protocol);
 	}
-	torx_free((void*)&stream_data->data);
-	torx_free((void*)&arg);
+	torx_free((void**)&stream_data->data);
+	torx_free((void**)&arg);
 	return 0;
 }
 
@@ -6673,9 +6673,9 @@ static int message_more_idle(void *arg)
 	struct int_p_p *int_p_p = (struct int_p_p*) arg; // Casting passed struct
 	for(int current = 0; current < int_p_p->loaded ; current++)
 		ui_print_message(int_p_p->loaded_array_n[current],int_p_p->loaded_array_i[current],-1);
-	torx_free((void*)&int_p_p->loaded_array_n);
-	torx_free((void*)&int_p_p->loaded_array_i);
-	torx_free((void*)&int_p_p);
+	torx_free((void**)&int_p_p->loaded_array_n);
+	torx_free((void**)&int_p_p->loaded_array_i);
+	torx_free((void**)&int_p_p);
 	return 0;
 }
 
@@ -6705,7 +6705,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		if(message)
 		{
 			const size_t buf_len = strlen(message);
-			torx_free((void*)&t_peer[n].search_text);
+			torx_free((void**)&t_peer[n].search_text);
 			t_peer[n].search_text = torx_secure_malloc(buf_len+1);
 			memcpy(t_peer[n].search_text,message,buf_len+1);
 			sodium_memzero(message,buf_len);
@@ -6761,7 +6761,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 			{ // send to GROUP_PEER instead of GROUP_CTRL
 				message_send(t_peer[n].pm_n,ENUM_PROTOCOL_UTF8_TEXT_PRIVATE,message,(uint32_t)strlen(message));
 				gtk_text_buffer_set_text(t_main.buffer_write, "", 0); // this occurs in ui_activity_cancel
-				torx_free((void*)&t_peer[n].unsent);
+				torx_free((void**)&t_peer[n].unsent);
 			}
 			else
 			{
@@ -6786,7 +6786,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 			else // regular messages, private messages (in authenticated pipes), public messages in public groups (in authenticated pipes)
 				message_send(n,ENUM_PROTOCOL_UTF8_TEXT,message,(uint32_t)strlen(message));
 			gtk_text_buffer_set_text(t_main.buffer_write, "", 0); // this occurs in ui_activity_cancel
-			torx_free((void*)&t_peer[n].unsent);
+			torx_free((void**)&t_peer[n].unsent);
 		}
 		sodium_memzero(message,buf_len);
 		g_free(message);
@@ -6800,7 +6800,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		if(message)
 		{
 			const size_t buf_len = strlen(message);
-			torx_free((void*)&t_peer[n].unsent);
+			torx_free((void**)&t_peer[n].unsent);
 			t_peer[n].unsent = torx_secure_malloc(buf_len+1);
 			memcpy(t_peer[n].unsent,message,buf_len+1);
 			sodium_memzero(message,buf_len);
@@ -6823,17 +6823,17 @@ static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer dat
 		if(p == NULL || strlen(p) == 0 || !strncmp(p," ",1))
 		{
 			gtk_editable_set_text(GTK_EDITABLE(self),peernick);
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			return;
 		}
 		else if(!strncmp(p,peernick,56))
 		{
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			return;
 		}
 		else
 		{
-			torx_free((void*)&peernick);
+			torx_free((void**)&peernick);
 			change_nick(n,p);
 			if(owner == ENUM_OWNER_GROUP_CTRL)
 				ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
@@ -6853,7 +6853,7 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 {
 	const int n = vptoi(arg); // target
 	const int g = global_group;
-	const uint32_t g_peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
+	const uint32_t g_peercount = group_peercount(g);
 	const uint8_t g_invite_required = getter_group_uint8(g,offsetof(struct group_list,invite_required));
 	popdown(t_main.popover_invite)
 	if(g_invite_required == 1 && g_peercount == 0)
@@ -6906,7 +6906,7 @@ static int ui_populate_peers(void *arg)
 				else if(status == ENUM_STATUS_FRIEND && status_local == ENUM_STATUS_FRIEND)
 					g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,0));
 			}
-			torx_free((void*)&array);
+			torx_free((void**)&array);
 		}
 		if(t_main.scrolled_window_peer && GTK_IS_SCROLLED_WINDOW(t_main.scrolled_window_peer))
 		{
@@ -6938,7 +6938,7 @@ static void ui_populate_group_peerlist_popover(GtkWidget *entry_search_popover,G
 		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
 			g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,3));
-		torx_free((void*)&array);
+		torx_free((void**)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_private_message);
 		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
@@ -6959,7 +6959,7 @@ static void ui_populate_peer_popover(GtkWidget *entry_search_popover,GParamSpec 
 		GtkNoSelection *ns = gtk_no_selection_new (G_LIST_MODEL (list_store));
 		for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
 			g_list_store_append(list_store, int_pair_new(array[pos],-1,-1,1));
-		torx_free((void*)&array);
+		torx_free((void**)&array);
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_group_invite);
 		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
@@ -7020,7 +7020,7 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 			GBytes *bytes = g_bytes_new(png_data,png_size);
 			GdkTexture *texture = gdk_texture_new_from_bytes(bytes,NULL);
 			generated_qr_code = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture),size_box_qr_code);
-			torx_free((void*)&png_data);
+			torx_free((void**)&png_data);
 		}
 		else
 		{
@@ -7030,7 +7030,7 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 				return;
 			generated_qr_code = gtk_label_new(qr);
 			gtk_widget_set_size_request(generated_qr_code,size_box_qr_code,size_box_qr_code);
-			torx_free((void*)&qr);
+			torx_free((void**)&qr);
 		}
 		t_main.popover_qr = custom_popover_new(button_invite);
 
@@ -7053,9 +7053,9 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 		gtk_widget_set_halign(box, GTK_ALIGN_CENTER);
 		gtk_popover_set_child(GTK_POPOVER(t_main.popover_qr),box);
 		gtk_popover_popup(GTK_POPOVER(t_main.popover_qr));
-		torx_free((void*)&qr_data->data);
-		torx_free((void*)&qr_data);
-		torx_free((void*)&group_id_encoded);
+		torx_free((void**)&qr_data->data);
+		torx_free((void**)&qr_data);
+		torx_free((void**)&group_id_encoded);
 	}
 }
 
@@ -7111,7 +7111,7 @@ static void ui_toggle_search(GtkWidget *button,const gpointer data)
 	if(button)
 		ui_set_image_search(button,n);
 	if(was_active) // Search was active, now toggled off. Free stale search text before re-rendering so ui_activity_determination restores the unsent/edit/pm state instead.
-		torx_free((void*)&t_peer[n].search_text);
+		torx_free((void**)&t_peer[n].search_text);
 	ui_button_determination(n);
 	ui_activity_determination(n);
 	if(was_active && former_len > 1)
@@ -7341,7 +7341,7 @@ static void ui_send_pressed(GtkGestureClick *gesture, int n_press, double x, dou
 		{ // TODO should also call_leave_all_except(-1,-1);
 			error_simple(0,"An existing recording was detected and disposed of. Coding error. Report this to UI Devs.");
 			unsigned char *to_free = record_stop(NULL,&current_recording);
-			torx_free((void*)&to_free);
+			torx_free((void**)&to_free);
 			call_mute_all_except(-1,-1); // mute active calls, both mic and speaker
 		}
 		record_start(&current_recording,16000,NULL,NULL); // 8000, 12000, 16000 works
@@ -7384,7 +7384,7 @@ static void ui_send_released(GtkGestureClick *gesture, int n_press, double x, do
 				message_send(global_n, ENUM_PROTOCOL_AAC_AUDIO_MSG, data, (uint32_t)(sizeof(uint32_t) + data_len));
 		}
 		else
-			torx_free((void*)&data);
+			torx_free((void**)&data);
 	}
 }
 
@@ -7407,7 +7407,7 @@ static gboolean message_search_match(gpointer item, gpointer user_data)
 		return FALSE; // non-text message types are hidden during search
 	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
 	const gboolean hit = (message && mit_strcasestr(message,t_peer[global_n].search_text)) ? TRUE : FALSE;
-	torx_free((void*)&message);
+	torx_free((void**)&message);
 	return hit;
 }
 
@@ -7496,7 +7496,7 @@ static void ui_select_changed(const void *arg)
 	gtk_widget_set_margin_start(info_box,size_margin_ten);
 	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *group_or_user_name = gtk_editable_label_new(peernick);
-	torx_free((void*)&peernick);
+	torx_free((void**)&peernick);
 	gtk_widget_set_tooltip_text(group_or_user_name,text_tooltip_group_or_user_name);
 	t_main.last_online = gtk_label_new(NULL);
 	gtk_widget_set_halign(group_or_user_name, GTK_ALIGN_START);
@@ -7638,16 +7638,10 @@ static void ui_select_changed(const void *arg)
 	if(owner == ENUM_OWNER_GROUP_CTRL)
 	{ // Iterate through all group peers and add their rows too
 		g = set_g(n,NULL);
-		const uint32_t peercount = getter_group_uint32(g,offsetof(struct group_list,peercount));
-		for(uint32_t nn = 0 ; nn < peercount ; nn++)
-		{
-			pthread_rwlock_rdlock(&mutex_expand_group); // 🟧
-			const int peer_n = group[g].peerlist[nn];
-			pthread_rwlock_unlock(&mutex_expand_group); // 🟩
+		for(int peer_n,nn = 0 ; (peer_n = group_peerlist_get(g,nn)) > -1 ; nn++)
 			for(size_t call_c = 0; call_c < torx_allocation_len(t_peer[peer_n].t_call)/sizeof(struct t_call_list) ; call_c++)
 				if(t_peer[peer_n].t_call[call_c].column)
 					gtk_box_append(GTK_BOX(t_main.call_box), t_peer[peer_n].t_call[call_c].column);
-		}
 	}
 
 	// Current activity (Edit, private message). Connect the cancel handler ONCE here; ui_activity_determination renders visibility/label and the buffer contents.
@@ -7828,7 +7822,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 	/* Build Peernick Label */
 	char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 	GtkWidget *chat_name = gtk_label_new(peernick);
-	torx_free((void*)&peernick);
+	torx_free((void**)&peernick);
 	gtk_widget_add_css_class(chat_name, "chat_name");
 	gtk_widget_set_halign(chat_name, GTK_ALIGN_START);
 	gtk_widget_set_valign(chat_name, GTK_ALIGN_CENTER);
@@ -7859,7 +7853,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 				const uint8_t file_offer = protocols[p_iter].file_offer;
 				const uint32_t null_terminated_len = protocols[p_iter].null_terminated_len;
 				pthread_rwlock_unlock(&mutex_protocols); // 🟩
-				const char *message = getter_string(last_message_n,last_message_i,-1,offsetof(struct message_list,message));
+				char *message = getter_string(last_message_n,last_message_i,-1,offsetof(struct message_list,message));
 				if(max_i > INT_MIN/* && protocol > 0*/ && message)
 				{
 					int prefix = 0; // NOTE: could be larger than size due to weird way snprintf returns
@@ -7897,7 +7891,7 @@ GtkWidget *ui_add_chat_node(const int n,const int call_n,const int call_c,void (
 					else
 						snprintf(&last_message[prefix],sizeof(last_message)-(size_t)prefix,"Protocol: %d",protocol);
 				}
-				torx_free((void*)&message);
+				torx_free((void**)&message);
 			}
 		}
 		int count = sizeof(last_message);
@@ -8460,8 +8454,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 	binary_path = path_generator(starting_dir,argv_0);
 
 	/* Options configurable by client */
-	torx_debug_level(4);
-	reduced_memory = 2; // TODO probably remove before release
+	// torx_debug_level(4);
+	// reduced_memory = 2; // 0 == 1024 (default), 1 == 256mb, 2 == 64mb
 
 	/* Utilizing setter functions instead of direct setting (ex: stream_registered = stream_cb_ui;) for typechecking */
 	initialize_n_setter(initialize_n_cb_ui);
@@ -8504,9 +8498,9 @@ static void ui_activate(GtkApplication *application,void *arg)
 	initial();
 	gst_init(NULL, NULL);
 
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG, "AAC Audio Message", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED, "AAC Audio Message Date Signed", "", 0, 1, 1, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_MSG, 0, 1, 0);
-	protocol_registration(ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE, "AAC Audio Message Private", "", 0, 0, 0, 1, 1, 0, 0, ENUM_EXCLUSIVE_GROUP_PM, 0, 1, 0);
+	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG,.name="AAC Audio Message",.description="",.null_terminate=0,.date=0,.sign=0,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
+	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED,.name="AAC Audio Message Date Signed",.description="",.null_terminate=0,.date=1,.sign=1,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
+	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE,.name="AAC Audio Message Private",.description="",.null_terminate=0,.date=0,.sign=0,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_PM,.utf8=0,.socket_swappable=1,.stream=0});
 
 	char current_working_directory[PATH_MAX];
 	if(getcwd(current_working_directory,sizeof(current_working_directory)))
