@@ -77,21 +77,40 @@ endif()
 message(STATUS "${PROJECT_NAME} C_FLAGS being set to: ${CMAKE_C_FLAGS}")
 ## END BLOCK
 
-find_library(torx NAMES torx PATHS ${CMAKE_INSTALL_LIBDIR})
-find_path(TORX_INCLUDE_DIR NAMES torx.h PATHS ${CMAKE_INSTALL_INCLUDEDIR})
+## XXX Opt-in ONLY. Silently preferring an installed libtorx makes TORX_TAG a lie and, because find_* results are cached, keeps reporting a hit long after the installed header is deleted.
+if(DEFINED ENV{TORX_SYSTEM} AND NOT DEFINED TORX_SYSTEM)
+	set(TORX_SYSTEM $ENV{TORX_SYSTEM})
+elseif(NOT DEFINED TORX_SYSTEM) # Set default
+	set(TORX_SYSTEM 0)
+endif()
+message(STATUS "TorX system library: ${TORX_SYSTEM}")
 
-if(TORX_INCLUDE_DIR AND torx)
-	message(STATUS "TorX library found; NOT building.") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
+unset(TORX_LIBRARY CACHE) # Re-probe every configure. A cached hit that outlives the file it found fails the build with "torx.h: No such file or directory" and cannot fall back, while a cached NOTFOUND survives into the fetch path and expands to a literal -NOTFOUND include directory.
+unset(TORX_INCLUDE_DIR CACHE)
+
+if(TORX_SYSTEM)
+	find_library(TORX_LIBRARY NAMES torx)
+	find_path(TORX_INCLUDE_DIR NAMES torx.h)
+	if(NOT TORX_LIBRARY OR NOT TORX_INCLUDE_DIR)
+		message(FATAL_ERROR "TORX_SYSTEM requested but libtorx was not found. Install libtorx, or reconfigure without -D TORX_SYSTEM=ON to fetch and build it.")
+	endif()
+	message(STATUS "TorX library found; NOT building: ${TORX_LIBRARY}") # TODO maybe verify that it is appropriately shared / static if BUILD_SHARED_LIBS was passed?
+	set(TORX_LINK ${TORX_LIBRARY})
 else()
-	message(STATUS "TorX library NOT found; Building.")
+	message(STATUS "TorX library NOT used; Building tag ${TORX_TAG}.")
 	set(NO_ASYNC_CALLBACKS 1)
 	include(FetchContent)
+	if(NOT DEFINED TORX_INSTALL) # A SHARED libtorx is a runtime dependency of the installed binary and must ship with it; a static one is linked in and must not, because leaving it in the prefix is what hijacks the next configure.
+		set(TORX_INSTALL ${BUILD_SHARED_LIBS})
+	endif()
 	FetchContent_Declare(
 		torx
 		GIT_REPOSITORY ${REPO_TORX}
 		GIT_TAG ${TORX_TAG}
+		${TORX_FETCH_EXCLUDE}
 	)
 	FetchContent_MakeAvailable(torx)
+	set(TORX_LINK torx)
 endif()
 
 add_subdirectory(appindicator)
@@ -123,7 +142,7 @@ add_library(gifanimation MODULE gif_animation.c) # XXX XXX XXX BEWARE: The conte
 target_include_directories(gifanimation PRIVATE ${GTK4_INCLUDE_DIRS})
 target_link_libraries(gifanimation ${GTK4_LIBRARIES}) # necessary on Windows, unsure why it works without on Linux
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
+target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${TORX_INCLUDE_DIR} ) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_CFLAGS_OTHER})
 add_compile_definitions(SQLITE_HAS_CODEC SECURE_MALLOC) # necessary, not redundant
 
@@ -134,7 +153,7 @@ target_link_libraries(
 		Winmm		## For Wave audio output
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		torx
+		${TORX_LINK}
 		z
 		sodium
 	##	event
@@ -149,7 +168,7 @@ target_link_libraries(
 	${PROJECT_NAME} PRIVATE
 		${GTK4_LIBRARIES}
 		${GSTREAMER_LIBRARY_DIRS}
-		torx
+		${TORX_LINK}
 		z		## TODO required ONLY when BUILD_SHARED_LIBS=0
 		sodium		## TODO required ALWAYS for sodium_memzero
 	##	event
