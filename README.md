@@ -31,7 +31,7 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 `cmake -DCMAKE_BUILD_TYPE=Debug -D TORX_TAG=main -B build && cd build && make && cd ..  && valgrind --track-origins=yes --leak-check=full ./build/torx-gtk4`
 
 ###### For installing TorX (after building):
-`cd build && sudo make install`
+`cd build && sudo make install && sudo ldconfig`
 
 ###### For uninstalling TorX (after installing):
 `sudo xargs rm < install_manifest.txt`
