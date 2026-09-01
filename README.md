@@ -16,7 +16,7 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 `sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`
 
 ###### Install runtime dependencies (lyrebird is an optional transport):
-`sudo apt install tor lyrebird`
+`sudo apt install tor lyrebird libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav`
 
 ###### Clone the repository
 `git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4`
