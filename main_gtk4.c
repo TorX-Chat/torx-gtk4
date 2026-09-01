@@ -205,6 +205,8 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 
 #define ENUM_STATUS_GROUP_CTRL 4
 
+#define RECORDING_CACHE_MINIMUM_SIZE 1000 // Too low and we will pick up spikes and keypresses
+#define RECORDING_MAX_AGE_IN_MS 300 // Too low and we will delete good data.
 #define AUDIO_PLAYOUT_DELAY_MS 100 // Depth of the receive side jitter buffer. Costs exactly this much added latency. (Recommended: 100ms to 300ms)
 #define AUDIO_RETRIEVE_MAX 1 // Messages to take from the library cache per callback. XXX Must stay small: audio_cache_retrieve advances a watermark and audio_cache_add discards anything older than it on arrival. (Recommended: 1 to 4)
 
@@ -1015,7 +1017,7 @@ static void audio_ready(void *arg,const unsigned char *data,const size_t data_le
 {
 	const int call_n = vptoii_n(arg);
 	const int call_c = vptoii_i(arg);
-	if(record_cache_add(call_n,call_c,1500,300,data,(uint32_t)data_len) < 1)
+	if(record_cache_add(call_n,call_c,RECORDING_CACHE_MINIMUM_SIZE,RECORDING_MAX_AGE_IN_MS,data,(uint32_t)data_len) < 1)
 	{
 		unsigned char *to_free = record_stop(NULL,&current_recording);
 		torx_free((void**)&to_free); // This is already NULL assuming we are recording a voice call. also, XXX WILL NEVER REACH HERE.
@@ -1817,7 +1819,11 @@ static int onion_deleted_idle(void *arg)
 
 	ui_audio_stream_stop(n);
 	for(size_t call_c = 0 ; call_c < torx_allocation_len(t_peer[n].t_call)/sizeof(struct t_call_list) ; call_c++)
+	{ // zero_n frees the call structs without a callback, so no call_update follows a deletion. This is the last notice we get that these participants are gone.
+		for(size_t iter = 0 ; iter < torx_allocation_len(t_peer[n].t_call[call_c].participating)/sizeof(int) ; iter++)
+			ui_audio_stream_stop(t_peer[n].t_call[call_c].participating[iter]);
 		torx_free((void**)&t_peer[n].t_call[call_c].participating);
+	}
 
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift

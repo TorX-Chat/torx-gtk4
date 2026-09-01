@@ -399,7 +399,6 @@ unsigned char *record_stop(uint32_t *duration,struct rec_info *rec_info)
 	GstElement *pipeline = rec_info->pipeline;
 	rec_info->pipeline = NULL;
 //	print_duration(rec_info->pipeline);
-	error_simple(0,"Checkpoint record_stop 1");
 //	GstState current_state, pending_state;
 //	gst_element_get_state(pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
 //	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
@@ -407,7 +406,6 @@ unsigned char *record_stop(uint32_t *duration,struct rec_info *rec_info)
 //		error_simple(0,"Checkpoint record_stop 2");
 	gst_element_set_state(pipeline, GST_STATE_NULL); // XXX HARD STOP. If used on streams, function will NOT continue, will NOT return.
 //	}
-	error_simple(0,"Checkpoint record_stop 3");
 	gst_object_unref(GST_OBJECT(pipeline)); // THIS WILL NOT TRIGGER WHEN STOPPING STREAMS
 	/* XXX DO NOT CHANGE THE ORDER OR CONTENTS OF THIS BLOCK XXX END */
 	return rec_info->buffer;
