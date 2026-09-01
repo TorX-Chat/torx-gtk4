@@ -129,7 +129,7 @@ XXX ERRORS XXX
 //#include "other/scalable/apps/logo_torx.h" // XXX Fun alternative to GResource (its a .svg in b64 defined as a macro). but TODO DO NOT USE IT, use g_resources_lookup_data instead to get gbytes
 
 #define ALPHA_VERSION 1 // enables debug print to stderr
-#define CLIENT_VERSION "TorX-GTK4 Alpha 2.1.47 2026/08/21 by TorX\n© Copyright 2026 TorX.\n"
+#define CLIENT_VERSION "TorX-GTK4 Alpha 2.1.47 2026/09/01 by TorX\n© Copyright 2026 TorX.\n"
 #define DBUS_TITLE "org.torx.gtk4" // GTK Hardcoded Icon location: /usr/share/icons/hicolor/48x48/apps/org.gnome.TorX.png
 #define DARK_THEME 0
 #define LIGHT_THEME 1
@@ -205,6 +205,9 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 
 #define ENUM_STATUS_GROUP_CTRL 4
 
+#define AUDIO_PLAYOUT_DELAY_MS 100 // Depth of the receive side jitter buffer. Costs exactly this much added latency. (Recommended: 100ms to 300ms)
+#define AUDIO_RETRIEVE_MAX 1 // Messages to take from the library cache per callback. XXX Must stay small: audio_cache_retrieve advances a watermark and audio_cache_add discards anything older than it on arrival. (Recommended: 1 to 4)
+
 static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	char *unsent;
 	size_t unread; // number of new unread messages (currently since startup only, otherwise this needs to be in peer not t_peer
@@ -215,7 +218,7 @@ static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they
 	uint8_t search_active;
 	char *search_text;
 	int pointer_location;
-	uint8_t audio_playing;
+	struct play_info *audio_stream; // Streaming (call) audio playback pipeline. One per participant, alive for as long as they are in a call.
 	struct t_message_list { // XXX DO NOT DELETE XXX
 		int pos;
 		uint8_t visible;
@@ -234,6 +237,7 @@ static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they
 	struct t_call_list {
 		GtkWidget *column; // Vertical box, contains who is calling and then a row of applicable widgets related to the call
 		uint8_t ringing;
+		int *participating; // Participants as of the last call_update. Retained because a departure is only visible as a difference against it.
 	} *t_call;
 } *t_peer; // TODO do not initialize automatically, but upon use
 
@@ -692,6 +696,7 @@ static void ui_show_missing_binaries(void);
 static void ring_start(void);
 static void ring_stop(void);
 static void audio_cache_play(const int n);
+static void ui_audio_stream_stop(const int n);
 static void ui_print_message(const int n,const int i,const int scroll);
 
 static GtkApplication *gtk_application_gtk4;
@@ -1071,6 +1076,21 @@ static int call_update_idle(void *arg)
 	}
 	const uint8_t joined = getter_call_uint8(call_n,call_c,-1,offsetof(struct call_list,joined));
 	const uint8_t waiting = getter_call_uint8(call_n,call_c,-1,offsetof(struct call_list,waiting));
+	uint32_t participant_count = 0;
+	int *participant_list = NULL;
+	if(joined || waiting)
+		participant_list = call_participant_list(&participant_count,call_n,call_c);
+	for(size_t iter = 0; iter < torx_allocation_len(t_peer[call_n].t_call[call_c].participating)/sizeof(int); iter++)
+	{ // XXX A call update is the only notice we get that a participant left, and their playback pipeline holds an audio device open, so it must not outlive them.
+		uint8_t remains = 0;
+		for(uint32_t participant = 0; !remains && participant < participant_count; participant++)
+			if(participant_list[participant] == t_peer[call_n].t_call[call_c].participating[iter])
+				remains = 1;
+		if(!remains)
+			ui_audio_stream_stop(t_peer[call_n].t_call[call_c].participating[iter]);
+	}
+	torx_free((void**)&t_peer[call_n].t_call[call_c].participating);
+	t_peer[call_n].t_call[call_c].participating = participant_list; // Taking ownership
 	if(joined || waiting)
 	{
 		int group_n = -800; // DO NOT INITIALIZE AS -1!!!!
@@ -1097,7 +1117,7 @@ static int call_update_idle(void *arg)
 			gtk_box_append(GTK_BOX(t_peer[call_n].t_call[call_c].column),label);
 		}
 		GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, size_spacing_ten);
-		const int participants = call_participant_count(call_n,call_c);
+		const int participants = (int)participant_count;
 		if(joined)
 		{
 			if(participants)
@@ -1239,7 +1259,7 @@ static int initialize_n_idle(void *arg)
 	t_peer[n].search_active = 0;
 	t_peer[n].search_text = NULL;
 
-	t_peer[n].audio_playing = 0;
+	t_peer[n].audio_stream = NULL;
 
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_insecure_malloc(sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
@@ -1298,6 +1318,7 @@ static int initialize_peer_call_idle(void *arg)
 	const int call_c = vptoii_i(arg);
 	t_peer[call_n].t_call[call_c].column = NULL; // TODO when zeroing an existing, call g_object_unref(t_peer[call_n].t_call[call_c].column);
 	t_peer[call_n].t_call[call_c].ringing = 0;
+	torx_free((void**)&t_peer[call_n].t_call[call_c].participating);
 	return 0;
 }
 
@@ -1794,7 +1815,9 @@ static int onion_deleted_idle(void *arg)
 	t_peer[n].search_active = 0;
 	torx_free((void**)&t_peer[n].search_text);
 
-	t_peer[n].audio_playing = 0;
+	ui_audio_stream_stop(n);
+	for(size_t call_c = 0 ; call_c < torx_allocation_len(t_peer[n].t_call)/sizeof(struct t_call_list) ; call_c++)
+		torx_free((void**)&t_peer[n].t_call[call_c].participating);
 
 	t_peer[n].pointer_location = -10;
 	t_peer[n].t_message = (struct t_message_list *)torx_realloc(t_peer[n].t_message + t_peer[n].pointer_location,sizeof(struct t_message_list) *21) - t_peer[n].pointer_location; // XXX Note this shift
@@ -4414,6 +4437,20 @@ void tor_log_cb_ui(char *message)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,tor_log_idle,message,NULL); // frees pointer*
 }
 
+static void ui_audio_stream_stop(const int n)
+{ // Tear down a participant's streaming playback pipeline, if they have one
+	if(n < 0 || !t_peer[n].audio_stream)
+		return;
+	playback_stop(t_peer[n].audio_stream);
+	torx_free((void**)&t_peer[n].audio_stream);
+}
+
+static int audio_stream_stop_idle(void *arg)
+{
+	ui_audio_stream_stop(vptoi(arg));
+	return 0;
+}
+
 static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 {
 	(void)bus;
@@ -4429,13 +4466,9 @@ static gboolean play_callback(GstBus *bus, GstMessage *msg, gpointer arg)
 				playback_start(play_info);
 		}
 		else if(play_info->n > -1)
-		{ // Ex: Streaming audio
-printf("Checkpoint setting n=%d playing to zero\n",play_info->n);
-			playback_stop(play_info);
-			t_peer[play_info->n].audio_playing = 0; // necessary or cache_play will not function
-			audio_cache_play(play_info->n);
-			torx_free((void**)&play_info->data); // necessary to free
-			torx_free((void**)&play_info); // necessary to free
+		{ // Ex: Streaming audio. End-of-stream only arrives at teardown, which frees itself; an error means the pipeline is dead and the next arrival will build a fresh one.
+			if(type == GST_MESSAGE_ERROR)
+				g_idle_add_full(G_PRIORITY_HIGH_IDLE,audio_stream_stop_idle,itovp(play_info->n),NULL); // XXX Must be deferred, because ui_audio_stream_stop frees the very struct this callback is dispatching with.
 		}
 		else
 		{ // Ex: Voice message
@@ -4450,40 +4483,52 @@ printf("Checkpoint setting n=%d playing to zero\n",play_info->n);
 			g_error_free(error);
 		}
 	}
-	return TRUE;
+	return TRUE; // XXX Load-bearing now that this is a GstBusFunc rather than a signal handler: FALSE would destroy the watch that playback_stop expects to remove.
 }
 
 void audio_cache_play(const int n)
-{ // For streaming audio.
-	if(n > -1 && !t_peer[n].audio_playing)
-	{ // Do not call audio_cache_retrieve before checking the other conditons
-		unsigned char *data = NULL;
-		for(unsigned char *tmp ; (tmp = audio_cache_retrieve(NULL,NULL,n)) ; )
+{ // For streaming audio. One pipeline per participant, built once and fed thereafter; a pipeline per batch guarantees a gap and a click at every batch boundary.
+	if(n < 0)
+		return;
+	if(!t_peer[n].audio_stream)
+	{
+		struct play_info *play_info = torx_insecure_malloc(sizeof(struct play_info)); // DO NOT STORE IN STACK because the pipeline and its callbacks operate asyncronously. Must be global or heap.
+		play_info->pipeline = NULL; // redundant
+		play_info->bus_watch = 0; // redundant
+		play_info->appsrc = NULL; // redundant
+		play_info->anchor_time = 0; // redundant
+		play_info->anchor_nstime = 0; // redundant
+		play_info->playout_delay_ms = AUDIO_PLAYOUT_DELAY_MS;
+		play_info->anchored = 0; // redundant
+		play_info->data = NULL; // Streaming playback holds no data of its own
+		play_info->loop = 0;
+		play_info->n = n;
+		play_info->callback = play_callback;
+		playback_start(play_info);
+		if(!play_info->pipeline)
 		{
-			if(!data)
-				data = tmp;
-			else
-			{
-				const size_t existing = torx_allocation_len(data);
-				const size_t new = torx_allocation_len(tmp);
-				data = torx_realloc(data,existing + new);
-				memcpy(&data[existing],tmp,new);
-				torx_free((void**)&tmp);
-			}
+			torx_free((void**)&play_info);
+			return;
 		}
-		if(data)
-		{
-			struct play_info *play_info = torx_insecure_malloc(sizeof(struct play_info)); // DO NOT STORE IN STACK because playback_start and its callbacks operate asyncronously. Must be global or heap.
-			play_info->data = data; // will be free'd by bus_callback
-
-			play_info->pipeline = NULL; // redundant
-			play_info->loop = 0;
-			play_info->n = n;
-			play_info->callback = play_callback;
-
-			t_peer[n].audio_playing = 1;
-			playback_start(play_info); // This will free `data` and struct, in play_callback
+		t_peer[n].audio_stream = play_info;
+	}
+	for(int retrieved = 0 ; retrieved < AUDIO_RETRIEVE_MAX ; retrieved++)
+	{ // XXX Do NOT drain to empty. See AUDIO_RETRIEVE_MAX.
+		time_t message_time = 0;
+		time_t message_nstime = 0;
+		unsigned char *data = audio_cache_retrieve(&message_time,&message_nstime,n);
+		if(!data)
+			break;
+		struct play_info *stream = t_peer[n].audio_stream;
+		if(!stream->anchored)
+		{ // XXX The timeline must follow the SENDER's clock, not ours. Timestamping on arrival puts clumped messages on top of each other, and a transport gap longer than the playout buffer then desynchronises playback permanently instead of resynchronising on the next message.
+			stream->anchor_time = message_time;
+			stream->anchor_nstime = message_nstime;
+			stream->anchored = 1;
 		}
+		const int64_t pts = ((int64_t)message_time - (int64_t)stream->anchor_time) * 1000000000LL + ((int64_t)message_nstime - (int64_t)stream->anchor_nstime);
+		playback_stream_push(stream,data,torx_allocation_len(data),pts < 0 ? GST_CLOCK_TIME_NONE : (GstClockTime)pts);
+		torx_free((void**)&data);
 	}
 }
 

@@ -63,6 +63,7 @@ severable if found in contradiction with the License or applicable law.
 #include <unistd.h>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
+#include <gst/app/gstappsrc.h>
 
 /* Things to note:
 	Be sure to call gst_init(NULL, NULL);
@@ -80,9 +81,15 @@ struct rec_info {
 
 struct play_info {
 	GstElement *pipeline;
+	guint bus_watch; // Source id of the pipeline's bus watch. XXX Non-zero if and only if a watch is live; g_source_remove on a stale id is a g_critical.
+	GstElement *appsrc; // Streaming playback only. Owned by the pipeline; retained so that data can be pushed without rebuilding it.
+	time_t anchor_time; // Streaming playback only. Sender timestamp that this pipeline's timeline starts from.
+	time_t anchor_nstime;
+	uint32_t playout_delay_ms; // Streaming playback only. Depth of the receive side jitter buffer.
+	uint8_t anchored; // "Playing"
 	unsigned char *data;
 	uint8_t loop; // play on repeat
-	int n; // for cache play ONLY, NOT for voice messages
+	int n; // for cache play ONLY, NOT for voice messages. XXX n > -1 is what selects streaming playback in playback_start.
 	gboolean (*callback)(GstBus *bus, GstMessage *msg, gpointer arg); // play_info is passed as arg
 };
 
@@ -94,7 +101,8 @@ struct play_info current_play_beep = {0}; // for beeps
 void record_start(struct rec_info *rec_info,const int sample_rate,void (*callback)(void*,const unsigned char*,const size_t),void *callback_arg);
 unsigned char *record_stop(uint32_t *duration,struct rec_info *rec_info);
 void playback_start(struct play_info *play_info);
-void playback_stop(struct play_info *play_info); // must be double so function can null it
+void playback_stop(struct play_info *play_info);
+int playback_stream_push(struct play_info *play_info,const unsigned char *data,const uint32_t data_len,const GstClockTime pts);
 /*static void
 print_one_tag (const GstTagList * list, const gchar * tag, gpointer user_data)
 {
@@ -154,87 +162,135 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 } */
 
 void playback_stop(struct play_info *play_info)
-{ // If calling to stop a stream, remember to t_peer[n].audio_playing = 0;
+{ // Tears down a one-shot or a streaming pipeline.
 	if(!play_info || !play_info->pipeline)
 	{
 		error_simple(0,"Nothing to stop yet playback_stop was called. Possible coding error. Report to UI Devs.");
 		return; // Bad args or already stopped
 	}
-	error_simple(0,"Checkpoint playback_stop 1");
-//	GstState current_state, pending_state;
-//	gst_element_get_state(play_info->pipeline, &current_state, &pending_state, GST_CLOCK_TIME_NONE);
-//	if(current_state != GST_STATE_NULL && pending_state != GST_STATE_NULL)
-//	{
-//		error_simple(0,"Checkpoint playback_stop 2");
+	play_info->anchored = 0;
+	if(play_info->bus_watch)
+	{ // XXX Must be zeroed: g_source_remove on an id whose source is already gone is a g_critical, which is fatal under G_DEBUG=fatal-criticals.
+		g_source_remove(play_info->bus_watch);
+		play_info->bus_watch = 0;
+	}
+	play_info->appsrc = NULL; // Owned by the pipeline. Must never be unref'd here.
 	gst_element_set_state(play_info->pipeline, GST_STATE_NULL);
-//	}
-	error_simple(0,"Checkpoint playback_stop 3");
 	gst_object_unref(play_info->pipeline); // TODO this may not trigger when playback_stop is called from play_callback
 	play_info->pipeline = NULL;
 }
 
 void playback_start(struct play_info *play_info)
-{ // Play any type of audio file, from memory. XXX WARNING: This function operates asyncronously, so play_info MUST be GLOBAL or ALLOCATED. XXX
-	uint32_t data_len;
-	if(!play_info || !play_info->data || !(data_len = torx_allocation_len(play_info->data)) || !play_info->callback)
+{ // Play any type of audio file, from memory. When play_info->n > -1, instead builds ONE long lived pipeline for an incoming audio stream, which is thereafter fed by playback_stream_push. XXX WARNING: This function operates asyncronously, so play_info MUST be GLOBAL or ALLOCATED. XXX
+	if(!play_info || !play_info->callback)
 	{
 		error_simple(0,"Playback failed sanity check.");
 		return;
 	}
-	error_printf(0,"Checkpoint playback_start data_len=%u",data_len);
+	const int streaming = play_info->n > -1;
+	uint32_t data_len = 0;
+	if(streaming ? play_info->data != NULL : (!play_info->data || !(data_len = torx_allocation_len(play_info->data))))
+	{ // Streaming playback holds no data of its own, whereas one-shot playback is nothing without it.
+		error_simple(0,"Playback failed sanity check.");
+		return;
+	}
+//	error_printf(0,"Checkpoint playback_start data_len=%u streaming=%d",data_len,streaming);
 //	write_bytes("fishing.aac",play_info->data,data_len);
 //	print_metadata("fishing.aac");
-	if(play_info->pipeline) // There is nothing we can do with this from here; we need a fresh one.
-		playback_stop(play_info);
-	play_info->pipeline = gst_pipeline_new("audio-playback");
+	if(play_info->pipeline)
+	{
+		if(streaming)
+		{ // XXX Rebuilding would discard the anchor and resynchronise the call against a new epoch.
+			error_simple(0,"Playback_start called on a live stream. Possible coding error. Report to UI Devs.");
+			return;
+		}
+		playback_stop(play_info); // There is nothing we can do with this from here; we need a fresh one.
+	}
+	play_info->bus_watch = 0; // XXX Must precede the pipeline, because every failure path below calls playback_stop, and this struct may be freshly malloc'd.
+	play_info->pipeline = gst_pipeline_new(streaming ? "audio-stream-playback" : "audio-playback");
 	GstElement *appsrc = gst_element_factory_make("appsrc", "audio-source");
 	GstElement *decoder = gst_element_factory_make("decodebin", "decoder");
+	GstElement *queue = streaming ? gst_element_factory_make("queue", "playout-buffer") : NULL;
 	GstElement *convert = gst_element_factory_make("audioconvert", "converter");
 	GstElement *sink = gst_element_factory_make("autoaudiosink", "audio-output");
-	if(!play_info->pipeline || !appsrc || !decoder || !convert || !sink)
+	if(!play_info->pipeline || !appsrc || !decoder || (streaming && !queue) || !convert || !sink)
 	{
 		playback_stop(play_info);
 		error_simple(0,"Failed to create GStreamer elements.");
 		return;
 	}
 	gst_bin_add_many(GST_BIN(play_info->pipeline), appsrc, decoder, convert, sink, NULL);
+	if(streaming)
+	{
+		gst_bin_add(GST_BIN(play_info->pipeline), queue);
+		g_object_set(G_OBJECT(appsrc),"stream-type",GST_APP_STREAM_TYPE_STREAM,"format",GST_FORMAT_TIME,"is-live",TRUE,"do-timestamp",FALSE,"max-bytes",(guint64)0,NULL); // XXX do-timestamp MUST stay FALSE. It stamps by ARRIVAL, and audio arrives in clumps, so a batch that arrives with its predecessor is stamped on top of it and the decoded stream overlaps itself. The caller supplies the sender's timestamp instead.
+		GstCaps *caps = gst_caps_new_simple("audio/mpeg","mpegversion", G_TYPE_INT, 4,"stream-format",G_TYPE_STRING,"adts",NULL); // XXX Do NOT add rate or channels: every ADTS header carries both, and a peer need not be recording at our rate.
+		g_object_set(G_OBJECT(appsrc),"caps",caps,NULL);
+		gst_caps_unref(caps);
+		g_object_set(G_OBJECT(queue),"max-size-time",(guint64)2 * GST_SECOND,"max-size-buffers",(guint)0,"max-size-bytes",(guint)0,"leaky",2,NULL); // Holds the backlog that builds up while the sink waits. leaky=downstream bounds it when the transport stalls, instead of letting latency grow without limit.
+		g_object_set(G_OBJECT(sink),"ts-offset",(gint64)play_info->playout_delay_ms * GST_MSECOND,NULL); // XXX THIS is the playout delay, NOT the queue's min-threshold-time. A queue does not report min-threshold-time in the latency query, so a sink is never told to wait for it and discards everything that the queue held back as late.
+	}
 	if(!gst_element_link(appsrc, decoder))
 	{
 		playback_stop(play_info);
 		error_simple(0,"Failed to link appsrc to decoder.");
 		return;
 	}
-	g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), convert);
-	if(!gst_element_link(convert, sink))
+	g_signal_connect(decoder, "pad-added", G_CALLBACK(on_pad_added), streaming ? queue : convert);
+	if(streaming ? !gst_element_link_many(queue, convert, sink, NULL) : !gst_element_link(convert, sink))
 	{
 		playback_stop(play_info);
-		error_simple(0,"Failed to link converter to sink.");
+		error_simple(0,"Failed to link the playback chain.");
 		return;
 	}
 	GstBus *bus = gst_element_get_bus(play_info->pipeline);
-	gst_bus_add_signal_watch(bus);
-	g_signal_connect(bus, "message", G_CALLBACK(play_info->callback), play_info);
+	play_info->bus_watch = gst_bus_add_watch(bus, play_info->callback, play_info); // XXX Not a signal watch: a plain watch is removed with g_source_remove, which is safe from inside the watch's own dispatch.
 	gst_object_unref(bus);
-//	g_object_set(G_OBJECT(play_info->appsrc),"stream-type", GST_APP_STREAM_TYPE_STREAM,"format", GST_FORMAT_TIME,"is-live", FALSE,NULL); // XXX TRUE here means no buffering. Must include #include <gst/app/gstappsrc.h>
-	GstBuffer *buffer = gst_buffer_new_allocate(NULL, data_len, NULL);
-	gst_buffer_fill(buffer, 0, play_info->data, data_len);
-	GstFlowReturn ret;
-	g_signal_emit_by_name(appsrc, "push-buffer", buffer, &ret);
-	gst_buffer_unref(buffer);
-	if(ret != GST_FLOW_OK)
+	if(streaming)
+		play_info->appsrc = appsrc; // Owned by the pipeline. Retained so that playback_stream_push can feed it.
+	else
 	{
-		playback_stop(play_info);
-		error_simple(0,"Failed to push buffer to appsrc.");
-		return;
+		GstBuffer *buffer = gst_buffer_new_allocate(NULL, data_len, NULL);
+		gst_buffer_fill(buffer, 0, play_info->data, data_len);
+		GstFlowReturn ret;
+		g_signal_emit_by_name(appsrc, "push-buffer", buffer, &ret);
+		gst_buffer_unref(buffer);
+		if(ret != GST_FLOW_OK)
+		{
+			playback_stop(play_info);
+			error_simple(0,"Failed to push buffer to appsrc.");
+			return;
+		}
+	//	print_duration(pipeline);
+		g_signal_emit_by_name(appsrc, "end-of-stream", &ret); // necessary to trigger callback on GST_MESSAGE_EOS
 	}
-//	print_duration(pipeline);
-	g_signal_emit_by_name(appsrc, "end-of-stream", &ret); // necessary to trigger callback on GST_MESSAGE_EOS
 	if(gst_element_set_state(play_info->pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE)
 	{
 		playback_stop(play_info);
 		error_simple(0,"Unable to set the pipeline to the playing state.");
-		return;
 	}
+}
+
+int playback_stream_push(struct play_info *play_info,const unsigned char *data,const uint32_t data_len,const GstClockTime pts)
+{ // Feed one message into an existing streaming pipeline. pts is relative to the start of this pipeline's timeline, or GST_CLOCK_TIME_NONE. Returns 0 on success. XXX Never emit end-of-stream here; that is what forced a new pipeline per batch.
+	if(!play_info || !play_info->appsrc || !data || !data_len)
+	{
+		error_simple(0,"Playback_stream_push failed sanity check.");
+		return -1;
+	}
+	GstBuffer *buffer = gst_buffer_new_allocate(NULL, data_len, NULL);
+	gst_buffer_fill(buffer, 0, data, data_len);
+	GST_BUFFER_PTS(buffer) = pts;
+	GST_BUFFER_DTS(buffer) = pts;
+	GstFlowReturn ret;
+	g_signal_emit_by_name(play_info->appsrc, "push-buffer", buffer, &ret);
+	gst_buffer_unref(buffer);
+	if(ret != GST_FLOW_OK)
+	{
+		error_printf(0,"Failed to push buffer to appsrc: %d",(int)ret);
+		return -1;
+	}
+	return 0;
 }
 
 static inline GstFlowReturn new_sample(GstElement *sink, gpointer data)
