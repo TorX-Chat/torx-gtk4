@@ -205,10 +205,10 @@ const char *supported_image_formats[] = {".jpg",".jpeg",".png",".gif",".bmp",".s
 
 #define ENUM_STATUS_GROUP_CTRL 4
 
-#define RECORDING_CACHE_MINIMUM_SIZE 1000 // Too low and we will pick up spikes and keypresses
+#define RECORDING_CACHE_MINIMUM_SIZE 1500 // Too low and we will pick up spikes and keypresses
 #define RECORDING_MAX_AGE_IN_MS 300 // Too low and we will delete good data.
-#define AUDIO_PLAYOUT_DELAY_MS 100 // Depth of the receive side jitter buffer. Costs exactly this much added latency. (Recommended: 100ms to 300ms)
-#define AUDIO_RETRIEVE_MAX 1 // Messages to take from the library cache per callback. XXX Must stay small: audio_cache_retrieve advances a watermark and audio_cache_add discards anything older than it on arrival. (Recommended: 1 to 4)
+#define AUDIO_PLAYOUT_DELAY_MS 50 // Depth of the receive side jitter buffer. Costs exactly this much added latency. (Recommended: 50ms to 300ms)
+#define AUDIO_RETRIEVE_MAX 2 // Messages to take from the library cache per callback. XXX Must stay small: audio_cache_retrieve advances a watermark and audio_cache_add discards anything older than it on arrival. (Recommended: 2 to 3)
 
 static struct t_peer_list { // XXX Do not torx_secure_malloc structs unless they contain sensitive arrays XXX
 	char *unsent;
