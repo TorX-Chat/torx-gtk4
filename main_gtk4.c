@@ -554,6 +554,13 @@ static const char *text_block = {0};
 static const char *text_unblock = {0};
 static const char *text_ignore = {0};
 static const char *text_unignore = {0};
+static const char *text_mute_on = {0};
+static const char *text_mute_off = {0};
+static const char *text_kill = {0};
+static const char *text_log_always = {0};
+static const char *text_log_never = {0};
+static const char *text_log_global_on = {0};
+static const char *text_log_global_off = {0};
 static const char *text_edit = {0};
 static const char *text_incoming = {0};
 static const char *text_outgoing = {0};
@@ -679,7 +686,7 @@ static const char *text_groupid = {0};
 static const char *text_successfully_created_group = {0};
 static const char *text_error_creating_group = {0};
 static const char *text_censored_region = {0};
-static const char *text_invite_friend = {0};  // unused in GTK
+static const char *text_invite_friend = {0};
 static const char *text_group_peers = {0}; // unused in GTK
 static const char *text_incoming_call = {0};
 
@@ -2640,18 +2647,36 @@ static void ui_toggle_file(GtkGestureLongPress* self,gpointer data)
 	torx_free((void**)&file_path);
 }
 
+static void ui_button_set_content(GtkWidget *button,GtkWidget *image,const char *text,const char *tooltip)
+{ // Mobile has no hover, so the text is placed beside the icon rather than left unreachable in a tooltip
+	if(mobile && vertical_mode)
+	{
+		GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_ten);
+		gtk_widget_set_halign(box,GTK_ALIGN_START);
+		GtkWidget *label = gtk_label_new(text);
+		gtk_widget_add_css_class(label,"text"); // Required, otherwise the button's "invisible" class renders inherited text transparent
+		gtk_box_append(GTK_BOX(box),image);
+		gtk_box_append(GTK_BOX(box),label);
+		gtk_button_set_child(GTK_BUTTON(button),box);
+	}
+	else
+		gtk_button_set_child(GTK_BUTTON(button),image);
+	gtk_widget_set_tooltip_text(button,tooltip);
+}
+
 static void ui_set_image_search(GtkWidget *button,const int n)
 {
+	GtkWidget *image;
 	if(t_peer[n].search_active == 0)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive),size_icon_top_right));
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive),size_icon_top_right);
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive_light),size_icon_top_right));
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_inactive_light),size_icon_top_right);
 	}
 	else
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_active),size_icon_top_right));
-	gtk_widget_set_tooltip_text(button,text_search);
+		image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(search_active),size_icon_top_right);
+	ui_button_set_content(button,image,text_search,text_search);
 }
 
 static void ui_set_image_logging(GtkWidget *button,const int n)
@@ -2659,72 +2684,50 @@ static void ui_set_image_logging(GtkWidget *button,const int n)
 	const int8_t log_messages = getter_int8(n,INT_MIN,-1,offsetof(struct peer_list,log_messages));
 	if(log_messages == -1)
 	{
+		GtkWidget *image;
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive),size_icon_top_right));
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive),size_icon_top_right);
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive_light),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_logging_disabled);
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_inactive_light),size_icon_top_right);
+		ui_button_set_content(button,image,text_log_never,text_tooltip_logging_disabled);
 	}
 	else if(log_messages == 0)
 	{
 		if(threadsafe_read_uint8(&mutex_global_variable,&global_log_messages) == 1)
-		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_active),size_icon_top_right));
-			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_on);
-		}
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_active),size_icon_top_right),text_log_global_on,text_tooltip_logging_global_on);
 		else if(global_theme == DARK_THEME)
-		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive),size_icon_top_right));
-			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_off);
-		}
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive),size_icon_top_right),text_log_global_off,text_tooltip_logging_global_off);
 		else
-		{
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive_light),size_icon_top_right));
-			gtk_widget_set_tooltip_text(button,text_tooltip_logging_global_off);
-		}
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(globe_inactive_light),size_icon_top_right),text_log_global_off,text_tooltip_logging_global_off);
 	}
 	else if(log_messages == 1)
-	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_active),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_logging_enabled);
-	}
+		ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(logging_active),size_icon_top_right),text_log_always,text_tooltip_logging_enabled);
 }
 
 static void ui_set_image_mute(GtkWidget *button,const int n)
 {
 	if(t_peer[n].mute == 1)
 	{
+		GtkWidget *image;
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive),size_icon_top_right));
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive),size_icon_top_right);
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive_light),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_notifications_off);
+			image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_inactive_light),size_icon_top_right);
+		ui_button_set_content(button,image,text_mute_on,text_tooltip_notifications_off);
 	}
 	else
-	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_active),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_notifications_on);
-	}
+		ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(bell_active),size_icon_top_right),text_mute_off,text_tooltip_notifications_on);
 }
 
 static void ui_set_image_block(GtkWidget *button,const int n)
 {
 	const uint8_t status = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,status));
 	if(status == ENUM_STATUS_BLOCKED)
-	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_active),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_on);
-	}
+		ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_active),size_icon_top_right),text_unblock,text_tooltip_blocked_on);
 	else if(global_theme == DARK_THEME)
-	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_off);
-	}
+		ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive),size_icon_top_right),text_block,text_tooltip_blocked_off);
 	else
-	{
-		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive_light),size_icon_top_right));
-		gtk_widget_set_tooltip_text(button,text_tooltip_blocked_off);
-	}
+		ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(block_inactive_light),size_icon_top_right),text_block,text_tooltip_blocked_off);
 }
 
 static void ui_go_back(void *arg)
@@ -3608,6 +3611,13 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_unblock = "Unblock";
 		text_ignore = "Ignore";
 		text_unignore = "Unignore";
+		text_mute_on = "Mute on";
+		text_mute_off = "Mute off";
+		text_kill = "Kill";
+		text_log_always = "Always";
+		text_log_never = "Never";
+		text_log_global_on = "Global On";
+		text_log_global_off = "Global Off";
 		text_edit = "Edit";
 		text_incoming = "Incoming Requests";
 		text_outgoing = "Outgoing Requests";
@@ -3741,7 +3751,7 @@ after each comes online and receives the code.";
 		text_successfully_created_group = "Successfully created group";
 		text_error_creating_group = "Error creating group";
 		text_censored_region = "Censored Region";
-		text_invite_friend = "Invite Friend";  // unused in GTK
+		text_invite_friend = "Invite Friend";
 		text_group_peers = "Group Peers"; // unused in GTK
 		text_incoming_call = "Incoming Call";
 	}
@@ -3754,15 +3764,15 @@ after each comes online and receives the code.";
 		text_show_qr = "显示二维码";
 		//text_scan_qr = "扫描二维码";
 		//text_share_qr = "分享二维码";
-		//text_log_always = "始终记录";
-		//text_log_never = "从不记录";
-		//text_log_global_on = "全域开启";
-		//text_log_global_off = "全域关闭";
+		text_log_always = "始终记录";
+		text_log_never = "从不记录";
+		text_log_global_on = "全域开启";
+		text_log_global_off = "全域关闭";
 		//text_blocked = "已屏蔽";
 		//text_unblocked = "解除屏蔽";
-		//text_kill = "终止";
-		//text_mute_on = "静音开启";
-		//text_mute_off = "静音关闭";
+		text_kill = "终止";
+		text_mute_on = "静音开启";
+		text_mute_off = "静音关闭";
 		//text_keyboard_privacy = "键盘隐私";
 		//text_placeholder_privkey_flutter = "Base64编码，88个字符（含末尾==）";
 		//text_tap_return = "点击返回";
@@ -7360,51 +7370,54 @@ GtkWidget *ui_button_generate(const int type,const int n)
 	else if(type == ENUM_BUTTON_CALL)
 	{
 		if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_dark),size_icon_top_right));
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_dark),size_icon_top_right),text_audio_call,text_audio_call);
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_light),size_icon_top_right));
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(call_light),size_icon_top_right),text_audio_call,text_audio_call);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_call_start_button),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_KILL)
 	{
-		gtk_widget_set_tooltip_text(button,text_tooltip_button_kill);
+		GtkWidget *image;
 	//	if(1) // TODO replace 1 with some sort of if(kill_active). Make kill toggleable.
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive),size_icon_top_right);
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive_light),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(kill_inactive_light),size_icon_top_right);
 	//	}
 	//	else
-	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active)));
+	//		image = gtk_image_new_from_paintable(GDK_PAINTABLE(kill_active));
+		ui_button_set_content(button,image,text_kill,text_tooltip_button_kill);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_kill),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_DELETE_CTRL)
 	{
-		gtk_widget_set_tooltip_text(button,text_tooltip_button_delete);
+		GtkWidget *image;
 	//	if(1) // TODO replace 1
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive),size_icon_top_right);
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive_light),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(delete_inactive_light),size_icon_top_right);
 	//	}
 	//	else
-	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
+	//		image = gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active));
+		ui_button_set_content(button,image,text_delete,text_tooltip_button_delete);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_toggle_delete),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_DELETE_LOG)
 	{
-		gtk_widget_set_tooltip_text(button,text_tooltip_button_delete_log);
+		GtkWidget *image;
 	//	if(1) // TODO replace 1
 	//	{
 			if(global_theme == DARK_THEME)
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_dark),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_dark),size_icon_top_right);
 			else
-				gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_light),size_icon_top_right));
+				image = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(clear_all_light),size_icon_top_right);
 	//	}
 	//	else
-	//		gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active)));
+	//		image = gtk_image_new_from_paintable(GDK_PAINTABLE(delete_active));
+		ui_button_set_content(button,image,text_delete_log,text_tooltip_button_delete_log);
 		g_signal_connect(button, "clicked", G_CALLBACK(ui_delete_log),itovp(n)); // DO NOT FREE arg because this only gets passed ONCE.
 	}
 	else if(type == ENUM_BUTTON_ADD_BLOCK)
@@ -7412,9 +7425,9 @@ GtkWidget *ui_button_generate(const int type,const int n)
 		if(owner != ENUM_OWNER_GROUP_CTRL)
 			ui_set_image_block(button,n);
 		else if(global_theme == DARK_THEME)
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_right));
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_right),text_invite_friend,text_invite_friend);
 		else
-			gtk_button_set_child(GTK_BUTTON(button),gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_right));
+			ui_button_set_content(button,gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_right),text_invite_friend,text_invite_friend);
 		if(owner == ENUM_OWNER_GROUP_CTRL)
 		{ // Popover peerlist for sending Group Invitation
 			global_group = set_g(n,NULL); // just looking up existing
