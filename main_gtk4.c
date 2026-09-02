@@ -3035,7 +3035,7 @@ static uint8_t ui_detect_mobile(void)
 		if(!session[iter])
 			continue;
 		char *lowercase = g_ascii_strdown(session[iter],-1); // XDG_CURRENT_DESKTOP is a colon delimited list, so substring match
-		const uint8_t match = (strstr(lowercase,"phosh") || strstr(lowercase,"gnome-mobile") || strstr(lowercase,"plasma-mobile") || strstr(lowercase,"sxmo")) ? 1 : 0;
+		const uint8_t match = (strstr(lowercase,"phosh") || strstr(lowercase,"plasma-mobile") || strstr(lowercase,"sxmo")) ? 1 : 0; // TODO we still don't have a way identify gnome-mobile which is "gnome" or "GNOME" in all these
 		g_free(lowercase);
 		if(match)
 			return 1;
