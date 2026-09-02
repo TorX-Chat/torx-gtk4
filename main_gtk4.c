@@ -175,6 +175,9 @@ static uint8_t close_to_tray = 0; // works well but currently not offered as UI 
 static uint8_t minimize_to_tray = 1;
 static uint8_t display_images = 1; // TODO should be clickable (to show larger), should automatically render after 100%. Gifs are a problem if corrupt (because we don't have sufficient sanity checks). Other corrupt images are fine.
 
+static uint8_t mobile = 0; // WMs that keep every window maximized and expect close-by-swipe. See ui_detect_mobile().
+static int8_t mobile_override = -1; // -1 is auto-detect. Set by --mobile[=0/1], to cover docked convergence and unrecognized WMs.
+
 static int size_window_default_width = 480; // 1100 Desktop, TODO mobile should just maximize?
 static int size_window_default_height = 854; // 600 Desktop, mobile should just maximize?
 static uint8_t start_maximized = 0;
@@ -278,8 +281,9 @@ static struct { // XXX Do not torx_secure_malloc structs unless they contain sen
 
 	GtkWidget *main_window;
 	GtkWidget *headerbar;
-	GtkWidget *headerbar_buttons_box_leave;
-	GtkWidget *headerbar_buttons_box_enter;
+	GtkWidget *headerbar_button_close;
+	GtkWidget *headerbar_button_minimize;
+	GtkWidget *headerbar_button_maximize;
 	GtkCssProvider *provider;
 
 	GtkWidget *auth_error;
@@ -2878,21 +2882,23 @@ static void ui_input_bad(GtkWidget *entry)
 }
 
 static void ui_enter_mouse(void)
-{
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_enter,FALSE);
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_leave,TRUE);
+{ // Highlight only. The buttons are always live, otherwise they would be inert on a touchscreen, which cannot hover.
+	if(t_main.headerbar_button_close)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_close),GDK_PAINTABLE(texture_headerbar_button_leave1)); // must use set, do not use new
+	if(t_main.headerbar_button_minimize)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_minimize),GDK_PAINTABLE(texture_headerbar_button_leave2)); // must use set, do not use new
+	if(t_main.headerbar_button_maximize)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_maximize),GDK_PAINTABLE(texture_headerbar_button_leave3)); // must use set, do not use new
 }
 
 static void ui_leave_mouse(void)
 {
-	if(!t_main.headerbar_buttons_box_leave)
-		return;
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_leave,FALSE);
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_enter,TRUE);
-
-	GtkEventController *ev_enter = gtk_event_controller_motion_new();
-	g_signal_connect_after(ev_enter, "enter", G_CALLBACK(ui_enter_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-	gtk_widget_add_controller(t_main.headerbar_buttons_box_enter,  GTK_EVENT_CONTROLLER(ev_enter));
+	if(t_main.headerbar_button_close)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_close),GDK_PAINTABLE(texture_headerbar_button1)); // must use set, do not use new
+	if(t_main.headerbar_button_minimize)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_minimize),GDK_PAINTABLE(texture_headerbar_button2)); // must use set, do not use new
+	if(t_main.headerbar_button_maximize)
+		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_maximize),GDK_PAINTABLE(texture_headerbar_button3)); // must use set, do not use new
 }
 
 static void ui_minimize_to_tray(void)
@@ -2948,16 +2954,19 @@ static int cleanup_idle(void *arg)
 		return 0;
 	}
 	char p1[21];
-	int size;
-	if((size = gtk_widget_get_width(t_main.main_window)) != size_window_default_width)
-	{ // default h/w is loaded_size, so there is no wasted disk IO. fancy.
-		const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
-		sql_setting(1,-1,"gtk4-width",p1,len);
-	}
-	if((size = gtk_widget_get_height(t_main.main_window)) != size_window_default_height)
-	{ // TODO does gtk_widget_get_height need to be on the main thread? hope not
-		const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
-		sql_setting(1,-1,"gtk4-height",p1,len);
+	if(!mobile)
+	{ // Mobile shells force every window to screen size, which must not be persisted and later restored on a desktop
+		int size;
+		if((size = gtk_widget_get_width(t_main.main_window)) != size_window_default_width)
+		{ // default h/w is loaded_size, so there is no wasted disk IO. fancy.
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
+			sql_setting(1,-1,"gtk4-width",p1,len);
+		}
+		if((size = gtk_widget_get_height(t_main.main_window)) != size_window_default_height)
+		{ // TODO does gtk_widget_get_height need to be on the main thread? hope not
+			const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",size);
+			sql_setting(1,-1,"gtk4-height",p1,len);
+		}
 	}
 	if(log_unread == 1)
 	{ // Log Unread Message Count in the same manner that we store last_seen
@@ -3001,73 +3010,123 @@ void cleanup_cb_ui(const int sig_num)
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,cleanup_idle,itovp(sig_num),NULL);
 }
 
+static gboolean ui_close_request(void)
+{ // WM instigated close: Phosh swipe-away, Alt+F4, foreign-toplevel close. Without this, GTK destroys the window and nothing is saved.
+	cleanup_idle(itovp(0));
+	return TRUE; // Must stop the default handler, otherwise it destroys the window out from under the close_to_tray path
+}
+
+static uint8_t ui_detect_mobile(void)
+{ // Identifies shells that maximize every toplevel, have no minimization concept, and expect close-by-swipe rather than a titlebar
+	if(g_getenv("SXMO_WM") || g_getenv("SXMO_DEVICE_NAME"))
+		return 1;
+	const char *platform = g_getenv("PLASMA_PLATFORM"); // Plasma Mobile reports XDG_CURRENT_DESKTOP=KDE, same as desktop
+	if(platform && (strstr(platform,"phone") || strstr(platform,"handset")))
+		return 1;
+	const char *session[] = {g_getenv("XDG_CURRENT_DESKTOP"),g_getenv("XDG_SESSION_DESKTOP"),g_getenv("DESKTOP_SESSION"),g_getenv("GDMSESSION")};
+	for(size_t iter = 0 ; iter < sizeof(session)/sizeof(char*) ; iter++)
+	{
+		if(!session[iter])
+			continue;
+		char *lowercase = g_ascii_strdown(session[iter],-1); // XDG_CURRENT_DESKTOP is a colon delimited list, so substring match
+		const uint8_t match = (strstr(lowercase,"phosh") || strstr(lowercase,"gnome-mobile") || strstr(lowercase,"plasma-mobile") || strstr(lowercase,"sxmo")) ? 1 : 0;
+		g_free(lowercase);
+		if(match)
+			return 1;
+	}
+	return 0;
+}
+
+static uint8_t ui_pointer_available(void)
+{ // Without a pointer, hover cannot be relied upon on any shell, and touch emulated crossing events do not arrive in pairs
+	GdkDisplay *display = gtk_widget_get_display(t_main.main_window);
+	GdkSeat *seat = display ? gdk_display_get_default_seat(display) : NULL;
+	if(!seat)
+		return 0;
+	return (gdk_seat_get_capabilities(seat) & GDK_SEAT_CAPABILITY_POINTER) ? 1 : 0;
+}
+
+static GtkWidget *ui_headerbar_side(const char *layout)
+{ // Builds one side of the headerbar from a gtk-decoration-layout fragment. Returns NULL if it names none of the three buttons we draw.
+	GtkWidget *box = NULL;
+	char **names = g_strsplit(layout,",",-1);
+	for(size_t iter = 0 ; names[iter] ; iter++)
+	{
+		GtkWidget *image;
+		GCallback callback;
+		void *arg = NULL;
+		const char *css_class;
+		if(!strncmp(names[iter],"close",sizeof("close")))
+		{
+			image = t_main.headerbar_button_close = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button1),size_margin_fifteen);
+			callback = G_CALLBACK(cleanup_idle);
+			arg = itovp(0);
+			css_class = "close";
+		}
+		else if(!strncmp(names[iter],"minimize",sizeof("minimize")))
+		{
+			image = t_main.headerbar_button_minimize = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button2),size_margin_fifteen);
+			callback = G_CALLBACK(ui_minimize);
+			css_class = "minimize";
+		}
+		else if(!strncmp(names[iter],"maximize",sizeof("maximize")))
+		{
+			image = t_main.headerbar_button_maximize = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button3),size_margin_fifteen);
+			callback = G_CALLBACK(ui_toggle_maximize);
+			css_class = "maximize";
+		}
+		else // icon, menu, appmenu, or anything else we do not draw
+			continue;
+		gtk_widget_add_css_class(image,css_class);
+		GtkGesture *click = gtk_gesture_click_new();
+		g_signal_connect_swapped(click, "pressed", callback, arg); // DO NOT FREE arg because this only gets passed ONCE.
+		gtk_widget_add_controller(image, GTK_EVENT_CONTROLLER(click));
+		if(!box)
+			box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_eight);
+		gtk_box_append(GTK_BOX(box),image);
+	}
+	g_strfreev(names);
+	return box;
+}
+
 static void ui_decorate_headerbar(void)
 {
-	/* Build HeaderBar (inactive) */
+	if(mobile)
+	{ // These shells keep every window maximized and expect close-by-swipe, so a titlebar is only wasted vertical space
+		gtk_window_set_decorated(GTK_WINDOW(t_main.main_window),FALSE);
+		gtk_window_maximize(GTK_WINDOW(t_main.main_window));
+		return;
+	}
 	GtkWidget *headerbar = gtk_header_bar_new();
 	gtk_header_bar_set_show_title_buttons (GTK_HEADER_BAR(headerbar), FALSE);
-	t_main.headerbar_buttons_box_enter = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_eight);
-
-	// Build Close Button (inactive)
-	GtkGesture *click_close = gtk_gesture_click_new();
-	GtkWidget *headerbar_button1 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button1),size_margin_fifteen);
-
-	// Build Minimize Button (inactive)
-	GtkGesture *click_minimize = gtk_gesture_click_new();
-	GtkWidget *headerbar_button2 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button2),size_margin_fifteen);
-
-	// Build Maximize Button (inactive)
-	GtkGesture *click_maximize = gtk_gesture_click_new();
-	GtkWidget *headerbar_button3 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button3),size_margin_fifteen);
-
-	// Assemble HeaderBar (inactive)
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_enter), headerbar_button1);
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_enter), headerbar_button2);
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_enter), headerbar_button3);
-
-	// Build HeaderBar (active)
-	t_main.headerbar_buttons_box_leave = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,size_spacing_eight);
-
-	// Build Close Button (active)
-	GtkWidget *headerbar_button_leave1 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave1),size_margin_fifteen);
-	g_signal_connect_swapped(click_close, "pressed", G_CALLBACK(cleanup_idle), itovp(0)); // DO NOT FREE arg because this only gets passed ONCE.
-	gtk_widget_add_controller(headerbar_button_leave1, GTK_EVENT_CONTROLLER(click_close));
-
-	// Build Minimize Button (active)
-	GtkWidget *headerbar_button_leave2 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave2),size_margin_fifteen);
-	g_signal_connect_swapped(click_minimize, "pressed", G_CALLBACK(ui_minimize), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-	gtk_widget_add_controller(headerbar_button_leave2, GTK_EVENT_CONTROLLER(click_minimize));
-
-	// Build Maximize Button (active)
-	GtkWidget *headerbar_button_leave3 = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(texture_headerbar_button_leave3),size_margin_fifteen);
-	g_signal_connect_swapped(click_maximize, "pressed", G_CALLBACK(ui_toggle_maximize), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-	gtk_widget_add_controller(headerbar_button_leave3, GTK_EVENT_CONTROLLER(click_maximize));
-
-	// Assemble HeaderBar (active)
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_leave), headerbar_button_leave1);
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_leave), headerbar_button_leave2);
-	gtk_box_append(GTK_BOX(t_main.headerbar_buttons_box_leave), headerbar_button_leave3);
-
-	// Hide active by default
-	gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), t_main.headerbar_buttons_box_enter);
-	gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), t_main.headerbar_buttons_box_leave);
-	gtk_widget_set_visible(t_main.headerbar_buttons_box_leave,FALSE);
 	gtk_widget_add_css_class(headerbar,"headerbar");
-	gtk_widget_add_css_class(headerbar_button1,"close");
-	gtk_widget_add_css_class(headerbar_button2,"minimize");
-	gtk_widget_add_css_class(headerbar_button3,"maximize");
-	gtk_widget_add_css_class(headerbar_button_leave1,"close");
-	gtk_widget_add_css_class(headerbar_button_leave2,"minimize");
-	gtk_widget_add_css_class(headerbar_button_leave3,"maximize");
+
+	char *decoration_layout = NULL; // The desktop environment decides which buttons exist and which side they belong on
+	g_object_get(gtk_settings_get_default(),"gtk-decoration-layout",&decoration_layout,NULL);
+	char **sides = g_strsplit(decoration_layout ? decoration_layout : "menu:minimize,maximize,close",":",2);
+	GtkWidget *box_start = sides[0] ? ui_headerbar_side(sides[0]) : NULL;
+	GtkWidget *box_end = sides[0] && sides[1] ? ui_headerbar_side(sides[1]) : NULL;
+	g_strfreev(sides);
+	g_free(decoration_layout);
+
+	if(box_start)
+		gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), box_start);
+	if(box_end)
+		gtk_header_bar_pack_end(GTK_HEADER_BAR(headerbar), box_end);
+	if(ui_pointer_available())
+	{ // Only worth wiring up where a pointer exists to do the hovering
+		for(int iter = 0 ; iter < 2 ; iter++)
+		{
+			GtkWidget *box = iter ? box_end : box_start;
+			if(!box)
+				continue;
+			GtkEventController *ev_motion = gtk_event_controller_motion_new();
+			g_signal_connect_after(ev_motion, "enter", G_CALLBACK(ui_enter_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+			g_signal_connect_after(ev_motion, "leave", G_CALLBACK(ui_leave_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+			gtk_widget_add_controller(box,  GTK_EVENT_CONTROLLER(ev_motion));
+		}
+	}
 	gtk_window_set_titlebar (GTK_WINDOW(t_main.main_window),headerbar);
-
-	GtkEventController *ev_enter = gtk_event_controller_motion_new();
-	GtkEventController *ev_leave = gtk_event_controller_motion_new();
-
-	g_signal_connect_after(ev_enter, "enter", G_CALLBACK(ui_enter_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-	g_signal_connect_after(ev_leave, "leave", G_CALLBACK(ui_leave_mouse), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-	gtk_widget_add_controller(t_main.headerbar_buttons_box_enter,  GTK_EVENT_CONTROLLER(ev_enter));
-	gtk_widget_add_controller(t_main.headerbar_buttons_box_leave,  GTK_EVENT_CONTROLLER(ev_leave));
 }
 
 static void ui_custom_switch(GtkToggleButton *button,void *arg)
@@ -4247,7 +4306,7 @@ static void ui_show_settings(void)
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_select_theme,&ui_change_theme,(guint)global_theme,text_dark,text_light,NULL));
 
 	// Close to daemon Combobox
-	if(appindicator_functioning)
+	if(appindicator_functioning && !mobile)
 		gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_minimize_to_tray,&ui_change_daemonize,(guint)minimize_to_tray,text_disable,text_enable,NULL));
 
 	// TorX-ID or OnionID Combobox
@@ -8549,6 +8608,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	initial();
 	gst_init(NULL, NULL);
 
+	mobile = mobile_override > -1 ? (uint8_t)mobile_override : ui_detect_mobile();
+	if(mobile)
+		minimize_to_tray = 0; // None of these shells have a system tray. Must be after initial(), which loads the saved value.
+
 	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG,.name="AAC Audio Message",.description="",.null_terminate=0,.date=0,.sign=0,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
 	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED,.name="AAC Audio Message Date Signed",.description="",.null_terminate=0,.date=1,.sign=1,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
 	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG_PRIVATE,.name="AAC Audio Message Private",.description="",.null_terminate=0,.date=0,.sign=0,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_PM,.utf8=0,.socket_swappable=1,.stream=0});
@@ -8601,6 +8664,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 	gtk_window_set_title (GTK_WINDOW ( t_main.main_window), text_title);
 	gtk_window_set_default_size (GTK_WINDOW ( t_main.main_window), size_window_default_width, size_window_default_height);
 	gtk_window_set_resizable (GTK_WINDOW ( t_main.main_window),TRUE);
+	g_signal_connect(t_main.main_window, "close-request", G_CALLBACK(ui_close_request), NULL); // DO NOT FREE arg because this only gets passed ONCE.
 
 	// Load Auth Page CSS
 	t_main.provider = gtk_css_provider_new();
@@ -8719,7 +8783,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 
 	ui_decorate_headerbar(); // XXX commenting this line disables custom headerbar
 
-	if(start_maximized) // can be before gtk_window_present
+	if(start_maximized && !mobile) // can be before gtk_window_present
 		ui_toggle_maximize();
 	if(!start_daemonized)
 	{
@@ -8861,6 +8925,8 @@ static gboolean option_handler(const gchar* option_name,const gchar* value,gpoin
 		start_maximized = 1;
 	else if(!strncmp(option_name,"-d",len) || !strncmp(option_name,"--daemonize",len))
 		start_daemonized = 1;
+	else if(!strncmp(option_name,"--mobile",len))
+		mobile_override = value ? (int8_t)strtoll(value, NULL, 10) : 1;
 	else if(!strncmp(option_name,"-v",len) || !strncmp(option_name,"--verbose",len))
 	{
 		if(!value)
@@ -8906,6 +8972,7 @@ int main(int argc,char **argv)
 		{ "minimized", 'm', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Start minimized",NULL},
 		{ "fullscreen", 'f', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Start fullscreen",NULL},
 		{ "daemonize", 'd', G_OPTION_FLAG_NO_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Start daemonized",NULL},
+		{ "mobile", 0, G_OPTION_FLAG_OPTIONAL_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Override mobile shell detection","0/1"},
 		{ "verbose", 'v', G_OPTION_FLAG_OPTIONAL_ARG, G_OPTION_ARG_CALLBACK, option_handler, "Set debug level","level"},
 		{ "directory", 0, 0, G_OPTION_ARG_CALLBACK, option_handler, "Set working directory","path"},
 		{ "debug-file", 0, 0, G_OPTION_ARG_CALLBACK, option_handler, "Set debug file","path"},
