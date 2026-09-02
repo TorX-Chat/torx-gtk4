@@ -166,6 +166,7 @@ static char *binary_path = NULL; // current binary's full path
 static uint8_t running = 0;
 static pthread_t thrd_ui = {0}; // Set by ui_activate(). Permits callbacks to detect that they are already on the UI thread.
 static uint8_t show_keyboard = 1;
+static uint8_t buffer_write_programmatic = 0; // Set only while ui_buffer_write_set_text is restoring buffer_write
 static int global_n = -1; // Always CTRL or GROUP_CTRL. Currently open chat window. Avoid using where possible. (except notifications perhaps)
 static int treeview_n = -1;
 static int global_theme = -1;
@@ -2459,6 +2460,13 @@ static void ui_sticker_chooser(GtkWidget *parent,const gpointer arg)
 	gtk_popover_popup(GTK_POPOVER(t_main.popover_sticker));
 }
 
+static inline void ui_buffer_write_set_text(const char *text,const int len)
+{ // Restore buffer_write without ui_buffer_write_changed capturing the result as a draft or search term
+	buffer_write_programmatic = 1;
+	gtk_text_buffer_set_text(t_main.buffer_write,text,len);
+	buffer_write_programmatic = 0;
+}
+
 static inline void ui_button_determination(const int n)
 { // Must be fast as it runs on every keypress
 	if(!t_main.button_send || n < 0)
@@ -2514,7 +2522,7 @@ static void ui_activity_determination(const int n)
 	{ // Must be checked FIRST because edit_n or pm_n could also be set
 		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),text_search);
 		gtk_widget_set_visible(t_main.button_activity,TRUE);
-		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].search_text ? t_peer[n].search_text : "",-1);
+		ui_buffer_write_set_text(t_peer[n].search_text ? t_peer[n].search_text : "",-1);
 	}
 	else if(t_peer[n].edit_n > -1 || t_peer[n].edit_i > INT_MIN)
 	{ // Editing (message edit if edit_i is set, otherwise a GROUP_PEER peernick rename). DO NOT MAKE ELSE, takes priority over pm_n.
@@ -2538,7 +2546,7 @@ static void ui_activity_determination(const int n)
 					char *message = getter_string(t_peer[n].edit_n,t_peer[n].edit_i,-1,offsetof(struct message_list,message));
 					if(message)
 					{
-						gtk_text_buffer_set_text(t_main.buffer_write,message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
+						ui_buffer_write_set_text(message,(int)strlen(message)); // strlen is to avoid null pointer and otherwise reading beyond utf8
 						torx_free((void**)&message);
 					}
 				}
@@ -2550,7 +2558,7 @@ static void ui_activity_determination(const int n)
 		{ // GROUP_PEER peernick rename
 			char *peernick = getter_string(t_peer[n].edit_n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			const uint32_t len = torx_allocation_len(peernick);
-			gtk_text_buffer_set_text(t_main.buffer_write,peernick,(int)len - 1);
+			ui_buffer_write_set_text(peernick,(int)len - 1);
 			torx_free((void**)&peernick);
 		}
 	}
@@ -2563,12 +2571,12 @@ static void ui_activity_determination(const int n)
 		gtk_button_set_label(GTK_BUTTON(t_main.button_activity),cancel_message);
 		sodium_memzero(cancel_message,sizeof(cancel_message));
 		gtk_widget_set_visible(t_main.button_activity,TRUE);
-		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
+		ui_buffer_write_set_text(t_peer[n].unsent ? t_peer[n].unsent : "",-1);
 	}
 	else
 	{ // No activity. Restore the regular unsent draft.
 		gtk_widget_set_visible(t_main.button_activity,FALSE);
-		gtk_text_buffer_set_text(t_main.buffer_write,t_peer[n].unsent ? t_peer[n].unsent : "",-1);
+		ui_buffer_write_set_text(t_peer[n].unsent ? t_peer[n].unsent : "",-1);
 	}
 }
 
@@ -6853,6 +6861,42 @@ void message_more_cb_ui(const int loaded,int *loaded_array_n,int *loaded_array_i
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE,message_more_idle,int_p_p,NULL);
 }
 
+static void ui_buffer_write_changed(GtkTextBuffer *buffer,const gpointer data)
+{ // Single source of truth for capturing message entry contents. Cannot be keypress driven because on-screen keyboards (ex: Squeekboard on Phosh) commit text via an input method, which generates no key events.
+	(void) data;
+	const int n = global_n;
+	if(buffer_write_programmatic || n < 0)
+		return;
+	GtkTextIter start, end;
+	gtk_text_buffer_get_bounds(buffer, &start, &end);
+	char *message = gtk_text_buffer_get_text(buffer, &start, &end, FALSE); // false ignores hidden chars
+	if(message)
+	{
+		const size_t buf_len = strlen(message);
+		if(t_peer[n].search_active)
+		{ // Must be checked FIRST because edit_n or pm_n could also be set
+			torx_free((void**)&t_peer[n].search_text);
+			t_peer[n].search_text = torx_secure_malloc(buf_len+1);
+			memcpy(t_peer[n].search_text,message,buf_len+1);
+		}
+		else
+		{
+			torx_free((void**)&t_peer[n].unsent);
+			t_peer[n].unsent = torx_secure_malloc(buf_len+1);
+			memcpy(t_peer[n].unsent,message,buf_len+1);
+		}
+		sodium_memzero(message,buf_len);
+		g_free(message);
+		message = NULL;
+		if(t_peer[n].search_active)
+		{
+			gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_DIFFERENT); // re-filter in place; search_text was just updated above
+			scroll_to_bottom(t_main.scrolled_window_right);
+		}
+	}
+	ui_button_determination(n);
+}
+
 static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state,const gpointer data)
 { // Press key on message entry /* can pass NULL as arg */
 	(void) controller;
@@ -6863,24 +6907,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 	if(!show_keyboard)
 		error_simple(0,"Keypress occured while keyboard was hidden. Coding error. Report this to UI devs.");
 	else if(t_peer[n].search_active)
-	{ // NOTE: This will also catch newlines
-		GtkTextIter start, end;
-		gtk_text_buffer_get_bounds(t_main.buffer_write, &start, &end);
-		char *message = gtk_text_buffer_get_text(t_main.buffer_write, &start, &end, FALSE); // false ignores hidden chars
-		if(message)
-		{
-			const size_t buf_len = strlen(message);
-			torx_free((void**)&t_peer[n].search_text);
-			t_peer[n].search_text = torx_secure_malloc(buf_len+1);
-			memcpy(t_peer[n].search_text,message,buf_len+1);
-			sodium_memzero(message,buf_len);
-			g_free(message);
-			message = NULL;
-
-			gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_DIFFERENT); // re-filter in place; search_text was just updated above
-			scroll_to_bottom(t_main.scrolled_window_right);
-		}
-	}
+		return; // search_text and re-filtering are handled by ui_buffer_write_changed
 	else if(!keyval || ((keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) && !(state & GDK_SHIFT_MASK))) // 0 == pressed enter
 	{
 		if(keyval && gtk_text_buffer_get_char_count(t_main.buffer_write) == 1)
@@ -6957,23 +6984,7 @@ static void ui_keypress(GtkEventControllerKey *controller, guint keyval, guint k
 		g_free(message);
 		message = NULL;
 	}
-	else
-	{ // Setting .unsent for consistency and convenience
-		GtkTextIter start, end;
-		gtk_text_buffer_get_bounds(t_main.buffer_write, &start, &end);
-		char *message = gtk_text_buffer_get_text(t_main.buffer_write, &start, &end, FALSE); // false ignores hidden chars
-		if(message)
-		{
-			const size_t buf_len = strlen(message);
-			torx_free((void**)&t_peer[n].unsent);
-			t_peer[n].unsent = torx_secure_malloc(buf_len+1);
-			memcpy(t_peer[n].unsent,message,buf_len+1);
-			sodium_memzero(message,buf_len);
-			g_free(message);
-			message = NULL;
-		}
-	}
-	ui_button_determination(n);
+	ui_button_determination(n); // NOTE: .unsent is set by ui_buffer_write_changed, which also catches input method and paste input
 }
 
 static void ui_editing_nick(GtkCellEditable *self,GParamSpec *pspec,gpointer data)
@@ -7323,6 +7334,7 @@ static void ui_toggle_search(GtkWidget *button,const gpointer data)
 		gtk_filter_changed(t_main.search_filter,GTK_FILTER_CHANGE_LESS_STRICT);
 		scroll_to_bottom(t_main.scrolled_window_right);
 	}
+	popdown(t_main.popover_more) // Must be LAST because it unparents the popover, destroying the button we were handed
 }
 
 GtkWidget *ui_button_generate(const int type,const int n)
@@ -7792,7 +7804,10 @@ static void ui_select_changed(const void *arg)
 	/* Write Message Box (inner) */
 	t_main.write_message = gtk_text_view_new();
 	if(t_main.buffer_write == NULL)
+	{
 		t_main.buffer_write = gtk_text_buffer_new(NULL);
+		g_signal_connect(t_main.buffer_write, "changed", G_CALLBACK(ui_buffer_write_changed),NULL); // Connect ONCE. buffer_write outlives the chat view, which is rebuilt on every chat change.
+	}
 	gtk_text_view_set_buffer(GTK_TEXT_VIEW(t_main.write_message),t_main.buffer_write); // contents set by ui_activity_determination below, once button_activity exists
 	gtk_widget_add_css_class(t_main.write_message, "write_message");
 	gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(t_main.write_message), GTK_WRAP_WORD_CHAR);
