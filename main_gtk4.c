@@ -164,6 +164,7 @@ static char starting_dir[PATH_MAX/2] = {0};
 static char *argv_0 = NULL;
 static char *binary_path = NULL; // current binary's full path
 static uint8_t running = 0;
+static pthread_t thrd_ui = {0}; // Set by ui_activate(). Permits callbacks to detect that they are already on the UI thread.
 static uint8_t show_keyboard = 1;
 static int global_n = -1; // Always CTRL or GROUP_CTRL. Currently open chat window. Avoid using where possible. (except notifications perhaps)
 static int treeview_n = -1;
@@ -173,6 +174,7 @@ static int vertical_mode = 0; // see ui_determine_orientation()
 static int8_t force_sign = 0; // TODO Should be 0. Global value for testing only. This should be per-peer. can add timestamp to message (as a salt to prevent relay attacks in groups), Tor project does this with all signed messages.
 static uint8_t close_to_tray = 0; // works well but currently not offered as UI option, in favor of minimize_to_tray
 static uint8_t minimize_to_tray = 1;
+static int8_t status_notify = -1; // -1 is unset. Defaulted by mobile in ui_activate(), unless a saved value is loaded.
 static uint8_t display_images = 1; // TODO should be clickable (to show larger), should automatically render after 100%. Gifs are a problem if corrupt (because we don't have sufficient sanity checks). Other corrupt images are fine.
 
 static uint8_t mobile = 0; // WMs that keep every window maximized and expect close-by-swipe. See ui_detect_mobile().
@@ -634,6 +636,7 @@ static const char *text_set_onionid_or_torxid = {0};
 static const char *text_set_global_log = {0};
 static const char *text_set_auto_resume_inbound = {0};
 static const char *text_set_stickers_save_all = {0};
+static const char *text_set_status_notify = {0};
 static const char *text_set_download_directory = {0};
 static const char *text_tor = {0};
 static const char *text_lyrebird = {0};
@@ -1918,7 +1921,7 @@ static int peer_online_idle(void *arg)
 		ui_set_last_seen(n);
 		const uint8_t sendfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,sendfd_connected));
 		const uint8_t recvfd_connected = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,recvfd_connected));
-		if((owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0 && sendfd_connected > 0 && recvfd_connected > 0)
+		if(status_notify == 1 && (owner != ENUM_OWNER_GROUP_PEER || t_peer[group_n].mute == 0) && t_peer[n].mute == 0 && sendfd_connected > 0 && recvfd_connected > 0)
 		{
 			char *peernick = getter_string(n,INT_MIN,-1,offsetof(struct peer_list,peernick));
 			ui_notify(peernick,text_online);
@@ -3654,6 +3657,7 @@ static void ui_initialize_language(GtkWidget *combobox)
 		text_set_global_log = "Message Logging (Global Default)";
 		text_set_auto_resume_inbound = "Auto-Resume Inbound Transfers";
 		text_set_stickers_save_all = "Save All Stickers";
+		text_set_status_notify = "Notify When Peers Come Online";
 		text_set_download_directory = "Select Download Directory";
 		text_tor = "Tor"; // part B
 		text_lyrebird = "Lyrebird"; // part B
@@ -3845,6 +3849,7 @@ after each comes online and receives the code.";
 		text_set_global_log = "消息日志（全域默认）";
 		text_set_auto_resume_inbound = "自动恢复入站传输";
 		text_set_stickers_save_all = "保存所有表情包";
+		text_set_status_notify = "好友上线时通知";
 		text_set_download_directory = "选择下载目录";
 		//text_set_tor = "选择自定义Tor二进制文件路径（立即生效）";
 		text_tor = "Tor"; // part B
@@ -3956,6 +3961,17 @@ static void ui_change_daemonize(const gpointer combobox)
 	char p1[21];
 	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%u",minimize_to_tray);
 	sql_setting(0,-1,"minimize_to_tray",p1,len);
+}
+
+static void ui_change_status_notify(const gpointer combobox)
+{ // Set and save a custom UI Setting in unencrypted form
+	const int8_t local_setting = gtk_drop_down_get_selected(GTK_DROP_DOWN(combobox)) == 1 ? 1 : 0;
+	if(local_setting == status_notify)
+		return;
+	status_notify = local_setting; // NOTE: is in UI thread already, no need to use locks
+	char p1[21];
+	const size_t len = (size_t)snprintf(p1,sizeof(p1),"%d",status_notify);
+	sql_setting(0,-1,"status_notify",p1,len);
 }
 
 static void ui_change_auto_accept_mult(const gpointer combobox)
@@ -4310,6 +4326,9 @@ static void ui_show_settings(void)
 	// Close to daemon Combobox
 	if(appindicator_functioning && !mobile)
 		gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_minimize_to_tray,&ui_change_daemonize,(guint)minimize_to_tray,text_disable,text_enable,NULL));
+
+	// Notify when peers come online Combobox
+	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_status_notify,&ui_change_status_notify,(guint)(status_notify == 1),text_disable,text_enable,NULL));
 
 	// TorX-ID or OnionID Combobox
 	gtk_box_append (GTK_BOX (t_main.scroll_box_right), ui_combobox(text_set_onionid_or_torxid,&ui_change_id_type,threadsafe_read_uint8(&mutex_global_variable,&shorten_torxids),text_generate_onionid,text_generate_torxid,NULL));
@@ -5719,10 +5738,11 @@ static int custom_setting_idle(void *arg)
 	if(!strncmp(setting_name,"theme",5))
 	{
 		const int proposed_theme = (int)strtoll(setting_value, NULL, 10);
-		if(proposed_theme != global_theme && global_theme > -1 && proposed_theme != THEME_DEFAULT)
-		{ // Checking that it is (a) a change and (b) that we have already initialized, or that we haven't but we are different than default
+		if(proposed_theme != global_theme)
+		{
 			global_theme = proposed_theme;
-			ui_theme(global_theme);
+			if(t_main.provider) // NULL until ui_activate() creates it, which applies global_theme itself
+				ui_theme(global_theme);
 		}
 	}
 	else if(!strncmp(setting_name,"language",8) && sizeof(language) == setting_value_len+1)
@@ -5750,6 +5770,8 @@ static int custom_setting_idle(void *arg)
 		size_window_default_height = (int)strtoll(setting_value, NULL, 10);
 	else if(!strncmp(setting_name,"minimize_to_tray",16))
 		minimize_to_tray = (uint8_t)strtoull(setting_value, NULL, 10);
+	else if(plaintext == 0 && !strncmp(setting_name,"status_notify",13))
+		status_notify = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"mute",4))
 		t_peer[n].mute = (int8_t)strtoll(setting_value, NULL, 10);
 	else if(plaintext == 0 && !strncmp(setting_name,"unread",6))
@@ -5783,7 +5805,7 @@ static int custom_setting_idle(void *arg)
 }
 
 void custom_setting_cb_ui(const int n,char *setting_name,char *setting_value,const size_t setting_value_len,const int plaintext) // plaintext == 0 means it was encrypted, for safety
-{ // GUI Callback from initial_keyed() and get_key() for custom UI options that are saved to our .key file (encrypted or otherwise)
+{ // GUI Callback from initial() and initial_keyed() for custom UI options that are saved to our .key file (encrypted or otherwise)
 	if(!setting_name || !setting_value || !setting_value_len)
 	{
 		error_simple(0,"Setting received by UI with either NULL name or NULL value");
@@ -5795,7 +5817,10 @@ void custom_setting_cb_ui(const int n,char *setting_name,char *setting_value,con
 	custom_setting->setting_value = setting_value;
 	custom_setting->setting_value_len = setting_value_len;
 	custom_setting->plaintext = plaintext;
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE,custom_setting_idle,custom_setting,NULL);
+	if(pthread_equal(pthread_self(),thrd_ui)) // Plaintext settings arrive on our own thread, from initial(). Deferring them would allow ui_activate() to build the window before they arrive.
+		custom_setting_idle(custom_setting);
+	else
+		g_idle_add_full(G_PRIORITY_HIGH_IDLE,custom_setting_idle,custom_setting,NULL);
 }
 
 static void ui_message_copy(const gpointer data)
@@ -8560,6 +8585,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 		return;
 	}
 	running = 1;
+	thrd_ui = pthread_self(); // Must be before the setters, and therefore before initial()
 
 	if(getcwd(starting_dir,sizeof(starting_dir))) // Must be before initial
 		error_printf(4,"Starting directory: %s\n",starting_dir);
@@ -8611,8 +8637,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	gst_init(NULL, NULL);
 
 	mobile = mobile_override > -1 ? (uint8_t)mobile_override : ui_detect_mobile();
+	if(status_notify == -1)
+		status_notify = mobile ? 0 : 1; // Do not show status notifications on mobile by default. Must be after initial(), which loads the saved value.
 	if(mobile)
-		minimize_to_tray = 0; // None of these shells have a system tray. Must be after initial(), which loads the saved value.
+		minimize_to_tray = 0; // Mobile WMs do not have system tray. Must be after initial(), which loads the saved value.
 
 	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG,.name="AAC Audio Message",.description="",.null_terminate=0,.date=0,.sign=0,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
 	protocol_registration((struct protocol_definition){.protocol=ENUM_PROTOCOL_AAC_AUDIO_MSG_DATE_SIGNED,.name="AAC Audio Message Date Signed",.description="",.null_terminate=0,.date=1,.sign=1,.logged=1,.notifiable=1,.file_checksum=0,.file_offer=0,.exclusive_type=ENUM_EXCLUSIVE_GROUP_MSG,.utf8=0,.socket_swappable=1,.stream=0});
