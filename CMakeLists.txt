@@ -142,7 +142,8 @@ add_library(gifanimation MODULE gif_animation.c) # XXX XXX XXX BEWARE: The conte
 target_include_directories(gifanimation PRIVATE ${GTK4_INCLUDE_DIRS})
 target_link_libraries(gifanimation ${GTK4_LIBRARIES}) # necessary on Windows, unsure why it works without on Linux
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${TORX_INCLUDE_DIR} ) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${GTK4_INCLUDE_DIRS} ${GSTREAMER_INCLUDE_DIRS} ) # Seperated to silence their warnings
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${TORX_INCLUDE_DIR} ) # CMAKE_CURRENT_BINARY_DIR is required to pick up the file resulting from glib-compile-resources
 target_compile_options(${PROJECT_NAME} PRIVATE ${GTK4_CFLAGS_OTHER} ${GSTREAMER_CFLAGS_OTHER})
 add_compile_definitions(SQLITE_HAS_CODEC SECURE_MALLOC) # necessary, not redundant
 

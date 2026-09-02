@@ -13,10 +13,14 @@ NOTICE: GTK4 version >= 4.10 required (libgtk-4-dev). The GTK project implemente
 <br>If you want to try on a LiveCD, <a href="https://get.debian.org/images/release/current-live/amd64/iso-hybrid/">here are some suitable liveCDs</a>
 
 ###### Install build dependencies:
-`sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`
+(Ubuntu / Debian / Mobian) `sudo apt install git cmake pkg-config libgtk-3-dev libgtk-4-dev libsodium-dev libevent-dev libsqlcipher-dev build-essential libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`
+(Alpine / PostmarketOS) `doas apk add git cmake pkgconf gtk+3.0-dev gtk4.0-dev libsodium-dev libevent-dev sqlcipher-dev build-base gstreamer-dev gst-plugins-base-dev`
+(Fedora) `sudo dnf install git cmake pkgconf-pkg-config gtk3-devel gtk4-devel libsodium-devel libevent-devel sqlcipher-devel gcc make gstreamer1-devel gstreamer1-plugins-base-devel`
 
 ###### Install runtime dependencies (lyrebird is an optional transport):
-`sudo apt install tor lyrebird libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav`
+(Ubuntu / Debian / Mobian) `sudo apt install tor lyrebird libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 gstreamer1.0-plugins-good gstreamer1.0-libav`
+(Alpine / PostmarketOS) `doas apk add tor lyrebird gstreamer gst-plugins-base gst-plugins-good gst-libav`
+(Fedora) `sudo dnf install tor obfs4 gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-libav`
 
 ###### Clone the repository
 `git clone https://github.com/TorX-Chat/torx-gtk4 && cd torx-gtk4`
