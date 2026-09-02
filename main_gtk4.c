@@ -8793,7 +8793,8 @@ static void ui_activate(GtkApplication *application,void *arg)
 			g_signal_connect(surface,"notify::state",G_CALLBACK(on_toplevel_state_notify),NULL);
 		char array[2048]; // arbitrary size
 		snprintf(array,sizeof(array),"%sTorX Library Version: %u.%u.%u.%u\n",CLIENT_VERSION,torx_library_version[0],torx_library_version[1],torx_library_version[2],torx_library_version[3]);
-		ui_notify(text_welcome,array);
+		if(!mobile)
+			ui_notify(text_welcome,array);
 	}
 	if(start_minimized) // must be AFTER gtk_window_present
 		ui_minimize();
