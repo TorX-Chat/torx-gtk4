@@ -7255,13 +7255,20 @@ static void ui_choose_invite(GtkWidget *arg,const gpointer data)
 }
 
 static void ui_choose_vertical(GtkWidget *button,const gpointer data)
-{ // TODO SIGTRAP on second click because we are using global children
+{ // ENUM_BUTTON_ADD_BLOCK_MENU TODO SIGTRAP on second click because we are using global children
 	const int n = vptoi(data); // DO NOT FREE ARG
 	t_main.popover_more = custom_popover_new(button);
 	GtkWidget *box_popover = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_zero);
 	gtk_widget_add_css_class(box_popover, "popover_inner");
 	gtk_popover_set_child(GTK_POPOVER(t_main.popover_more),box_popover);
 	const uint8_t owner = getter_uint8(n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if(mobile)
+	{
+		gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_LOGGING,n));
+		gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_MUTE,n));
+	}
+	if(vertical_mode && owner == ENUM_OWNER_GROUP_CTRL && mobile)
+		gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
 	gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_SEARCH,n));
 	gtk_box_append(GTK_BOX(box_popover), ui_button_generate(ENUM_BUTTON_CALL,n));
 	if(owner != ENUM_OWNER_GROUP_CTRL)
@@ -7718,13 +7725,16 @@ static void ui_select_changed(const void *arg)
 	gtk_box_append(GTK_BOX(info_box), name_box);
 	gtk_box_append(GTK_BOX(t_main.chat_headerbar_left), info_box);
 
-	gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_LOGGING,n));
-	gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_MUTE,n));
+	if(!mobile)
+	{
+		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_LOGGING,n));
+		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_MUTE,n));
+	}
 
 	/* Append buttons as appropriate */
 	if(vertical_mode)
 	{
-		if(owner == ENUM_OWNER_GROUP_CTRL)
+		if(owner == ENUM_OWNER_GROUP_CTRL && !mobile)
 			gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_ADD_BLOCK_MENU,n));
 	}
