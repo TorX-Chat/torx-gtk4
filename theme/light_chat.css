@@ -130,6 +130,10 @@ scrolledwindow{
 	border-radius: 10px;
 }
 
+.window_main.squared, .window_auth.squared{ /* Maximized or mobile: the window fills the screen, so a rounded background only leaves dead corners */
+	border-radius: 0px;
+}
+
 .frame{
 	border-radius: 0px;
 	border-color: transparent;

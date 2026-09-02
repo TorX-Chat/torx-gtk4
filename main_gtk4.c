@@ -2942,6 +2942,17 @@ static void ui_toggle_maximize(void)
 		gtk_window_maximize(GTK_WINDOW(t_main.main_window));
 }
 
+static void ui_update_squared(GObject *object,GParamSpec *pspec,const gpointer arg)
+{ // Disables rounded corners when maximized. Note: This is seperate and supplementary to if(mobile) gtk_widget_add_css_class(t_main.main_window,"squared");
+	(void) object;
+	(void) pspec;
+	(void) arg;
+	if(gtk_window_is_maximized(GTK_WINDOW(t_main.main_window)) || gtk_window_is_fullscreen(GTK_WINDOW(t_main.main_window)))
+		gtk_widget_add_css_class(t_main.main_window,"squared");
+	else
+		gtk_widget_remove_css_class(t_main.main_window,"squared");
+}
+
 static void ui_determine_orientation(void)
 { // Sets vertical_mode TODO consider also aspect ratios and DPI settings to determine whether this is a mobile device or not. If mobile, should be vertical regardless of width.
 // XXX TODO For zoom mode, ie for mobile devices of high DPI, https://docs.gtk.org/gsk4/method.Transform.scale.html ---> https://docs.gtk.org/gtk4/method.Widget.allocate.html
@@ -8813,6 +8824,13 @@ static void ui_activate(GtkApplication *application,void *arg)
 	texture_headerbar_button_leave3 = gdk_texture_new_from_resource("/org/torx/gtk4/other/maximize_hover.png");
 
 	t_main.main_window = gtk_application_window_new (application);
+	if(mobile) // No rounded corners on mobile
+		gtk_widget_add_css_class(t_main.main_window,"squared");
+	else
+	{ // Both fire before realization, so a window maximized at startup is squared before it is ever presented
+		g_signal_connect(t_main.main_window,"notify::maximized",G_CALLBACK(ui_update_squared),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+		g_signal_connect(t_main.main_window,"notify::fullscreened",G_CALLBACK(ui_update_squared),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	}
 
 	/* Set Panel Icon from GResource (works now) */
 	GtkIconTheme* icon_theme = gtk_icon_theme_get_for_display (gtk_widget_get_display(t_main.main_window));
