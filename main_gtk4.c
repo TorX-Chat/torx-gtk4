@@ -176,10 +176,11 @@ static uint8_t minimize_to_tray = 1;
 static uint8_t display_images = 1; // TODO should be clickable (to show larger), should automatically render after 100%. Gifs are a problem if corrupt (because we don't have sufficient sanity checks). Other corrupt images are fine.
 
 static uint8_t mobile = 0; // WMs that keep every window maximized and expect close-by-swipe. See ui_detect_mobile().
+static uint8_t touchscreen = 0; // set by ui_pointer_available() and not overridden by mobile_override
 static int8_t mobile_override = -1; // -1 is auto-detect. Set by --mobile[=0/1], to cover docked convergence and unrecognized WMs.
 
-static int size_window_default_width = 480; // 1100 Desktop, TODO mobile should just maximize?
-static int size_window_default_height = 854; // 600 Desktop, mobile should just maximize?
+static int size_window_default_width = 480; // 1100 Desktop
+static int size_window_default_height = 854; // 600 Desktop
 static uint8_t start_maximized = 0;
 static uint8_t start_minimized = 0;
 static uint8_t start_daemonized = 0;
@@ -3113,7 +3114,8 @@ static void ui_decorate_headerbar(void)
 		gtk_header_bar_pack_start(GTK_HEADER_BAR(headerbar), box_start);
 	if(box_end)
 		gtk_header_bar_pack_end(GTK_HEADER_BAR(headerbar), box_end);
-	if(ui_pointer_available())
+	touchscreen =! ui_pointer_available();
+	if(!touchscreen)
 	{ // Only worth wiring up where a pointer exists to do the hovering
 		for(int iter = 0 ; iter < 2 ; iter++)
 		{
