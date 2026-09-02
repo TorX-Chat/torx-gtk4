@@ -317,6 +317,7 @@ static struct { // XXX Do not torx_secure_malloc structs unless they contain sen
 	/* Individual Peer Chat Pages */
 	GtkWidget *last_online;
 	GtkWidget *call_box;
+	GtkWidget *button_search; // global because search can also be cancelled from elsewhere (Esc, button_activity), which must repaint its icon
 	GtkWidget *button_activity; // editing, private messaging, etc
 	GtkWidget *write_message; // TODO can probably be eliminated with some work
 	GtkWidget *button_record;
@@ -979,6 +980,7 @@ static void chat_builder(GtkListItemFactory *factory, GtkListItem *list_item,voi
 	{
 		GtkWidget *node = ui_add_chat_node(pair->first,pair->second,pair->third,callback_click,pair->fourth);
 		gtk_widget_add_css_class(node, "node");
+		g_object_set_data(G_OBJECT(node),"n",itovp(pair->first)); // Read back by ui_list_keypress(). Relies on itovp() shifting, so that n==0 is not NULL.
 		gtk_list_item_set_child(list_item, node);
 	}
 }
@@ -3228,38 +3230,43 @@ static void ui_decorate_panel_left_top(void)
 	// Set Add / Generate Icon
 	if(t_main.add != NULL)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.add);
+	GtkWidget *image_add; // Buttons rather than bare images, so that Tab reaches them and Enter/Space activate them
 	if(t_main.window == window_main || t_main.window == window_group_generate)
-		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_active),size_icon_top_left);
+		image_add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_left);
+		image_add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive),size_icon_top_left);
 	else
-		t_main.add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_left);
+		image_add = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(add_inactive_light),size_icon_top_left);
+	t_main.add = gtk_button_new();
+	gtk_widget_add_css_class(t_main.add, "invisible");
+	gtk_widget_add_css_class(t_main.add, "icon_button");
+	gtk_button_set_child(GTK_BUTTON(t_main.add),image_add);
 	if(t_main.window != window_main && t_main.window != window_group_generate)
-	{
-		GtkGesture *click_show_generate = gtk_gesture_click_new();
-		g_signal_connect_swapped(click_show_generate, "pressed", G_CALLBACK(ui_show_generate), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(t_main.add, GTK_EVENT_CONTROLLER(click_show_generate));
-	}
+		g_signal_connect_swapped(t_main.add, "clicked", G_CALLBACK(ui_show_generate), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	else
+		gtk_widget_set_focusable(t_main.add,FALSE); // Inert on its own page, so Tab must not stop on it
 	gtk_box_append(GTK_BOX(t_main.search_panel), t_main.add);
 
 	// Set Home Icon
 	if(t_main.home != NULL)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.home);
-	GtkWidget *button_home;
+	GtkWidget *image_home;
 	if(t_main.window == window_home)
-		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_active),size_icon_top_left);
+		image_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive),size_icon_top_left);
+		image_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive),size_icon_top_left);
 	else
-		button_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive_light),size_icon_top_left);
-	t_main.home = gtk_overlay_new();
-	gtk_overlay_set_child(GTK_OVERLAY(t_main.home),button_home);
+		image_home = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(home_inactive_light),size_icon_top_left);
+	GtkWidget *overlay_home = gtk_overlay_new();
+	gtk_overlay_set_child(GTK_OVERLAY(overlay_home),image_home);
+	t_main.home = gtk_button_new();
+	gtk_widget_add_css_class(t_main.home, "invisible");
+	gtk_widget_add_css_class(t_main.home, "icon_button");
+	gtk_button_set_child(GTK_BUTTON(t_main.home),overlay_home);
 	if(t_main.window != window_home)
-	{
-		GtkGesture *click_home = gtk_gesture_click_new();
-		g_signal_connect_swapped(click_home, "pressed", G_CALLBACK(ui_show_home), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(t_main.home, GTK_EVENT_CONTROLLER(click_home));
-	}
+		g_signal_connect_swapped(t_main.home, "clicked", G_CALLBACK(ui_show_home), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	else
+		gtk_widget_set_focusable(t_main.home,FALSE); // Inert on its own page, so Tab must not stop on it
 	gtk_box_append(GTK_BOX(t_main.search_panel), t_main.home);
 	if(totalIncoming > 0)
 	{ // Badge on home button (Note: some of it starts before)
@@ -3278,24 +3285,27 @@ static void ui_decorate_panel_left_top(void)
 		gtk_widget_set_halign(unread_counter, GTK_ALIGN_CENTER);
 		gtk_widget_set_valign(unread_counter, GTK_ALIGN_CENTER);
 		gtk_overlay_add_overlay(GTK_OVERLAY(overlay2),unread_counter);
-		gtk_overlay_add_overlay(GTK_OVERLAY(t_main.home),overlay2);
+		gtk_overlay_add_overlay(GTK_OVERLAY(overlay_home),overlay2);
 	}
 
 	// Set Active Settings Icon
 	if(t_main.settings != NULL)
 		gtk_box_remove(GTK_BOX(t_main.search_panel), t_main.settings);
+	GtkWidget *image_settings;
 	if(t_main.window == window_settings) // TODO use gtk_image_set_from_paintable instead of removing?
-		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_active),size_icon_top_left);
+		image_settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_active),size_icon_top_left);
 	else if(global_theme == DARK_THEME)
-		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive),size_icon_top_left);
+		image_settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive),size_icon_top_left);
 	else
-		t_main.settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive_light),size_icon_top_left);
+		image_settings = gtk_image_new_from_paintable_with_size(GDK_PAINTABLE(settings_inactive_light),size_icon_top_left);
+	t_main.settings = gtk_button_new();
+	gtk_widget_add_css_class(t_main.settings, "invisible");
+	gtk_widget_add_css_class(t_main.settings, "icon_button");
+	gtk_button_set_child(GTK_BUTTON(t_main.settings),image_settings);
 	if(t_main.window != window_settings)
-	{
-		GtkGesture *click_settings = gtk_gesture_click_new();
-		g_signal_connect_swapped(click_settings, "pressed", G_CALLBACK(ui_show_settings), NULL); // DO NOT FREE arg because this only gets passed ONCE.
-		gtk_widget_add_controller(t_main.settings, GTK_EVENT_CONTROLLER(click_settings));
-	}
+		g_signal_connect_swapped(t_main.settings, "clicked", G_CALLBACK(ui_show_settings), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	else
+		gtk_widget_set_focusable(t_main.settings,FALSE); // Inert on its own page, so Tab must not stop on it
 	gtk_box_append(GTK_BOX(t_main.search_panel), t_main.settings);
 
 	// Build Stack Switcher
@@ -3317,6 +3327,7 @@ static void ui_decorate_panel_left(const int n)
 	ui_decorate_panel_left_top();
 
 	/* Destroy and rebuild right panel */
+	t_main.button_search = NULL; // Must not outlive the headerbar it belongs to
 	t_main.panel_right = gtk_box_new(GTK_ORIENTATION_VERTICAL,size_spacing_eight);
 	gtk_widget_set_halign(t_main.panel_right, GTK_ALIGN_FILL);
 	gtk_widget_set_valign(t_main.panel_right, GTK_ALIGN_FILL);
@@ -6999,6 +7010,33 @@ static void ui_group_invite(const void *arg) //(const void *arg)
 		message_send(n,ENUM_PROTOCOL_GROUP_OFFER,itovp(global_group),GROUP_OFFER_LEN);
 }
 
+static gboolean ui_list_keypress(GtkEventControllerKey *controller,guint keyval,guint keycode,GdkModifierType state,const gpointer data)
+{ // Keyboard equivalent of the click gesture in ui_add_chat_node(), which is unreachable by key because focus lands on the row, the parent of the node the gesture is on
+	(void) keycode;
+	if(state & (GDK_CONTROL_MASK|GDK_ALT_MASK|GDK_SHIFT_MASK))
+		return GDK_EVENT_PROPAGATE; // Modified space keeps its GtkListBase selection meaning
+	if(keyval != GDK_KEY_Return && keyval != GDK_KEY_KP_Enter && keyval != GDK_KEY_ISO_Enter && keyval != GDK_KEY_space && keyval != GDK_KEY_KP_Space)
+		return GDK_EVENT_PROPAGATE;
+	GtkWidget *row = gtk_widget_get_focus_child(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller)));
+	if(!row)
+		return GDK_EVENT_PROPAGATE;
+	GtkWidget *node = gtk_widget_get_first_child(row); // The widget chat_builder() handed to gtk_list_item_set_child()
+	void *vp;
+	if(!node || !(vp = g_object_get_data(G_OBJECT(node),"n")))
+		return GDK_EVENT_PROPAGATE;
+	void (*callback_click)(const void *) = (void (*)(const void *))(uint64_t)data;
+	callback_click(vp);
+	return GDK_EVENT_STOP;
+}
+
+static void ui_list_keys(GtkWidget *list_view,void (*callback_click)(const void *))
+{ // Capture phase, to preempt the GtkListBase bindings that would otherwise consume Enter and Space
+	GtkEventController *key_controller = gtk_event_controller_key_new();
+	gtk_event_controller_set_propagation_phase(key_controller,GTK_PHASE_CAPTURE);
+	g_signal_connect(key_controller, "key-pressed", G_CALLBACK(ui_list_keypress),(void*)(uint64_t)callback_click); // DO NOT FREE arg because this only gets passed ONCE.
+	gtk_widget_add_controller(list_view, key_controller);
+}
+
 static int ui_populate_peers(void *arg)
 { /* Search Letters Entered */ // Takes 0 or ENUM_STATUS_BLOCKED / ENUM_STATUS_FRIEND as argument
 // TODO should probably save the scroll point, or not scroll if not at bottom, since this will be triggered on every message in/out
@@ -7031,6 +7069,7 @@ static int ui_populate_peers(void *arg)
 			g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_select_changed);
 			GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
 			gtk_widget_add_css_class(list_view, "invisible"); // XXX important
+			ui_list_keys(list_view,&ui_select_changed);
 			gtk_box_append (GTK_BOX(scroll_box), list_view);
 			for(int pos = 0 ; pos < len ; pos++) // or len if starting from other direction, then count down instead of up
 			{
@@ -7079,6 +7118,7 @@ static void ui_populate_group_peerlist_popover(GtkWidget *entry_search_popover,G
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_private_message);
 		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
+		ui_list_keys(list_view,&ui_private_message);
 		gtk_box_append (GTK_BOX(box_popover), list_view);
 	}
 }
@@ -7100,6 +7140,7 @@ static void ui_populate_peer_popover(GtkWidget *entry_search_popover,GParamSpec 
 		GtkListItemFactory *factory = gtk_signal_list_item_factory_new();
 		g_signal_connect(factory, "bind", G_CALLBACK(chat_builder),(void*)(uint64_t)&ui_group_invite);
 		GtkWidget *list_view = gtk_list_view_new (GTK_SELECTION_MODEL (ns), factory); // TODO NOT A direct child of a scrolled window, could have issues with > 205 widgets
+		ui_list_keys(list_view,&ui_group_invite);
 		gtk_box_append (GTK_BOX(box_popover), list_view);
 	}
 }
@@ -7245,6 +7286,8 @@ static void ui_toggle_search(GtkWidget *button,const gpointer data)
 	const size_t former_len = torx_allocation_len(t_peer[n].search_text);
 	const uint8_t was_active = t_peer[n].search_active;
 	t_peer[n].search_active = !t_peer[n].search_active;
+	if(!button)
+		button = t_main.button_search; // Cancelled from elsewhere, so repaint the button we were not handed
 	if(button)
 		ui_set_image_search(button,n);
 	if(was_active) // Search was active, now toggled off. Free stale search text before re-rendering so ui_activity_determination restores the unsent/edit/pm state instead.
@@ -7670,7 +7713,8 @@ static void ui_select_changed(const void *arg)
 	}
 	else
 	{
-		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_SEARCH,n));
+		t_main.button_search = ui_button_generate(ENUM_BUTTON_SEARCH,n);
+		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), t_main.button_search);
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_CALL,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_ADD_BLOCK,n));
 		gtk_box_append(GTK_BOX(t_main.chat_headerbar_right), ui_button_generate(ENUM_BUTTON_KILL,n));
@@ -8560,6 +8604,36 @@ static void on_toplevel_state_notify(GdkSurface *surface, GParamSpec *pspec, gpo
 		minimized_currently = 1; // WARNING: set to 1 in multiple places
 }
 
+static gboolean ui_escape(GtkEventControllerKey *controller,guint keyval,guint keycode,GdkModifierType state,const gpointer data)
+{ /* Unwind the innermost active state. Bubble phase, so that popovers and editable labels consume escape before we see it. */
+	(void) controller;
+	(void) keycode;
+	(void) data;
+	if(keyval != GDK_KEY_Escape || (state & (GDK_CONTROL_MASK|GDK_ALT_MASK|GDK_SHIFT_MASK)))
+		return GDK_EVENT_PROPAGATE;
+	if(t_main.window == none || t_main.window == window_auth || t_main.window == window_missing_binaries)
+		return GDK_EVENT_PROPAGATE; // Nothing to go back to, and the widgets below do not exist until ui_show_main_screen()
+	if(threadsafe_read_uint8(&mutex_global_variable,&lockout))
+		return GDK_EVENT_PROPAGATE;
+	if(t_main.window == window_peer && global_n > -1 && (t_peer[global_n].search_active || t_peer[global_n].edit_n > -1 || t_peer[global_n].edit_i > INT_MIN || t_peer[global_n].pm_n > -1))
+	{ // Cancel search / edit / rename / private message before leaving the chat
+		ui_activity_cancel(NULL,itovp(global_n));
+		return GDK_EVENT_STOP;
+	}
+	if(t_main.window == window_vertical_chatlist || (!vertical_mode && t_main.window == window_home))
+	{ // Root screen. Note that in vertical mode the root is the chat list, and window_home is reached from it.
+		if(t_main.entry_search && *gtk_entry_buffer_get_text(gtk_entry_get_buffer(GTK_ENTRY(t_main.entry_search))))
+		{ // Clear the peer list filter first, otherwise a search followed by escape closes the application
+			gtk_editable_delete_text(GTK_EDITABLE(t_main.entry_search),0,-1); // notify::text repopulates both lists
+			return GDK_EVENT_STOP;
+		}
+		cleanup_idle(itovp(0)); // Same call ui_close_request() makes, so tray handling and saving are identical to a window manager close
+		return GDK_EVENT_STOP;
+	}
+	ui_go_back(itovp(t_main.window == window_peer ? global_n : -1)); // Same argument ui_decorate_panel_left() gives the header image
+	return GDK_EVENT_STOP;
+}
+
 //static void activate (GtkApplication* app, gpointer user_data)
 static void ui_activate(GtkApplication *application,void *arg)
 { // Cannot set window position, GTK removed it.// https://stackoverflow.com/questions/62614703/how-to-make-window-centered-in-gtk4
@@ -8695,6 +8769,10 @@ static void ui_activate(GtkApplication *application,void *arg)
 	gtk_window_set_default_size (GTK_WINDOW ( t_main.main_window), size_window_default_width, size_window_default_height);
 	gtk_window_set_resizable (GTK_WINDOW ( t_main.main_window),TRUE);
 	g_signal_connect(t_main.main_window, "close-request", G_CALLBACK(ui_close_request), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+
+	GtkEventController *escape_controller = gtk_event_controller_key_new(); // Bubble phase, do not set capture
+	g_signal_connect(escape_controller, "key-pressed", G_CALLBACK(ui_escape), NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	gtk_widget_add_controller(t_main.main_window, escape_controller);
 
 	// Load Auth Page CSS
 	t_main.provider = gtk_css_provider_new();

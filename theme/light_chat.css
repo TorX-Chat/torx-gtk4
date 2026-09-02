@@ -184,6 +184,19 @@ scrolledwindow{
 	border-radius: 0px 0px 0px 0px;
 }
 
+.icon_button{ /* Top left navigation icons. Were bare images, so they must carry none of the button padding, or the search panel widens */
+	padding: 0px;
+	min-width: 0px;
+	min-height: 0px;
+}
+
+button.invisible:focus-visible{ /* .invisible clears the outline, which would otherwise leave keyboard focus invisible */
+	outline-color: rgb(236,179,101);
+	outline-style: solid;
+	outline-width: 2px;
+	outline-offset: -2px;
+}
+
 .unread_count{ /* Peer List */
 	color: rgb(71,71,71);
 	/*padding-left: 8px;*/
