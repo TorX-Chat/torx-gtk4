@@ -190,11 +190,47 @@ scrolledwindow{
 	min-height: 0px;
 }
 
-button.invisible:focus-visible{ /* .invisible clears the outline, which would otherwise leave keyboard focus invisible */
+button:focus:focus-visible, /* :focus is required, because :focus-visible alone also matches every ancestor of the focused widget */
+listview > row:focus:focus-visible,
+label:focus:focus-visible,
+editablelabel:focus:focus-visible,
+entry:focus-within,
+spinbutton:focus-within,
+switch:focus:focus-visible,
+textview:focus-visible:focus-within{ /* textview alone requires :focus-visible, or the composer rings on every chat open, because ui_select_changed grabs focus into it */
 	outline-color: rgb(236,179,101);
 	outline-style: solid;
 	outline-width: 2px;
 	outline-offset: -2px;
+}
+
+.auth_button:focus:focus-visible{ /* The fill is already the highlight colour, so the ring has to sit outside it */
+	outline-offset: 2px;
+}
+
+.icon_button:focus:focus-visible{ /* Carries no padding, so a negative offset would draw the ring across the icon */
+	outline-offset: 1px;
+}
+
+switch:focus:focus-visible{ /* Likewise no padding to draw into */
+	outline-offset: 0px;
+}
+
+switch:checked{ /* GTK's own accent fill, the one highlight here that appears without focus being involved */
+	background-color: rgb(236,179,101);
+	border-color: rgb(213,155,73);
+}
+
+dropdown popover listview > row:selected{
+	background-color: rgb(236,179,101);
+	color: rgb(33,45,56);
+}
+
+entry > text > selection,
+textview > text > selection,
+label > selection,
+editablelabel > stack > text > selection{ /* A tint, not the solid ring colour, which would leave the text on top of it at 1.9:1 */
+	background-color: rgba(236,179,101,0.35);
 }
 
 .unread_count{ /* Peer List */

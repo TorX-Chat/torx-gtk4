@@ -3317,6 +3317,20 @@ static void ui_decorate_panel_left_top(void)
 	}
 }
 
+static int default_focus_idle(void *arg)
+{ // Gives the newly built screen a focus widget, so that Tab and arrows have somewhere to start
+	(void) arg;
+	if(t_main.window == none || t_main.window == window_auth || t_main.window == window_missing_binaries)
+		return 0; // No panels yet
+	GtkWidget *panel = gtk_widget_get_visible(t_main.panel_right) ? t_main.panel_right : t_main.panel_left; // Whichever panel vertical_mode left showing
+	GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(t_main.main_window));
+	if(focus && gtk_widget_is_ancestor(focus,panel))
+		return 0; // Already there. Necessary because ui_go_back queues this twice, and a second call would step past the first widget.
+	if(!gtk_widget_child_focus(panel,GTK_DIR_TAB_FORWARD)) // Falls back in case the panel holds nothing focusable
+		gtk_widget_child_focus(panel == t_main.panel_right ? t_main.panel_left : t_main.panel_right,GTK_DIR_TAB_FORWARD);
+	return 0;
+}
+
 static void ui_decorate_panel_left(const int n)
 { /* This doesn't do initial build of left panel (only the things that might change), and destroys right panel */
  // TODO lots of this is redundant. better to just gtk_image_set_ rather than remove and rebuild everything (these things are already built in show_main_screen() TODO
@@ -3387,6 +3401,9 @@ static void ui_decorate_panel_left(const int n)
 	gtk_widget_set_valign(t_main.chat_headerbar_right, GTK_ALIGN_CENTER);
 	gtk_widget_set_margin_end(t_main.chat_headerbar_right, size_margin_ten);
 	gtk_box_append(GTK_BOX(t_main.chat_headerbar),t_main.chat_headerbar_right);
+
+	/* XXX Must be deferred: panel_right is not populated until our caller returns. In vertical mode the widget that had focus was just destroyed and its panel hidden, so nothing here is focusable yet, and GTK does not re-home focus onto widgets added later. */
+	g_idle_add_full(G_PRIORITY_LOW,default_focus_idle,NULL,NULL);
 }
 
 static void ui_override_save_torrc(GtkWidget *button,char *torrc_content_local)
