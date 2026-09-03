@@ -125,7 +125,7 @@ print_one_tag (const GstTagList * list, const gchar * tag, gpointer user_data)
       GstBuffer *buf = gst_value_get_buffer (val);
       gsize buffer_size = gst_buffer_get_size (buf);
 
-      g_print ("\t%20s : buffer of size %lu\n", tag, buffer_size);
+      g_print ("\t%20s : buffer of size %zu\n", tag, buffer_size);
     } else if (GST_VALUE_HOLDS_DATE_TIME (val)) {
       GstDateTime *dt = g_value_get_boxed (val);
       gchar *dt_str = gst_date_time_to_iso8601_string (dt);
@@ -153,7 +153,7 @@ static inline void on_pad_added(GstElement *src, GstPad *new_pad, GstElement *si
 	//if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ASYNC_DONE) {
 	if (gst_element_query_duration(pipe, GST_FORMAT_TIME, &duration))
 	{
-		error_printf(0,"Checkpoint duration is: %ld",duration);
+		error_printf(0,"Checkpoint duration is: %"G_GINT64_FORMAT,duration);
 		g_print("Duration: %" GST_TIME_FORMAT "\n", GST_TIME_ARGS(duration));
 	}
 	else

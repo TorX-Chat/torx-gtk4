@@ -8543,7 +8543,7 @@ static int icon_communicator_idle(void *arg)
 	evutil_socket_t sockfd = (evutil_socket_t)(intptr_t)arg;
 	char message[256];
 	size_t diff,str_len = 0; // I think only str_len must be initialized here
-//	printf("Checkpoint data: %d = %lu - %lu\n",(int)totalUnreadPeer - (int)last_totalUnreadPeer,totalUnreadPeer,last_totalUnreadPeer);
+//	printf("Checkpoint data: %d = %zu - %zu\n",(int)totalUnreadPeer - (int)last_totalUnreadPeer,totalUnreadPeer,last_totalUnreadPeer);
 	if ((diff = totalUnreadPeer - last_totalUnreadPeer) && (diff != 1 ? (str_len = (size_t) snprintf(message,sizeof(message),"p%zu",totalUnreadPeer)) : (str_len = (size_t) snprintf(message,sizeof(message),"p"))) > 0)
 	{
 	//	printf("Checkpoint awesome: %s\n",message);
