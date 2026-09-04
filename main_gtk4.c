@@ -1822,6 +1822,20 @@ static size_t ui_unread_clear(const int n,const uint8_t owner)
 	return cleared;
 }
 
+static void ui_unread_clear_current(void)
+{ // Calls ui_unread_clear on global_n and updates left panel, if necessary.
+	if(global_n < 0)
+		return; // No chat on screen
+	const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,offsetof(struct peer_list,owner));
+	if(!ui_unread_clear(global_n,owner) || vertical_mode)
+		return; // Nothing was cleared, or the peer list is not on screen to be corrected
+	ui_decorate_panel_left_top();
+	if(owner == ENUM_OWNER_GROUP_CTRL)
+		ui_populate_peers(itovp(ENUM_STATUS_GROUP_CTRL));
+	else
+		ui_populate_peers(itovp(getter_uint8(global_n,INT_MIN,-1,offsetof(struct peer_list,status))));
+}
+
 static int onion_deleted_idle(void *arg)
 {
 	const int n = vptoii_n(arg);
@@ -2918,6 +2932,15 @@ static void ui_leave_mouse(void)
 		gtk_image_set_from_paintable(GTK_IMAGE(t_main.headerbar_button_maximize),GDK_PAINTABLE(texture_headerbar_button3)); // must use set, do not use new
 }
 
+static uint8_t ui_window_foreground(void)
+{
+	if(!t_main.main_window || !gtk_widget_get_visible(t_main.main_window) || minimized_currently)
+		return 0; // Window is minimized on desktop (to tray or statusbar)
+	else if(mobile && !gtk_window_is_active(GTK_WINDOW(t_main.main_window)))
+		return 0; // Window is not active on mobile, despite not being "minimized"
+	return 1; // User can possibly see our window
+}
+
 static void ui_minimize_to_tray(void)
 { // Do not call directly except from clicks on tray icons, because must check appindicator_functioning first
 	gtk_widget_set_visible(t_main.main_window,FALSE);
@@ -2951,6 +2974,15 @@ static void ui_update_squared(GObject *object,GParamSpec *pspec,const gpointer a
 		gtk_widget_add_css_class(t_main.main_window,"squared");
 	else
 		gtk_widget_remove_css_class(t_main.main_window,"squared");
+}
+
+static void ui_window_active_notify(GObject *object,GParamSpec *pspec,const gpointer arg)
+{ // Signalled on mobile only (our choice): Window is active.
+	(void) object;
+	(void) pspec;
+	(void) arg;
+	if(ui_window_foreground()) // this should always be true
+		ui_unread_clear_current();
 }
 
 static void ui_determine_orientation(void)
@@ -6573,8 +6605,8 @@ static void ui_print_message(const int n,const int i,const int scroll)
 			nn = group_n;
 	}
 	char *message = getter_string(n,i,-1,offsetof(struct message_list,message));
-	if((nn != global_n || !gtk_widget_get_visible(t_main.main_window)) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
-	{ /* Notify of complete Message (indicated by scroll==1), but not on screen */
+	if((nn != global_n || !ui_window_foreground()) && scroll == 1 && stat == ENUM_MESSAGE_RECV)
+	{ // Notify of complete Message (indicated by scroll==1), but not on screen
 		t_peer[nn].unread++;
 		if (owner == ENUM_OWNER_GROUP_CTRL || owner == ENUM_OWNER_GROUP_PEER)
 			totalUnreadGroup++;
@@ -8660,6 +8692,7 @@ static void on_toplevel_state_notify(GdkSurface *surface, GParamSpec *pspec, gpo
 	if(focused)
 	{ // Unminimized
 		minimized_currently = 0;
+		ui_unread_clear_current();
 		if(missed_scroll)
 		{
 			scroll_to_bottom(t_main.scrolled_window_right);
@@ -8710,16 +8743,7 @@ static void ui_activate(GtkApplication *application,void *arg)
 			ui_minimize_to_tray();
 		else if(t_main.main_window)
 		{ // Note: Same memory space, this is OUR APPLICATION receiving a signal.
-			if(global_n > -1)
-			{
-				const uint8_t owner = getter_uint8(global_n,INT_MIN,-1,offsetof(struct peer_list,owner));
-				const size_t cleared = ui_unread_clear(global_n,owner); // Clears tray icon and RAM
-				if(!vertical_mode && cleared)
-				{ // Clears left panel
-					ui_decorate_panel_left_top();
-					ui_populate_peers(itovp(ENUM_STATUS_FRIEND));
-				}
-			}
+			ui_unread_clear_current();
 			gtk_window_present(GTK_WINDOW(t_main.main_window)); // show
 		}
 		return;
@@ -8824,8 +8848,11 @@ static void ui_activate(GtkApplication *application,void *arg)
 	texture_headerbar_button_leave3 = gdk_texture_new_from_resource("/org/torx/gtk4/other/maximize_hover.png");
 
 	t_main.main_window = gtk_application_window_new (application);
-	if(mobile) // No rounded corners on mobile
+	if(mobile)
+	{ // No rounded corners on mobile
 		gtk_widget_add_css_class(t_main.main_window,"squared");
+		g_signal_connect(t_main.main_window,"notify::is-active",G_CALLBACK(ui_window_active_notify),NULL); // DO NOT FREE arg because this only gets passed ONCE.
+	}
 	else
 	{ // Both fire before realization, so a window maximized at startup is squared before it is ever presented
 		g_signal_connect(t_main.main_window,"notify::maximized",G_CALLBACK(ui_update_squared),NULL); // DO NOT FREE arg because this only gets passed ONCE.
